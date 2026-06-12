@@ -7,7 +7,7 @@ const path = require('path');
 const FILE = () => path.join(app.getPath('userData'), 'settings.json');
 
 const DEFAULTS = () => ({
-  saveDir: path.join(app.getPath('pictures'), 'Shotik'),
+  saveDir: process.env.SHOTIK_SAVE_DIR || path.join(app.getPath('pictures'), 'Shotik'),
   fileNamePattern: 'Shot_{date}_{time}',
   autoSave: true,
   smartClipboard: true, // clipboard gets BOTH image and file path text

@@ -15,6 +15,12 @@ const windows = require('./windows');
 
 const TEST_MODE = process.env.SHOTIK_TEST === '1' || process.argv.includes('--test');
 const GHOST = process.env.SHOTIK_GHOST === '1'; // invisible testing: no hotkeys, off-screen windows
+
+// Test instances live in their own userData: separate settings/history AND a
+// separate single-instance lock, so tests can run next to the real app.
+if (TEST_MODE) {
+  app.setPath('userData', path.join(app.getPath('appData'), 'Shotik-Test'));
+}
 let tray = null;
 let hotkeyErrors = [];
 let lastProcessed = null; // for tests / debugging
@@ -327,7 +333,7 @@ async function startMcp() {
   const st = settings.get();
   if (!st.mcp.enabled) return;
   try {
-    await mcp.start(st.mcp.port);
+    await mcp.start(Number(process.env.SHOTIK_PORT) || st.mcp.port);
   } catch (e) {
     console.error('MCP start failed:', e.message);
     windows.showToast({ kind: 'text', title: 'MCP-сервер не запустился', body: `Порт ${st.mcp.port}: ${e.message}` });
@@ -351,6 +357,8 @@ function setupTestHandler() {
         return {
           overlayOpen: capture.isOverlayOpen(),
           overlayCount: capture.overlayWindows().length,
+          overlayBounds: capture.overlayWindows().map((w) => w.getBounds()),
+          displays: screen.getAllDisplays().map((d) => ({ id: d.id, bounds: d.bounds, workArea: d.workArea })),
           mainVisible: !!(windows.getMainWindow() && windows.getMainWindow().isVisible()),
           lastProcessed,
           hotkeyErrors,

@@ -129,11 +129,17 @@ function startOverlaySession(opts = {}) {
         files.push(file);
         const physSize = img.getSize();
 
-        const win = new BrowserWindow({
+        const bounds = {
           x: d.bounds.x + (GHOST ? GHOST_OFFSET : 0), y: d.bounds.y,
           width: d.bounds.width, height: d.bounds.height,
+        };
+        const win = new BrowserWindow({
+          ...bounds,
+          // resizable MUST be true: on Windows a non-resizable window is clamped
+          // to the display work area and can't cover the taskbar. thickFrame:false
+          // removes the resize border, so the user still can't resize it.
           frame: false, show: false, transparent: false, backgroundColor: '#0b0d11',
-          skipTaskbar: true, resizable: false, movable: false,
+          skipTaskbar: true, resizable: true, thickFrame: false, movable: false,
           minimizable: false, maximizable: false, fullscreenable: false,
           enableLargerThanScreen: true, hasShadow: false, roundedCorners: false,
           webPreferences: {
@@ -143,6 +149,7 @@ function startOverlaySession(opts = {}) {
           },
         });
         win.removeMenu();
+        win.setBounds(bounds); // force exact size — creation may have clamped it
         win.loadFile(path.join(__dirname, '..', 'overlay', 'overlay.html'), {
           query: {
             img: pathToFileURL(file).href,
@@ -156,12 +163,18 @@ function startOverlaySession(opts = {}) {
         });
         win.webContents.once('did-finish-load', () => {
           if (win.isDestroyed()) return;
+          win.setBounds(bounds);
           if (GHOST) {
             win.showInactive(); // painted but off-screen, never steals focus
             return;
           }
           win.show();
           win.setAlwaysOnTop(true, 'screen-saver');
+          // showing can re-clamp the bounds — verify and force once more
+          const b = win.getBounds();
+          if (b.width !== bounds.width || b.height !== bounds.height || b.x !== bounds.x || b.y !== bounds.y) {
+            win.setBounds(bounds);
+          }
           if (d.id === cursorDisplay.id) win.focus();
         });
         win.on('closed', () => {
