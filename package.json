@@ -6,7 +6,8 @@
   "main": "src/main/main.js",
   "license": "MIT",
   "author": "Shotik contributors",
-  "homepage": "https://github.com/shotik/shotik",
+  "homepage": "https://github.com/gorka2354/shotik",
+  "repository": { "type": "git", "url": "https://github.com/gorka2354/shotik.git" },
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev"
