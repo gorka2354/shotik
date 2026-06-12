@@ -36,8 +36,9 @@
     color-scheme: light;
     --bg: #f3f3f3;
     --layer: rgba(255, 255, 255, 0.72);
-    --layer-hover: rgba(255, 255, 255, 0.95);
-    --layer-active: rgba(250, 250, 250, 0.6);
+    /* hovers must DARKEN in light theme, otherwise they vanish on white cards */
+    --layer-hover: rgba(0, 0, 0, 0.05);
+    --layer-active: rgba(0, 0, 0, 0.09);
     --stroke: rgba(0, 0, 0, 0.062);
     --stroke-strong: rgba(0, 0, 0, 0.13);
     --text: #1a1a1a;
@@ -65,11 +66,13 @@ body {
 #titlebarText { display: none; }
 
 /* ---------- layout ---------- */
-#layout { display: flex; height: 100vh; }
+/* layout starts below the titlebar so scrolled content never slides
+   under the window caption buttons */
+#layout { display: flex; height: 100vh; padding-top: 44px; }
 
 #sidebar {
   width: 230px; flex: 0 0 auto; display: flex; flex-direction: column;
-  padding: 50px 8px 12px;
+  padding: 8px 8px 12px;
 }
 #logo { display: flex; align-items: center; gap: 10px; padding: 4px 12px 16px; }
 #logo img { width: 34px; height: 34px; border-radius: 8px; }
@@ -104,7 +107,7 @@ nav { display: flex; flex-direction: column; gap: 2px; }
 
 #sidebarFooter { margin-top: auto; padding: 8px 12px 0; font-size: 11.5px; color: var(--text-3); }
 
-#content { flex: 1; overflow-y: auto; padding: 50px 28px 28px; }
+#content { flex: 1; overflow-y: auto; padding: 10px 28px 28px; }
 #content::-webkit-scrollbar { width: 12px; }
 #content::-webkit-scrollbar-thumb {
   background: var(--stroke-strong); border-radius: 6px;
