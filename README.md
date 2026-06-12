@@ -9,14 +9,24 @@
   со встроенным MCP-сервером — Claude может видеть твой экран
 </p>
 
+<p align="center">
+  <a href="https://github.com/gorka2354/shotik/releases/latest"><img src="https://img.shields.io/github/v/release/gorka2354/shotik?label=release&color=2ea44f" alt="Release"></a>
+  <a href="https://github.com/gorka2354/shotik/releases"><img src="https://img.shields.io/github/downloads/gorka2354/shotik/total?color=blue" alt="Downloads"></a>
+  <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4" alt="Platform">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="MIT"></a>
+  <img src="https://img.shields.io/badge/MCP-built--in-7c5cff" alt="MCP">
+</p>
+
 ---
+
+<p align="center">
+  <img src="docs/demo.gif" width="88%" alt="Демо: hover-snap окна, аннотации, копирование">
+</p>
+<p align="center"><i>наведение подсвечивает окно → клик → стрелка, рамка, пикселизация, маркеры, текст → Enter → в буфере</i></p>
 
 <p align="center">
   <img src="docs/app-dark.png" width="46%" alt="Тёмная тема">
   <img src="docs/app-light.png" width="46%" alt="Светлая тема">
-</p>
-<p align="center">
-  <img src="docs/overlay-annotations.png" width="60%" alt="Оверлей с аннотациями">
 </p>
 <p align="center"><i>UI следует системной теме и акцентному цвету Windows</i></p>
 
@@ -110,6 +120,9 @@ npm start -- --hidden
 # POST http://127.0.0.1:7464/test/input {"events":[...]}   — синтетический ввод
 # POST http://127.0.0.1:7464/test/capture-page              — снимок UI окна
 ```
+
+Демо-GIF для README тоже снимается роботом: `node test/film-demo.js` (раскадровка через
+тест-эндпоинты) + `node test/make-gif.js` (сборка кадров).
 
 ## Архитектура
 
