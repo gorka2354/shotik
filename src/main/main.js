@@ -142,7 +142,23 @@ async function handleOverlayResult(res) {
 }
 
 // ---------- capture triggers ----------
+// macOS needs the Screen Recording permission; explain instead of failing silently.
+function ensureScreenPermission() {
+  if (process.platform !== 'darwin') return true;
+  try {
+    const { systemPreferences } = require('electron');
+    if (systemPreferences.getMediaAccessStatus('screen') === 'granted') return true;
+  } catch (_) { return true; }
+  dialog.showMessageBox({
+    type: 'info',
+    message: 'Shotik нужен доступ к записи экрана',
+    detail: 'Системные настройки → Конфиденциальность и безопасность → Запись экрана → включить Shotik, затем перезапустить приложение.',
+  });
+  return false;
+}
+
 async function triggerRegion(opts = {}) {
+  if (!ensureScreenPermission()) return null;
   const main = windows.getMainWindow();
   if (opts.hideMain && main && main.isVisible()) {
     main.hide();
@@ -154,6 +170,7 @@ async function triggerRegion(opts = {}) {
 }
 
 async function triggerFull() {
+  if (!ensureScreenPermission()) return null;
   const st = settings.get();
   const { png } = await capture.captureFullscreen();
   const entry = st.autoSave ? history.savePng(png, { source: 'fullscreen' }) : null;
@@ -210,7 +227,13 @@ function registerHotkeys() {
 
 // ---------- tray ----------
 function createTray() {
-  const icon = nativeImage.createFromPath(path.join(__dirname, '..', '..', 'assets', 'tray.png'));
+  let icon;
+  if (process.platform === 'darwin') {
+    icon = nativeImage.createFromPath(path.join(__dirname, '..', '..', 'assets', 'trayTemplate.png'));
+    icon.setTemplateImage(true); // adapts to the menu bar (light/dark)
+  } else {
+    icon = nativeImage.createFromPath(path.join(__dirname, '..', '..', 'assets', 'tray.png'));
+  }
   tray = new Tray(icon);
   tray.setToolTip('Shotik — скриншоты для людей и AI');
   const hk = settings.get().hotkeys;

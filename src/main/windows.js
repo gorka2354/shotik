@@ -27,10 +27,12 @@ function createMainWindow({ show = true } = {}) {
     width: 1120, height: 740, minWidth: 880, minHeight: 600,
     ...(GHOST ? { x: GHOST_OFFSET, y: 60 } : {}),
     show: false, frame: false, backgroundColor: winBg(),
-    titleBarStyle: 'hidden',
-    // solid color (matching the window bg): WCO derives the minimize/maximize
-    // hover tint from it, with a transparent color the hover is invisible
-    titleBarOverlay: { color: winBg(), symbolColor: symbolColor(), height: 44 },
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
+    ...(process.platform === 'darwin'
+      ? { trafficLightPosition: { x: 16, y: 14 } }
+      // solid color (matching the window bg): WCO derives the minimize/maximize
+      // hover tint from it, with a transparent color the hover is invisible
+      : { titleBarOverlay: { color: winBg(), symbolColor: symbolColor(), height: 44 } }),
     icon: path.join(__dirname, '..', '..', 'assets', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, '..', 'app', 'preload.js'),

@@ -55,6 +55,10 @@ async function grabDisplay(display) {
 // a moment later.
 function enumWindows() {
   return new Promise((resolve) => {
+    if (process.platform !== 'win32' && !FAKE_SCREEN) {
+      resolve([]); // hover-snap is Windows-only for now — overlay degrades gracefully
+      return;
+    }
     if (FAKE_SCREEN) {
       // matches the window drawn in test/fake-screen.png (1920x1080 fixture
       // stretched onto the primary display)

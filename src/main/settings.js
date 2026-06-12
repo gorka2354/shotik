@@ -12,7 +12,12 @@ const DEFAULTS = () => ({
   autoSave: true,
   smartClipboard: true, // clipboard gets BOTH image and file path text
   showToast: true,
-  hotkeys: {
+  // macOS has no PrintScreen key and ⌘⇧3/4/5 are taken by the system
+  hotkeys: process.platform === 'darwin' ? {
+    region: 'Cmd+Shift+2',
+    fullscreen: 'Cmd+Shift+1',
+    repeatLast: 'Cmd+Shift+7',
+  } : {
     region: 'PrintScreen',
     fullscreen: 'Ctrl+PrintScreen',
     repeatLast: 'Shift+PrintScreen',
