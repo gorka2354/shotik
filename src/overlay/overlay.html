@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file:; style-src 'self' 'unsafe-inline'">
+<link rel="stylesheet" href="overlay.css">
+<title>Shotik</title>
+</head>
+<body>
+  <canvas id="cv"></canvas>
+
+  <div id="magnifier" hidden>
+    <canvas id="magCv" width="143" height="143"></canvas>
+    <div id="magInfo"><span id="magHex">#000000</span><span id="magPos">0, 0</span></div>
+  </div>
+
+  <div id="dims" hidden>0 × 0</div>
+
+  <div id="claudeBadge" hidden>
+    <svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/></svg>
+    Claude ждёт область — выдели и подтверди
+  </div>
+
+  <div id="hint" hidden>
+    <span class="chip"><b>Тяни</b> — область</span>
+    <span class="chip"><b>Клик</b> — весь экран</span>
+    <span class="chip"><b>C</b> — цвет пикселя</span>
+    <span class="chip"><b>Esc</b> — отмена</span>
+  </div>
+
+  <div id="toolbar" hidden>
+    <div class="tb-group" id="toolButtons">
+      <button class="tb-btn" data-tool="move" data-tip="Выделение (1)">
+        <svg viewBox="0 0 24 24"><path d="M5 3l14 7-6.5 1.5L9 18 5 3z"/></svg>
+      </button>
+      <button class="tb-btn" data-tool="pen" data-tip="Перо (2)">
+        <svg viewBox="0 0 24 24"><path d="M3 21l1-4L15.5 5.5l3 3L7 20l-4 1z"/><path d="M14 7l3 3"/></svg>
+      </button>
+      <button class="tb-btn" data-tool="arrow" data-tip="Стрелка (3)">
+        <svg viewBox="0 0 24 24"><path d="M5 19L19 5"/><path d="M11.5 5H19v7.5"/></svg>
+      </button>
+      <button class="tb-btn" data-tool="line" data-tip="Линия (4)">
+        <svg viewBox="0 0 24 24"><path d="M5 19L19 5"/></svg>
+      </button>
+      <button class="tb-btn" data-tool="rect" data-tip="Рамка (5)">
+        <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/></svg>
+      </button>
+      <button class="tb-btn" data-tool="ellipse" data-tip="Эллипс (6)">
+        <svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8.5" ry="6.5"/></svg>
+      </button>
+      <button class="tb-btn" data-tool="highlight" data-tip="Маркер (7)">
+        <svg viewBox="0 0 24 24"><path d="M9 11l4 4L20 8l-4-4-7 7z"/><path d="M9 11l-3.5 3.5L8 17l3-2"/><path d="M4 21h7"/></svg>
+      </button>
+      <button class="tb-btn" data-tool="blur" data-tip="Пикселизация (8)">
+        <svg viewBox="0 0 24 24"><path d="M12 3.5s6 6.4 6 10.5a6 6 0 11-12 0C6 9.9 12 3.5 12 3.5z"/></svg>
+      </button>
+      <button class="tb-btn" data-tool="text" data-tip="Текст (9)">
+        <svg viewBox="0 0 24 24"><path d="M5 6V4h14v2"/><path d="M12 4v16"/><path d="M9 20h6"/></svg>
+      </button>
+      <button class="tb-btn" data-tool="counter" data-tip="Нумерация (0)">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M10.5 9.5L12.5 8v8"/></svg>
+      </button>
+    </div>
+    <div class="tb-sep"></div>
+    <div class="tb-group">
+      <button class="tb-btn" id="btnUndo" data-tip="Отменить (Ctrl+Z)">
+        <svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/></svg>
+      </button>
+      <button class="tb-btn" id="btnRedo" data-tip="Вернуть (Ctrl+Y)">
+        <svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 000 12h3"/></svg>
+      </button>
+    </div>
+    <div class="tb-sep"></div>
+    <div class="tb-group">
+      <button class="tb-btn" id="btnOcr" data-tip="Распознать текст (T)">
+        <svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 012-2h2"/><path d="M17 3h2a2 2 0 012 2v2"/><path d="M21 17v2a2 2 0 01-2 2h-2"/><path d="M7 21H5a2 2 0 01-2-2v-2"/><path d="M7 8h10"/><path d="M7 12h6"/><path d="M7 16h8"/></svg>
+      </button>
+      <button class="tb-btn" id="btnPin" data-tip="Закрепить поверх окон (P)">
+        <svg viewBox="0 0 24 24"><path d="M12 17v5"/><path d="M9 4h6l.8 6.2L18 13H6l2.2-2.8L9 4z"/></svg>
+      </button>
+      <button class="tb-btn" id="btnSave" data-tip="Сохранить как… (Ctrl+S)">
+        <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>
+      </button>
+      <button class="tb-btn claude" id="btnClaude" data-tip="Скопировать для Claude (A)">
+        <svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15z"/></svg>
+      </button>
+      <button class="tb-btn primary" id="btnCopy" data-tip="Копировать (Enter)">
+        <svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>
+      </button>
+      <button class="tb-btn danger" id="btnCancel" data-tip="Отмена (Esc)">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div id="optionsBar" hidden>
+    <div class="colors" id="colorRow"></div>
+    <div class="tb-sep"></div>
+    <div class="sizes" id="sizeRow">
+      <button class="size-btn" data-size="S" data-tip="Тонко ([)"><i style="width:4px;height:4px"></i></button>
+      <button class="size-btn" data-size="M" data-tip="Средне"><i style="width:7px;height:7px"></i></button>
+      <button class="size-btn" data-size="L" data-tip="Толсто (])"><i style="width:11px;height:11px"></i></button>
+    </div>
+  </div>
+
+  <div id="textEditor" contenteditable="plaintext-only" hidden></div>
+
+  <script src="overlay.js"></script>
+</body>
+</html>
