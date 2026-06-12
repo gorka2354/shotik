@@ -18,7 +18,7 @@
   },
   "devDependencies": {
     "electron": "^33.0.0",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^25.1.8"
   },
   "build": {
     "appId": "dev.shotik.app",
@@ -38,8 +38,18 @@
     "win": {
       "icon": "assets/icon.png",
       "target": [
-        { "target": "portable", "arch": ["x64"] },
-        { "target": "nsis", "arch": ["x64"] }
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
     },
     "nsis": {
