@@ -125,8 +125,10 @@ npm start -- --hidden
 # POST http://127.0.0.1:7464/test/capture-page              — снимок UI окна
 ```
 
-Демо-GIF для README тоже снимается роботом: `node test/film-demo.js` (раскадровка через
-тест-эндпоинты) + `node test/make-gif.js` (сборка кадров).
+Демо-GIF для README тоже снимается роботом: `node test/film-cinematic.js` ведёт мышь
+с easing-шагами и пишет ~200 кадров + манифест, а `node test/render-camera.js` накладывает
+виртуальную камеру (ленивое слежение за курсором + наезды на ключевые места) и кодирует GIF.
+Простой покадровый вариант: `film-demo.js` + `make-gif.js`.
 
 ## Архитектура
 
