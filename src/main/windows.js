@@ -28,7 +28,9 @@ function createMainWindow({ show = true } = {}) {
     ...(GHOST ? { x: GHOST_OFFSET, y: 60 } : {}),
     show: false, frame: false, backgroundColor: winBg(),
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#00000000', symbolColor: symbolColor(), height: 44 },
+    // solid color (matching the window bg): WCO derives the minimize/maximize
+    // hover tint from it, with a transparent color the hover is invisible
+    titleBarOverlay: { color: winBg(), symbolColor: symbolColor(), height: 44 },
     icon: path.join(__dirname, '..', '..', 'assets', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, '..', 'app', 'preload.js'),
@@ -178,7 +180,7 @@ function closeAllPins() { for (const { win } of pins.values()) { try { win.close
 function applyTheme(t) {
   if (mainWin && !mainWin.isDestroyed()) {
     mainWin.setBackgroundColor(winBg());
-    try { mainWin.setTitleBarOverlay({ color: '#00000000', symbolColor: symbolColor(), height: 44 }); } catch (_) {}
+    try { mainWin.setTitleBarOverlay({ color: winBg(), symbolColor: symbolColor(), height: 44 }); } catch (_) {}
     mainWin.webContents.send('theme:changed', t);
   }
   if (toastWin && !toastWin.isDestroyed()) toastWin.webContents.send('theme:changed', t);
