@@ -2,9 +2,23 @@
 /* Shotik main window UI */
 
 let state = null;
+let DICT = {};
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
+
+const T = (key, ...args) => {
+  let s = DICT[key] !== undefined ? DICT[key] : key;
+  args.forEach((a, i) => { s = s.split(`{${i}}`).join(String(a)); });
+  return s;
+};
+
+function applyI18nStatic() {
+  $$('[data-i18n]').forEach((el) => { el.textContent = T(el.dataset.i18n); });
+  $$('[data-i18n-tip]').forEach((el) => el.setAttribute('data-tip', T(el.dataset.i18nTip)));
+  $$('[data-i18n-ph]').forEach((el) => el.setAttribute('placeholder', T(el.dataset.i18nPh)));
+  $('#hintBox').innerHTML = T('hintBox'); // trusted dictionary content
+}
 
 /* ---------- navigation ---------- */
 $$('.nav-item').forEach((b) => {
@@ -27,6 +41,10 @@ window.shotik.onThemeChanged(applyTheme);
 
 /* ---------- boot ---------- */
 async function boot() {
+  const i18n = await window.shotik.getI18n();
+  DICT = i18n.dict;
+  document.documentElement.lang = i18n.lang;
+  applyI18nStatic();
   applyTheme(await window.shotik.getTheme());
   state = await window.shotik.getState();
   $('#version').textContent = 'v' + state.version;
@@ -47,7 +65,7 @@ $('#btnRepeat').addEventListener('click', () => window.shotik.captureRepeat());
 $('#btnOpenDir').addEventListener('click', () => window.shotik.openSaveDir());
 
 /* ---------- history ---------- */
-const SOURCE_LABELS = { region: 'область', fullscreen: 'экран', repeat: 'повтор', mcp: 'Claude', pin: 'pin' };
+const sourceLabel = (s) => T({ region: 'srcRegion', fullscreen: 'srcFullscreen', repeat: 'srcRepeat', mcp: 'srcMcp', pin: 'srcPin' }[s] || s);
 
 const ICONS = {
   copy: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>',
@@ -64,12 +82,13 @@ function esc(s) {
 
 function timeAgo(ts) {
   const s = Math.floor((Date.now() - ts) / 1000);
-  if (s < 60) return 'только что';
-  if (s < 3600) return Math.floor(s / 60) + ' мин назад';
-  if (s < 86400) return Math.floor(s / 3600) + ' ч назад';
+  if (s < 60) return T('justNow');
+  if (s < 3600) return T('minAgo', Math.floor(s / 60));
+  if (s < 86400) return T('hourAgo', Math.floor(s / 3600));
+  const loc = document.documentElement.lang === 'ru' ? 'ru-RU' : 'en-US';
   const d = new Date(ts);
-  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) + ' ' +
-    d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleDateString(loc, { day: 'numeric', month: 'short' }) + ' ' +
+    d.toLocaleTimeString(loc, { hour: '2-digit', minute: '2-digit' });
 }
 
 async function renderHistory() {
@@ -82,14 +101,14 @@ async function renderHistory() {
     card.className = 'shot';
     card.innerHTML = `
       <div class="shot-thumb">
-        <span class="badge">${esc(SOURCE_LABELS[it.source] || it.source)}</span>
+        <span class="badge">${esc(sourceLabel(it.source))}</span>
         <div class="shot-actions">
-          <button class="sa-btn" data-act="copy" data-tip="Копировать">${ICONS.copy}</button>
-          <button class="sa-btn" data-act="path" data-tip="Путь">${ICONS.path}</button>
-          <button class="sa-btn" data-act="pin" data-tip="Закрепить">${ICONS.pin}</button>
-          <button class="sa-btn" data-act="ocr" data-tip="OCR">${ICONS.ocr}</button>
-          <button class="sa-btn" data-act="folder" data-tip="В папке">${ICONS.folder}</button>
-          <button class="sa-btn danger" data-act="del" data-tip="Удалить">${ICONS.trash}</button>
+          <button class="sa-btn" data-act="copy" data-tip="${esc(T('actCopy'))}">${ICONS.copy}</button>
+          <button class="sa-btn" data-act="path" data-tip="${esc(T('actPath'))}">${ICONS.path}</button>
+          <button class="sa-btn" data-act="pin" data-tip="${esc(T('actPin'))}">${ICONS.pin}</button>
+          <button class="sa-btn" data-act="ocr" data-tip="${esc(T('actOcr'))}">${ICONS.ocr}</button>
+          <button class="sa-btn" data-act="folder" data-tip="${esc(T('actFolder'))}">${ICONS.folder}</button>
+          <button class="sa-btn danger" data-act="del" data-tip="${esc(T('actDelete'))}">${ICONS.trash}</button>
         </div>
       </div>
       <div class="shot-meta">
@@ -129,8 +148,8 @@ function renderMcp() {
   $('#mcpDot').className = 'dot ' + (mcp.running ? 'on' : 'off');
   $('#mcpEnabled').checked = st.enabled;
   $('#mcpStatusText').innerHTML = mcp.running
-    ? `Работает на <b>http://127.0.0.1:${mcp.port}/mcp</b>`
-    : (st.enabled ? 'Не запустился — возможно, порт занят' : 'Выключен');
+    ? T('mcpRunning', Number(mcp.port))
+    : (st.enabled ? esc(T('mcpNotRunning')) : esc(T('mcpDisabled')));
   $('#mcpCmd').textContent = `claude mcp add shotik --transport http http://127.0.0.1:${st.port}/mcp`;
   $('#setPort').value = st.port;
 }
@@ -142,8 +161,8 @@ $('#mcpEnabled').addEventListener('change', async (e) => {
 $('#btnCopyCmd').addEventListener('click', () => {
   navigator.clipboard.writeText($('#mcpCmd').textContent);
   const b = $('#btnCopyCmd');
-  b.textContent = 'Скопировано ✓';
-  setTimeout(() => { b.textContent = 'Копировать'; }, 1500);
+  b.textContent = T('btnCopiedCmd');
+  setTimeout(() => { b.textContent = T('btnCopyCmd'); }, 1500);
 });
 
 function fmtTime(ts) {
@@ -152,7 +171,7 @@ function fmtTime(ts) {
 
 function logItemHtml(e) {
   return `<span class="t">${esc(fmtTime(e.ts))}</span><span class="name">${esc(e.tool)}</span>` +
-    `<span class="ms">${Number(e.ms)} мс</span><span class="${e.ok ? 'ok' : 'err'}">${e.ok ? '✓' : '✕'}</span>`;
+    `<span class="ms">${esc(T('logMs', Number(e.ms)))}</span><span class="${e.ok ? 'ok' : 'err'}">${e.ok ? '✓' : '✕'}</span>`;
 }
 
 function renderMcpLog(entries) {
@@ -187,12 +206,14 @@ function renderSettings() {
   $('#setToast').checked = s.showToast;
   $('#setDownscale').checked = s.downscaleForAI;
   $('#setAutostart').checked = s.launchAtStartup;
+  $('#setLanguage').value = s.language || 'system';
   $('#hkRegion').value = s.hotkeys.region || '';
   $('#hkFull').value = s.hotkeys.fullscreen || '';
   $('#hkRepeat').value = s.hotkeys.repeatLast || '';
   $('#kbdRegion').textContent = short(s.hotkeys.region);
   $('#kbdFull').textContent = short(s.hotkeys.fullscreen);
   $('#kbdRepeat').textContent = short(s.hotkeys.repeatLast);
+  $('#emptyBody').innerHTML = T('emptyBody', `<kbd>${esc(short(s.hotkeys.region))}</kbd>`);
   renderHotkeyWarn();
 }
 
@@ -202,8 +223,7 @@ function renderHotkeyWarn() {
   const warn = $('#hotkeyWarn');
   if (state.hotkeyErrors && state.hotkeyErrors.length) {
     warn.hidden = false;
-    warn.textContent = '⚠ Не удалось зарегистрировать: ' +
-      state.hotkeyErrors.map((h) => h.acc).join(', ') + ' — сочетание занято другим приложением.';
+    warn.textContent = T('hkWarn', state.hotkeyErrors.map((h) => h.acc).join(', '));
   } else warn.hidden = true;
 }
 
@@ -225,6 +245,10 @@ $('#setPort').addEventListener('change', (e) => {
   const p = Math.max(1024, Math.min(65535, Number(e.target.value) || 7464));
   applySettings({ mcp: { port: p } });
 });
+$('#setLanguage').addEventListener('change', async (e) => {
+  await applySettings({ language: e.target.value });
+  location.reload(); // re-render everything in the new language
+});
 
 $('#btnChooseDir').addEventListener('click', async () => {
   const dir = await window.shotik.chooseDir();
@@ -242,12 +266,12 @@ for (const [selr, key] of HK_FIELDS) {
   input.addEventListener('focus', () => {
     input.classList.add('recording');
     input.value = '';
-    input.placeholder = 'жми клавиши… (Esc — отмена, Del — убрать)';
+    input.placeholder = T('hkRecording');
   });
   input.addEventListener('blur', () => {
     input.classList.remove('recording');
     input.value = state.settings.hotkeys[key] || '';
-    input.placeholder = 'нажми сочетание';
+    input.placeholder = T('hkPlaceholder');
   });
   input.addEventListener('keydown', async (e) => {
     e.preventDefault();

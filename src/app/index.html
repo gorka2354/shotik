@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data:; style-src 'self' 'unsafe-inline'">
@@ -15,28 +15,28 @@
         <img src="../../assets/icon-64.png" alt="">
         <div>
           <div class="logo-name">Shotik</div>
-          <div class="logo-sub">скриншоты для людей и AI</div>
+          <div class="logo-sub" data-i18n="logoSub">screenshots for humans &amp; AI</div>
         </div>
       </div>
 
       <nav>
         <button class="nav-item active" data-page="history">
           <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="12" cy="12" r="3.5"/></svg>
-          Снимки
+          <span data-i18n="navShots">Shots</span>
         </button>
         <button class="nav-item" data-page="claude">
           <svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15z"/></svg>
-          Claude
+          <span data-i18n="navClaude">Claude</span>
           <span id="mcpDot" class="dot off"></span>
         </button>
         <button class="nav-item" data-page="settings">
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 00.34 1.87l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.87-.34 1.7 1.7 0 00-1 1.55V21a2 2 0 11-4 0v-.09a1.7 1.7 0 00-1-1.55 1.7 1.7 0 00-1.87.34l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.7 1.7 0 00.34-1.87 1.7 1.7 0 00-1.55-1H3a2 2 0 110-4h.09a1.7 1.7 0 001.55-1 1.7 1.7 0 00-.34-1.87l-.06-.06a2 2 0 112.83-2.83l.06.06a1.7 1.7 0 001.87.34h.09a1.7 1.7 0 001-1.55V3a2 2 0 114 0v.09a1.7 1.7 0 001 1.55 1.7 1.7 0 001.87-.34l.06-.06a2 2 0 112.83 2.83l-.06.06a1.7 1.7 0 00-.34 1.87v.09a1.7 1.7 0 001.55 1H21a2 2 0 110 4h-.09a1.7 1.7 0 00-1.55 1z"/></svg>
-          Настройки
+          <span data-i18n="navSettings">Settings</span>
         </button>
       </nav>
 
       <div id="sidebarFooter">
-        <span id="version">v0.1.0</span> · MIT
+        <span id="version">v0.2.1</span> · MIT
       </div>
     </aside>
 
@@ -44,21 +44,21 @@
       <!-- ============ HISTORY ============ -->
       <section id="page-history" class="page active">
         <div class="page-head">
-          <h1>Снимки</h1>
+          <h1 data-i18n="shotsTitle">Shots</h1>
           <div class="head-actions">
             <button class="btn primary" id="btnRegion">
               <svg viewBox="0 0 24 24"><path d="M4 8V6a2 2 0 012-2h2"/><path d="M16 4h2a2 2 0 012 2v2"/><path d="M20 16v2a2 2 0 01-2 2h-2"/><path d="M8 20H6a2 2 0 01-2-2v-2"/><rect x="8.5" y="8.5" width="7" height="7" rx="1"/></svg>
-              Область <kbd id="kbdRegion">PrtSc</kbd>
+              <span data-i18n="btnRegion">Area</span> <kbd id="kbdRegion">PrtSc</kbd>
             </button>
             <button class="btn" id="btnFull">
               <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/></svg>
-              Экран <kbd id="kbdFull">Ctrl+PrtSc</kbd>
+              <span data-i18n="btnFull">Screen</span> <kbd id="kbdFull">Ctrl+PrtSc</kbd>
             </button>
-            <button class="btn" id="btnRepeat" data-tip="Переснять последнюю область — те же координаты, свежие пиксели">
+            <button class="btn" id="btnRepeat" data-i18n-tip="tipRepeatBtn">
               <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 019-9 9 9 0 016.7 3L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 01-9 9 9 9 0 01-6.7-3L3 16"/><path d="M3 21v-5h5"/></svg>
-              Переснять <kbd id="kbdRepeat">Shift+PrtSc</kbd>
+              <span data-i18n="btnRepeat">Repeat</span> <kbd id="kbdRepeat">Shift+PrtSc</kbd>
             </button>
-            <button class="btn ghost" id="btnOpenDir" data-tip="Открыть папку со снимками">
+            <button class="btn ghost" id="btnOpenDir" data-i18n-tip="tipOpenDir">
               <svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2.5h8a2 2 0 012 2V17a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
             </button>
           </div>
@@ -70,19 +70,19 @@
           <div class="empty-icon">
             <svg viewBox="0 0 24 24"><path d="M4 8V6a2 2 0 012-2h2"/><path d="M16 4h2a2 2 0 012 2v2"/><path d="M20 16v2a2 2 0 01-2 2h-2"/><path d="M8 20H6a2 2 0 01-2-2v-2"/><rect x="8.5" y="8.5" width="7" height="7" rx="1"/></svg>
           </div>
-          <h2>Пока нет снимков</h2>
-          <p>Нажми <kbd>PrtSc</kbd> в любой момент — выдели область, и она окажется<br>в буфере обмена и в этой галерее.</p>
+          <h2 data-i18n="emptyTitle">No screenshots yet</h2>
+          <p id="emptyBody"></p>
         </div>
       </section>
 
       <!-- ============ CLAUDE ============ -->
       <section id="page-claude" class="page">
-        <div class="page-head"><h1>Claude видит твой экран</h1></div>
+        <div class="page-head"><h1 data-i18n="claudePageTitle">Claude can see your screen</h1></div>
 
         <div class="card" id="mcpCard">
           <div class="card-row">
             <div>
-              <div class="card-title">Встроенный MCP-сервер</div>
+              <div class="card-title" data-i18n="mcpCardTitle">Built-in MCP server</div>
               <div class="card-sub" id="mcpStatusText">…</div>
             </div>
             <label class="switch"><input type="checkbox" id="mcpEnabled"><span></span></label>
@@ -90,91 +90,96 @@
         </div>
 
         <div class="card">
-          <div class="card-title">Подключение к Claude Code <span class="step">один раз</span></div>
+          <div class="card-title"><span data-i18n="connectTitle">Connect to Claude Code</span> <span class="step" data-i18n="connectOnce">one time</span></div>
           <div class="cmd-row">
             <code id="mcpCmd">claude mcp add shotik --transport http http://127.0.0.1:7464/mcp</code>
-            <button class="btn small" id="btnCopyCmd">Копировать</button>
+            <button class="btn small" id="btnCopyCmd" data-i18n="btnCopyCmd">Copy</button>
           </div>
-          <div class="card-sub">После этого Claude сможет сам делать скриншоты твоего экрана.</div>
+          <div class="card-sub" data-i18n="connectSub">After this, Claude can take screenshots of your screen by itself.</div>
         </div>
 
         <div class="card">
-          <div class="card-title">Что умеет Claude через Shotik</div>
+          <div class="card-title" data-i18n="toolsTitle">What Claude can do through Shotik</div>
           <ul class="tool-list">
-            <li><code>take_screenshot</code> — посмотреть на экран прямо сейчас</li>
-            <li><code>ask_user_to_select_region</code> — попросить тебя выделить область</li>
-            <li><code>get_last_screenshot</code> — взять твой последний снимок</li>
+            <li><code>take_screenshot</code> — <span data-i18n="toolDesc1">look at the screen right now</span></li>
+            <li><code>ask_user_to_select_region</code> — <span data-i18n="toolDesc2">ask you to select an area</span></li>
+            <li><code>get_last_screenshot</code> — <span data-i18n="toolDesc3">grab your latest screenshot</span></li>
             <li><code>take_screenshot_region</code> · <code>list_screenshots</code> · <code>list_displays</code></li>
           </ul>
-          <div class="hint-box">
-            💡 Скопированный снимок вставляется в Claude Code как картинка (<kbd>Ctrl+V</kbd>),
-            а в обычный терминал — как путь к файлу. Это Smart Clipboard: оба формата кладутся в буфер сразу.
-          </div>
+          <div class="hint-box" id="hintBox"></div>
         </div>
 
         <div class="card">
-          <div class="card-title">Журнал вызовов</div>
-          <div id="mcpLog" class="log"><div class="log-empty">Claude ещё не обращался к Shotik</div></div>
+          <div class="card-title" data-i18n="logTitle">Call log</div>
+          <div id="mcpLog" class="log"><div class="log-empty" data-i18n="logEmpty">Claude hasn’t called Shotik yet</div></div>
         </div>
       </section>
 
       <!-- ============ SETTINGS ============ -->
       <section id="page-settings" class="page">
-        <div class="page-head"><h1>Настройки</h1></div>
+        <div class="page-head"><h1 data-i18n="settingsTitle">Settings</h1></div>
 
         <div class="card">
-          <div class="card-title">Горячие клавиши</div>
+          <div class="card-title" data-i18n="hkTitle">Hotkeys</div>
           <div class="set-row">
-            <div><div class="set-name">Снимок области</div><div class="set-sub">выделение с аннотациями</div></div>
-            <input class="hotkey" id="hkRegion" readonly placeholder="нажми сочетание">
+            <div><div class="set-name" data-i18n="hkRegion">Capture area</div><div class="set-sub" data-i18n="hkRegionSub">selection with annotations</div></div>
+            <input class="hotkey" id="hkRegion" readonly data-i18n-ph="hkPlaceholder">
           </div>
           <div class="set-row">
-            <div><div class="set-name">Весь экран</div><div class="set-sub">монитор под курсором, сразу в буфер</div></div>
-            <input class="hotkey" id="hkFull" readonly placeholder="нажми сочетание">
+            <div><div class="set-name" data-i18n="hkFull">Full screen</div><div class="set-sub" data-i18n="hkFullSub">monitor under the cursor, straight to clipboard</div></div>
+            <input class="hotkey" id="hkFull" readonly data-i18n-ph="hkPlaceholder">
           </div>
           <div class="set-row">
-            <div><div class="set-name">Переснять область</div><div class="set-sub">та же область, свежие пиксели — идеально для итераций с Claude</div></div>
-            <input class="hotkey" id="hkRepeat" readonly placeholder="нажми сочетание">
+            <div><div class="set-name" data-i18n="hkRepeat">Repeat last area</div><div class="set-sub" data-i18n="hkRepeatSub">same area, fresh pixels — perfect for iterating with Claude</div></div>
+            <input class="hotkey" id="hkRepeat" readonly data-i18n-ph="hkPlaceholder">
           </div>
           <div class="set-sub" id="hotkeyWarn" hidden></div>
         </div>
 
         <div class="card">
-          <div class="card-title">Сохранение</div>
+          <div class="card-title" data-i18n="saveTitle">Saving</div>
           <div class="set-row">
-            <div><div class="set-name">Папка снимков</div><div class="set-sub" id="saveDirLabel">…</div></div>
-            <button class="btn small" id="btnChooseDir">Изменить</button>
+            <div><div class="set-name" data-i18n="saveDir">Screenshots folder</div><div class="set-sub" id="saveDirLabel">…</div></div>
+            <button class="btn small" id="btnChooseDir" data-i18n="btnChange">Change</button>
           </div>
           <div class="set-row">
-            <div><div class="set-name">Автосохранение</div><div class="set-sub">каждый снимок сразу пишется в папку</div></div>
+            <div><div class="set-name" data-i18n="autoSave">Auto-save</div><div class="set-sub" data-i18n="autoSaveSub">every shot is written to the folder immediately</div></div>
             <label class="switch"><input type="checkbox" id="setAutoSave"><span></span></label>
           </div>
         </div>
 
         <div class="card">
-          <div class="card-title">Буфер обмена и удобства</div>
+          <div class="card-title" data-i18n="clipTitle">Clipboard &amp; convenience</div>
           <div class="set-row">
-            <div><div class="set-name">Smart Clipboard</div><div class="set-sub">картинка + путь к файлу в буфере одновременно</div></div>
+            <div><div class="set-name" data-i18n="smartClip">Smart Clipboard</div><div class="set-sub" data-i18n="smartClipSub">image + file path in the clipboard at the same time</div></div>
             <label class="switch"><input type="checkbox" id="setSmartClip"><span></span></label>
           </div>
           <div class="set-row">
-            <div><div class="set-name">Уведомления</div><div class="set-sub">тост после каждого снимка</div></div>
+            <div><div class="set-name" data-i18n="toasts">Notifications</div><div class="set-sub" data-i18n="toastsSub">toast after every capture</div></div>
             <label class="switch"><input type="checkbox" id="setToast"><span></span></label>
           </div>
           <div class="set-row">
-            <div><div class="set-name">Сжимать снимки для AI</div><div class="set-sub">MCP отдаёт ≤1600px — быстрее и дешевле для Claude</div></div>
+            <div><div class="set-name" data-i18n="downscale">Compress shots for AI</div><div class="set-sub" data-i18n="downscaleSub">MCP serves ≤1600px — faster and cheaper for Claude</div></div>
             <label class="switch"><input type="checkbox" id="setDownscale"><span></span></label>
           </div>
           <div class="set-row">
-            <div><div class="set-name">Запуск с Windows</div><div class="set-sub">тихий старт в трей</div></div>
+            <div><div class="set-name" data-i18n="autostart">Start with Windows</div><div class="set-sub" data-i18n="autostartSub">silent start in the tray</div></div>
             <label class="switch"><input type="checkbox" id="setAutostart"><span></span></label>
+          </div>
+          <div class="set-row">
+            <div><div class="set-name" data-i18n="language">Language</div><div class="set-sub" data-i18n="languageSub">interface language</div></div>
+            <select class="select" id="setLanguage">
+              <option value="system" data-i18n="langSystem">System</option>
+              <option value="en">English</option>
+              <option value="ru">Русский</option>
+            </select>
           </div>
         </div>
 
         <div class="card">
-          <div class="card-title">MCP-сервер</div>
+          <div class="card-title" data-i18n="mcpSettingsTitle">MCP server</div>
           <div class="set-row">
-            <div><div class="set-name">Порт</div><div class="set-sub">перезапустится автоматически</div></div>
+            <div><div class="set-name" data-i18n="port">Port</div><div class="set-sub" data-i18n="portSub">restarts automatically</div></div>
             <input class="port" id="setPort" type="number" min="1024" max="65535">
           </div>
         </div>

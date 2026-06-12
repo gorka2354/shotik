@@ -24,5 +24,6 @@ contextBridge.exposeInMainWorld('shotik', {
   onHistoryChanged: (cb) => ipcRenderer.on('history:changed', cb),
   onMcpLog: (cb) => ipcRenderer.on('mcp:log', (_e, entry) => cb(entry)),
   getTheme: invoke('theme:get'),
+  getI18n: invoke('i18n:get'),
   onThemeChanged: (cb) => ipcRenderer.on('theme:changed', (_e, t) => cb(t)),
 });

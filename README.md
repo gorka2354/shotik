@@ -5,8 +5,12 @@
 <h1 align="center">Shotik</h1>
 
 <p align="center">
-  <b>Скриншоты для людей и AI</b> · красивый open-source скриншотер для Windows<br>
-  со встроенным MCP-сервером — Claude может видеть твой экран
+  <b>Screenshots for humans & AI</b> · a beautiful open-source screenshot tool for Windows<br>
+  with a built-in MCP server — Claude can see your screen
+</p>
+
+<p align="center">
+  <a href="README.ru.md">Русская версия →</a>
 </p>
 
 <p align="center">
@@ -20,82 +24,89 @@
 ---
 
 <p align="center">
-  <img src="docs/demo.gif" width="88%" alt="Демо: hover-snap окна, аннотации, копирование">
+  <img src="docs/demo.gif" width="88%" alt="Demo: window hover-snap, annotations, copy">
 </p>
-<p align="center"><i>наведение подсвечивает окно → клик → стрелка, рамка, пикселизация, маркеры, текст → Enter → в буфере</i></p>
+<p align="center"><i>hover highlights a window → click → arrow, box, pixelate, markers, text → Enter → in your clipboard</i></p>
 
 <p align="center">
-  <img src="docs/app-dark.png" width="46%" alt="Тёмная тема">
-  <img src="docs/app-light.png" width="46%" alt="Светлая тема">
+  <img src="docs/app-dark.png" width="46%" alt="Dark theme">
+  <img src="docs/app-light.png" width="46%" alt="Light theme">
 </p>
-<p align="center"><i>UI следует системной теме и акцентному цвету Windows</i></p>
+<p align="center"><i>the UI follows your system theme and Windows accent color · English & Russian interface</i></p>
 
-## Зачем ещё один скриншотер?
+## Why another screenshot tool?
 
-Shotik — это ShareX-стиль захвата областей с аннотациями, но построенный вокруг двух идей:
+Shotik is ShareX-style region capture with annotations, built around two ideas:
 
-1. **AI-first.** Скриншоты сегодня чаще показывают не людям, а Claude/ChatGPT в консоли.
-   Shotik делает это нулевым трением.
-2. **Скорость без диалогов.** Снял → уже в буфере, уже на диске, уже можно вставлять.
+1. **AI-first.** Screenshots today often go to Claude/ChatGPT in a console, not to people.
+   Shotik makes that zero-friction.
+2. **Speed without dialogs.** Capture → already in the clipboard, already on disk, ready to paste.
 
-## Фишки
+## Features
 
 ### ✦ Smart Clipboard
-После каждого снимка в буфере обмена лежат **оба формата сразу**: PNG-картинка и текстовый путь к файлу.
-`Ctrl+V` в Claude Code вставит изображение, `Ctrl+V` в обычный терминал — путь. Никаких переключений.
+After every capture the clipboard holds **both formats at once**: the PNG image and the file path as text.
+`Ctrl+V` into Claude Code pastes the image; `Ctrl+V` into a plain terminal pastes the path. No switching.
 
-### ✦ Встроенный MCP-сервер
-Подключи один раз:
+### ✦ Built-in MCP server
+Connect once:
 
 ```bash
 claude mcp add shotik --transport http http://127.0.0.1:7464/mcp
 ```
 
-и Claude получает инструменты:
+and Claude gets these tools:
 
-| Инструмент | Что делает |
+| Tool | What it does |
 |---|---|
-| `take_screenshot` | посмотреть на экран прямо сейчас |
-| `ask_user_to_select_region` | открыть оверлей, чтобы **ты** показал область |
-| `get_last_screenshot` | взять твой последний снимок |
-| `take_screenshot_region` | снять конкретный прямоугольник |
-| `list_screenshots`, `list_displays` | история и мониторы |
+| `take_screenshot` | look at the screen right now |
+| `ask_user_to_select_region` | open the overlay so **you** point at the area |
+| `get_last_screenshot` | grab your latest shot |
+| `take_screenshot_region` | capture a specific rectangle |
+| `list_screenshots`, `list_displays` | history and monitors |
 
-Скажи «посмотри на мой экран» — и Claude видит. Скажи «посмотри сюда» — и просто обведи место мышкой.
+Say “look at my screen” — and Claude sees it. Say “look here” — and just draw a box with your mouse.
 
-### ✦ Переснять область (`Shift+PrtSc`)
-Та же область, свежие пиксели, мгновенно, без оверлея. Идеально для итераций:
-поправил CSS → `Shift+PrtSc` → `Ctrl+V` в Claude → «теперь видишь?». Работает даже после перезапуска.
+### ✦ Repeat last area (`Shift+PrtSc`)
+Same region, fresh pixels, instant, no overlay. Perfect for iteration loops:
+fix the CSS → `Shift+PrtSc` → `Ctrl+V` to Claude → “see it now?”. Survives restarts.
 
-### ✦ Оверлей с аннотациями (Flameshot-style)
-Заморозка экрана, лупа с пикселями и HEX-цветом, рамки, стрелки, перо, маркер,
-**пикселизация секретов**, текст, нумерованные маркеры — всё прямо в оверлее, до сохранения.
+### ✦ Flameshot-style overlay with annotations
+Freeze-frame, magnifier with pixel-perfect HEX picker, boxes, arrows, pen, highlighter,
+**pixelate your secrets**, text, numbered markers — all inside the overlay, before saving.
+Hovering highlights the window under the cursor; click captures it (hold `Alt` to disable snapping).
 
-### ✦ И остальное
-- **Pin** — прилепить снимок поверх всех окон точно там, где вырезал (колесо = зум, правый клик = меню)
-- **OCR** — распознать текст из выделения через встроенный Windows OCR (русский + английский, офлайн)
-- **Пипетка** — `C` в оверлее копирует HEX цвета пикселя
-- История с галереей, тосты с превью, мульти-монитор, HiDPI
-- **Родной вид**: светлая/тёмная тема и акцентный цвет берутся из системы и меняются на лету
+### ✦ PowerToys Command Palette / Win+S
+The installer adds Start Menu commands that show up in PowerToys Command Palette and Windows search:
+**Shotik Area Screenshot**, **Shotik Full Screen**, **Shotik Repeat Last Area**.
+CLI works too: `Shotik.exe --capture region|full|repeat`.
 
-## Горячие клавиши
+### ✦ And the rest
+- **Pin** a shot on top of every window exactly where you cut it (wheel = zoom, right-click = menu)
+- **OCR** the selection via built-in Windows OCR (offline, your installed languages)
+- **Color picker** — `C` in the overlay copies the pixel HEX
+- History gallery, toasts with previews, multi-monitor, HiDPI
+- **Native look**: light/dark theme and accent color come from the OS and switch live
+- **English & Russian** UI (follows the system language, switchable in Settings)
 
-| Действие | По умолчанию |
-|---|---|
-| Снимок области | `PrtSc` |
-| Весь экран (монитор под курсором) | `Ctrl+PrtSc` |
-| Переснять последнюю область | `Shift+PrtSc` |
+## Hotkeys
 
-В оверлее: `Enter`/двойной клик — копировать · `Ctrl+S` — сохранить как · `P` — pin · `T` — OCR ·
-`A` — копировать для Claude · `F` — весь экран · `1..0` — инструменты · `[` `]` — толщина ·
-`Ctrl+Z` — отмена · стрелки — сдвиг выделения · `Esc` — выход.
+| Action | Windows | macOS |
+|---|---|---|
+| Capture area | `PrtSc` | `⌘⇧2` |
+| Full screen (monitor under cursor) | `Ctrl+PrtSc` | `⌘⇧1` |
+| Repeat last area | `Shift+PrtSc` | `⌘⇧7` |
 
-## Установка
+In the overlay: `Enter`/double-click — copy · `Ctrl+S` — save as · `P` — pin · `T` — OCR ·
+`A` — copy for Claude · `F` — whole screen · `1..0` — tools · `[` `]` — stroke width ·
+`Ctrl+Z` — undo · arrows — nudge selection · `Esc` — cancel.
 
-**Готовые сборки:** [Releases](https://github.com/gorka2354/shotik/releases) →
-`Shotik-Setup-x.x.x.exe` (установщик с ярлыками) или `Shotik-x.x.x-portable.exe` (один файл, без установки).
+## Install
 
-**Из исходников:**
+**Prebuilt:** [Releases](https://github.com/gorka2354/shotik/releases) →
+`Shotik-Setup-x.x.x.exe` (installer with shortcuts) or `Shotik-x.x.x-portable.exe` (single file, no install).
+
+**From source:**
 
 ```bash
 git clone https://github.com/gorka2354/shotik && cd shotik
@@ -103,46 +114,54 @@ npm install
 npm start
 ```
 
-Требуется Windows 10/11 (для сборки из исходников — Node.js ≥ 20). Приложение живёт в трее; закрытие окна сворачивает его, выход — через меню трея.
+Windows 10/11 required (Node.js ≥ 20 for building from source). The app lives in the tray;
+closing the window minimizes it, quit via the tray menu.
 
-**macOS (experimental):** в Releases собираются `.dmg` (arm64 и x64). Хоткеи по умолчанию — `⌘⇧2` (область), `⌘⇧1` (экран), `⌘⇧7` (переснять); OCR — через Apple Vision; hover-snap окон пока только на Windows. Сборка не подписана: при первом запуске — правый клик → «Открыть», и выдай разрешение «Запись экрана» в настройках конфиденциальности. Маков у мейнтейнеров нет — фидбек и PR очень welcome.
+**macOS (experimental):** `.dmg` builds (arm64 & x64) are produced in Releases. Default hotkeys
+are `⌘⇧2` / `⌘⇧1` / `⌘⇧7`; OCR uses Apple Vision; window hover-snap is Windows-only for now.
+Builds are unsigned: right-click → Open on first launch, and grant Screen Recording permission.
+The maintainers have no Mac — feedback and PRs are very welcome.
 
-**Мониторы:** мультимонитор и разные разрешения поддерживаются полностью (захват и оверлей считаются per-display, HiDPI учитывается). Известное ограничение: на конфигурациях со *смешанным* DPI-масштабом подсветка окон (hover-snap) может смещаться на пару пикселей.
+**Microsoft Store:** packaging is ready (`npm run dist:store` builds the MSIX), pending a
+Partner Center listing — see [docs/STORE.md](docs/STORE.md).
 
-CLI: `electron . --capture region|full` — снять из командной строки; `--hidden` — тихий старт в трей.
+**Monitors:** multi-monitor and mixed resolutions are fully supported (capture and overlay are
+computed per display, HiDPI-aware). Known limitation: with *mixed* DPI scale factors the window
+hover-snap highlight can be a couple of pixels off.
 
-## Для контрибьюторов: ghost-режим
+## For contributors: ghost mode
 
-E2E-тесты не трогают рабочий стол: окна уезжают за экран, вместо рабочего стола подставляется фикстура,
-глобальные хоткеи не регистрируются, а управление идёт через HTTP-эндпоинты `/test/*`:
+E2E tests never touch your desktop: windows are placed off-screen, the desktop is replaced by a
+fixture image, global hotkeys are not registered, and everything is driven over HTTP `/test/*`
+endpoints:
 
 ```powershell
 $env:SHOTIK_TEST='1'; $env:SHOTIK_GHOST='1'
 $env:SHOTIK_FAKE_SCREEN='test\fake-screen.png'
 npm start -- --hidden
 # POST http://127.0.0.1:7464/test/trigger {"mode":"region"}
-# POST http://127.0.0.1:7464/test/input {"events":[...]}   — синтетический ввод
-# POST http://127.0.0.1:7464/test/capture-page              — снимок UI окна
+# POST http://127.0.0.1:7464/test/input {"events":[...]}   — synthetic input
+# POST http://127.0.0.1:7464/test/capture-page              — window UI snapshot
 ```
 
-Демо-GIF для README тоже снимается роботом: `node test/film-cinematic.js` ведёт мышь
-с easing-шагами и пишет ~200 кадров + манифест, а `node test/render-camera.js` накладывает
-виртуальную камеру (ленивое слежение за курсором + наезды на ключевые места) и кодирует GIF.
-Простой покадровый вариант: `film-demo.js` + `make-gif.js`.
+The README demo GIF is robot-filmed too: `node test/film-cinematic.js` drives the cursor with
+eased steps (~200 frames + a manifest), and `node test/render-camera.js` applies a virtual
+follow-camera (lazy cursor tracking + push-ins) and encodes the GIF.
+Simple storyboard variant: `film-demo.js` + `make-gif.js`.
 
-## Архитектура
+## Architecture
 
 ```
 src/
-  main/        главный процесс: захват (desktopCapturer), история, OCR (WinRT),
-               MCP-сервер (zero-deps streamable HTTP), окна, настройки
-  overlay/     оверлей выделения: canvas-рендер, аннотации, тулбар
-  app/         главное окно: галерея, Claude-страница, настройки
-  pin/ toast/  закреплённые снимки и уведомления
+  main/        main process: capture (desktopCapturer), history, OCR (WinRT / Apple Vision),
+               MCP server (zero-deps streamable HTTP), windows, settings, i18n
+  overlay/     selection overlay: canvas rendering, annotations, toolbar
+  app/         main window: gallery, Claude page, settings
+  pin/ toast/  pinned shots and notifications
 ```
 
-Единственная зависимость — Electron. Без сборщиков, без фреймворков, без нативных модулей.
+The only runtime dependency is Electron. No bundlers, no frameworks, no native modules.
 
-## Лицензия
+## License
 
 MIT

@@ -284,6 +284,12 @@ h1 { font-family: var(--font-display); font-size: 22px; font-weight: 600; }
   transition: border-color .12s;
 }
 .port { width: 110px; }
+.select {
+  background: var(--code-bg); border: 1px solid var(--stroke-strong);
+  border-radius: var(--radius-control); color: var(--text);
+  font-family: inherit; font-size: 13px; padding: 7px 10px; width: 150px; outline: none;
+}
+.select:focus { border-color: var(--accent); }
 .hotkey:focus, .port:focus { border-bottom-color: var(--accent); }
 .hotkey.recording { border-bottom-color: #b58900; }
 #hotkeyWarn { color: #b58900; padding-top: 10px; font-size: 12px; }

@@ -28,6 +28,39 @@ const NEED_SIZE = ['pen', 'arrow', 'line', 'rect', 'ellipse', 'highlight', 'text
 const NEED_COLOR = ['pen', 'arrow', 'line', 'rect', 'ellipse', 'highlight', 'text', 'counter'];
 
 let ACCENT = '#0067C0';        // OS accent color, fetched at boot
+
+/* localized chrome: hint chips, tooltips, badge */
+window.shotik.getI18n().then(({ dict }) => {
+  const d = (k) => dict[k] || k;
+  hintEl.innerHTML = '';
+  for (const [b, desc] of [
+    ['hintDrag', 'hintDragDesc'], ['hintClick', 'hintClickDesc'], ['hintAlt', 'hintAltDesc'],
+    ['hintColor', 'hintColorDesc'], ['hintEsc', 'hintEscDesc'],
+  ]) {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    const bb = document.createElement('b');
+    bb.textContent = d(b);
+    chip.appendChild(bb);
+    chip.appendChild(document.createTextNode(' — ' + d(desc)));
+    hintEl.appendChild(chip);
+  }
+  claudeBadge.childNodes.forEach((n) => { if (n.nodeType === 3) n.textContent = ''; });
+  claudeBadge.appendChild(document.createTextNode(' ' + d('claudeBadge')));
+  const tips = {
+    move: 'toolMove', pen: 'toolPen', arrow: 'toolArrow', line: 'toolLine', rect: 'toolRect',
+    ellipse: 'toolEllipse', highlight: 'toolHighlight', blur: 'toolBlur', text: 'toolText', counter: 'toolCounter',
+  };
+  document.querySelectorAll('#toolButtons .tb-btn').forEach((b) => b.setAttribute('data-tip', d(tips[b.dataset.tool])));
+  const byId = {
+    btnUndo: 'tipUndo', btnRedo: 'tipRedo', btnOcr: 'tipOcr', btnPin: 'tipPin',
+    btnSave: 'tipSave', btnClaude: 'tipClaude', btnCopy: 'tipCopy', btnCancel: 'tipCancel',
+  };
+  for (const [id, key] of Object.entries(byId)) document.getElementById(id).setAttribute('data-tip', d(key));
+  const sizeTips = { S: 'tipThin', M: 'tipMedium', L: 'tipThick' };
+  document.querySelectorAll('.size-btn').forEach((b) => b.setAttribute('data-tip', d(sizeTips[b.dataset.size])));
+});
+
 window.shotik.getTheme().then((t) => {
   ACCENT = t.accent;
   const n = parseInt(t.accent.slice(1), 16);

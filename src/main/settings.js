@@ -23,6 +23,7 @@ const DEFAULTS = () => ({
     repeatLast: 'Shift+PrintScreen',
   },
   mcp: { enabled: true, port: 7464 },
+  language: 'system', // 'system' | 'en' | 'ru'
   launchAtStartup: false,
   downscaleForAI: true, // MCP screenshots resized to <=1600px for token economy
   lastRegion: null, // remembered for the "repeat last region" hotkey

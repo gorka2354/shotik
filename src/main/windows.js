@@ -157,21 +157,22 @@ ipcMain.on('pin:reset', (_e, id) => {
 ipcMain.on('pin:menu', (e, id) => {
   const p = pins.get(id);
   if (!p || p.win.isDestroyed()) return;
+  const { t } = require('./i18n');
   const menu = Menu.buildFromTemplate([
-    { label: 'Копировать изображение', click: () => clipboard.writeImage(nativeImage.createFromPath(p.file)) },
-    { label: 'Сохранить как…', click: async () => {
+    { label: t('pinCopy'), click: () => clipboard.writeImage(nativeImage.createFromPath(p.file)) },
+    { label: t('pinSaveAs'), click: async () => {
         const r = await dialog.showSaveDialog(p.win, { defaultPath: path.basename(p.file), filters: [{ name: 'PNG', extensions: ['png'] }] });
         if (!r.canceled && r.filePath) fs.copyFileSync(p.file, r.filePath);
       } },
-    { label: 'Открыть в папке', click: () => shell.showItemInFolder(p.file) },
+    { label: t('pinReveal'), click: () => shell.showItemInFolder(p.file) },
     { type: 'separator' },
     ...[100, 85, 70, 50].map((op) => ({
-      label: `Прозрачность ${op}%`, type: 'radio', checked: Math.round(p.win.getOpacity() * 100) === op,
+      label: t('pinOpacity', op), type: 'radio', checked: Math.round(p.win.getOpacity() * 100) === op,
       click: () => p.win.setOpacity(op / 100),
     })),
     { type: 'separator' },
-    { label: 'Исходный размер (100%)', click: () => ipcMain.emit('pin:reset', null, id) },
-    { label: 'Закрыть', click: () => p.win.close() },
+    { label: t('pinReset'), click: () => ipcMain.emit('pin:reset', null, id) },
+    { label: t('pinClose'), click: () => p.win.close() },
   ]);
   menu.popup({ window: p.win });
 });

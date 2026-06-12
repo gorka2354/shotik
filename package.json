@@ -1,7 +1,7 @@
 {
   "name": "shotik",
   "productName": "Shotik",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Beautiful open-source screenshot tool with built-in MCP server — let Claude see your screen",
   "main": "src/main/main.js",
   "license": "MIT",
@@ -14,7 +14,8 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "dist": "electron-builder --win"
+    "dist": "electron-builder --win",
+    "dist:store": "electron-builder --win appx"
   },
   "devDependencies": {
     "electron": "^33.0.0",
@@ -58,7 +59,19 @@
     "nsis": {
       "oneClick": true,
       "artifactName": "Shotik-Setup-${version}.exe",
-      "shortcutName": "Shotik"
+      "shortcutName": "Shotik",
+      "include": "build/installer.nsh"
+    },
+    "appx": {
+      "applicationId": "Shotik",
+      "identityName": "REPLACE.WithIdentityFromPartnerCenter",
+      "publisher": "CN=REPLACE-WITH-PUBLISHER-ID-FROM-PARTNER-CENTER",
+      "publisherDisplayName": "gorka2354",
+      "backgroundColor": "#202020",
+      "languages": [
+        "en-US",
+        "ru-RU"
+      ]
     },
     "portable": {
       "artifactName": "Shotik-${version}-portable.exe"
@@ -70,7 +83,10 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["arm64", "x64"]
+          "arch": [
+            "arm64",
+            "x64"
+          ]
         }
       ]
     },

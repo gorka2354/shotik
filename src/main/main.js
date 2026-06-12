@@ -13,6 +13,8 @@ const ocr = require('./ocr');
 const mcp = require('./mcp');
 const windows = require('./windows');
 const theme = require('./theme');
+const i18n = require('./i18n');
+const { t } = i18n;
 
 const TEST_MODE = process.env.SHOTIK_TEST === '1' || process.argv.includes('--test');
 const GHOST = process.env.SHOTIK_GHOST === '1'; // invisible testing: no hotkeys, off-screen windows
@@ -35,6 +37,7 @@ if (!gotLock) {
     const mode = cliCaptureMode(argv);
     if (mode === 'region') triggerRegion();
     else if (mode === 'full') triggerFull();
+    else if (mode === 'repeat') triggerRepeat();
     else windows.createMainWindow({ show: true });
   });
 }
@@ -76,8 +79,8 @@ async function handleOverlayResult(res) {
       if (st.autoSave) entry = history.savePng(res.png, { source: 'region' });
       copyToClipboard(res.png, entry ? entry.file : null);
       if (st.showToast) windows.showToast({
-        kind: 'image', title: 'Скопировано в буфер',
-        body: entry ? path.basename(entry.file) : 'Без сохранения',
+        kind: 'image', title: t('copiedTitle'),
+        body: entry ? path.basename(entry.file) : t('noSave'),
         thumb: entry ? entry.thumb : null, file: entry ? entry.file : null,
       });
       break;
@@ -86,8 +89,8 @@ async function handleOverlayResult(res) {
       entry = history.savePng(res.png, { source: 'region' });
       clipboard.write({ image: nativeImage.createFromBuffer(res.png), text: entry.file });
       if (st.showToast) windows.showToast({
-        kind: 'claude', title: 'Готово для Claude',
-        body: 'Ctrl+V в консоль — вставится картинка или путь',
+        kind: 'claude', title: t('claudeTitle'),
+        body: t('claudeBody'),
         thumb: entry.thumb, file: entry.file,
       });
       break;
@@ -100,7 +103,7 @@ async function handleOverlayResult(res) {
       if (!r.canceled && r.filePath) {
         fs.writeFileSync(r.filePath, res.png);
         copyToClipboard(res.png, r.filePath);
-        if (st.showToast) windows.showToast({ kind: 'image', title: 'Сохранено', body: r.filePath, file: r.filePath });
+        if (st.showToast) windows.showToast({ kind: 'image', title: t('savedTitle'), body: r.filePath, file: r.filePath });
         entry = { file: r.filePath };
       }
       break;
@@ -126,12 +129,12 @@ async function handleOverlayResult(res) {
         const text = await ocr.recognize(res.png);
         if (text) {
           clipboard.writeText(text);
-          windows.showToast({ kind: 'text', title: 'Текст распознан и скопирован', body: text.slice(0, 120) });
+          windows.showToast({ kind: 'text', title: t('ocrDoneTitle'), body: text.slice(0, 120) });
         } else {
-          windows.showToast({ kind: 'text', title: 'OCR', body: 'Текст не найден' });
+          windows.showToast({ kind: 'text', title: t('ocrTitle'), body: t('ocrNoText') });
         }
       } catch (e) {
-        windows.showToast({ kind: 'text', title: 'OCR не сработал', body: String(e.message || e).slice(0, 120) });
+        windows.showToast({ kind: 'text', title: t('ocrFailTitle'), body: String(e.message || e).slice(0, 120) });
       }
       break;
     }
@@ -151,8 +154,8 @@ function ensureScreenPermission() {
   } catch (_) { return true; }
   dialog.showMessageBox({
     type: 'info',
-    message: 'Shotik нужен доступ к записи экрана',
-    detail: 'Системные настройки → Конфиденциальность и безопасность → Запись экрана → включить Shotik, затем перезапустить приложение.',
+    message: t('permTitle'),
+    detail: t('permBody'),
   });
   return false;
 }
@@ -176,8 +179,8 @@ async function triggerFull() {
   const entry = st.autoSave ? history.savePng(png, { source: 'fullscreen' }) : null;
   copyToClipboard(png, entry ? entry.file : null);
   if (st.showToast) windows.showToast({
-    kind: 'image', title: 'Экран скопирован',
-    body: entry ? path.basename(entry.file) : 'Без сохранения',
+    kind: 'image', title: t('screenCopied'),
+    body: entry ? path.basename(entry.file) : t('noSave'),
     thumb: entry ? entry.thumb : null, file: entry ? entry.file : null,
   });
   if (entry) windows.sendToMain('history:changed');
@@ -189,14 +192,14 @@ async function triggerRepeat() {
   const st = settings.get();
   const r = await capture.captureLastRegion();
   if (!r) {
-    windows.showToast({ kind: 'text', title: 'Нет последней области', body: 'Сначала сделай снимок области (PrtSc)' });
+    windows.showToast({ kind: 'text', title: t('noLastTitle'), body: t('noLastBody', settings.get().hotkeys.region || 'PrtSc') });
     return null;
   }
   const entry = st.autoSave ? history.savePng(r.png, { source: 'repeat' }) : null;
   copyToClipboard(r.png, entry ? entry.file : null);
   if (st.showToast) windows.showToast({
-    kind: 'repeat', title: 'Область переснята',
-    body: entry ? path.basename(entry.file) : 'Скопировано в буфер',
+    kind: 'repeat', title: t('repeatTitle'),
+    body: entry ? path.basename(entry.file) : t('copiedTitle'),
     thumb: entry ? entry.thumb : null, file: entry ? entry.file : null,
   });
   if (entry) windows.sendToMain('history:changed');
@@ -226,6 +229,19 @@ function registerHotkeys() {
 }
 
 // ---------- tray ----------
+function buildTrayMenu() {
+  const hk = settings.get().hotkeys;
+  return Menu.buildFromTemplate([
+    { label: t('trayRegion'), sublabel: hk.region, click: () => triggerRegion() },
+    { label: t('trayFull'), sublabel: hk.fullscreen, click: () => triggerFull() },
+    { label: t('trayRepeat'), sublabel: hk.repeatLast, click: () => triggerRepeat() },
+    { type: 'separator' },
+    { label: t('trayOpen'), click: () => windows.createMainWindow({ show: true }) },
+    { type: 'separator' },
+    { label: t('trayQuit'), click: () => { global.__shotikQuitting = true; app.quit(); } },
+  ]);
+}
+
 function createTray() {
   let icon;
   if (process.platform === 'darwin') {
@@ -235,19 +251,15 @@ function createTray() {
     icon = nativeImage.createFromPath(path.join(__dirname, '..', '..', 'assets', 'tray.png'));
   }
   tray = new Tray(icon);
-  tray.setToolTip('Shotik — скриншоты для людей и AI');
-  const hk = settings.get().hotkeys;
-  const menu = Menu.buildFromTemplate([
-    { label: 'Снимок области', accelerator: undefined, sublabel: hk.region, click: () => triggerRegion() },
-    { label: 'Весь экран', sublabel: hk.fullscreen, click: () => triggerFull() },
-    { label: 'Переснять область', sublabel: hk.repeatLast, click: () => triggerRepeat() },
-    { type: 'separator' },
-    { label: 'Открыть Shotik', click: () => windows.createMainWindow({ show: true }) },
-    { type: 'separator' },
-    { label: 'Выход', click: () => { global.__shotikQuitting = true; app.quit(); } },
-  ]);
-  tray.setContextMenu(menu);
+  tray.setToolTip(t('trayTooltip'));
+  tray.setContextMenu(buildTrayMenu());
   tray.on('click', () => windows.createMainWindow({ show: true }));
+}
+
+function refreshTray() {
+  if (!tray) return;
+  tray.setToolTip(t('trayTooltip'));
+  tray.setContextMenu(buildTrayMenu());
 }
 
 // ---------- MCP tools ----------
@@ -360,7 +372,7 @@ async function startMcp() {
     await mcp.start(Number(process.env.SHOTIK_PORT) || st.mcp.port);
   } catch (e) {
     console.error('MCP start failed:', e.message);
-    windows.showToast({ kind: 'text', title: 'MCP-сервер не запустился', body: `Порт ${st.mcp.port}: ${e.message}` });
+    windows.showToast({ kind: 'text', title: t('mcpFailTitle'), body: t('mcpFailBody', st.mcp.port, e.message) });
   }
 }
 
@@ -471,7 +483,10 @@ function setupAppIpc() {
   ipcMain.handle('settings:set', async (_e, patch) => {
     const before = settings.get();
     const after = settings.set(patch);
-    if (JSON.stringify(before.hotkeys) !== JSON.stringify(after.hotkeys)) registerHotkeys();
+    if (JSON.stringify(before.hotkeys) !== JSON.stringify(after.hotkeys)) {
+      registerHotkeys();
+      refreshTray();
+    }
     if (before.mcp.enabled !== after.mcp.enabled || before.mcp.port !== after.mcp.port) {
       await mcp.stop();
       if (after.mcp.enabled) await startMcp();
@@ -479,8 +494,11 @@ function setupAppIpc() {
     if (before.launchAtStartup !== after.launchAtStartup) {
       app.setLoginItemSettings({ openAtLogin: after.launchAtStartup, args: ['--hidden'] });
     }
+    if (before.language !== after.language) refreshTray();
     return { settings: settings.get(), mcp: mcp.status(), hotkeyErrors };
   });
+
+  ipcMain.handle('i18n:get', () => ({ lang: i18n.lang(), dict: i18n.dict() }));
 
   ipcMain.handle('settings:choose-dir', async () => {
     const r = await dialog.showOpenDialog(windows.getMainWindow(), {
@@ -568,7 +586,7 @@ app.whenReady().then(async () => {
   await startMcp();
   capture.events.on('color-copied', (hex) => {
     clipboard.writeText(hex);
-    windows.showToast({ kind: 'color', title: 'Цвет скопирован', body: hex, color: hex });
+    windows.showToast({ kind: 'color', title: t('colorTitle'), body: hex, color: hex });
   });
   theme.watch((t) => windows.applyTheme(t));
 
@@ -578,4 +596,5 @@ app.whenReady().then(async () => {
   const mode = cliCaptureMode(process.argv);
   if (mode === 'region') setTimeout(() => triggerRegion(), 400);
   else if (mode === 'full') setTimeout(() => triggerFull(), 400);
+  else if (mode === 'repeat') setTimeout(() => triggerRepeat(), 400);
 });

@@ -8,4 +8,5 @@ contextBridge.exposeInMainWorld('shotik', {
   menu: (id) => ipcRenderer.send('pin:menu', id),
   onZoomLevel: (cb) => ipcRenderer.on('pin:zoom-level', (_e, pct) => cb(pct)),
   getTheme: () => ipcRenderer.invoke('theme:get'),
+  getI18n: () => ipcRenderer.invoke('i18n:get'),
 });
