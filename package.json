@@ -1,18 +1,59 @@
 {
   "name": "shotik",
   "productName": "Shotik",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Beautiful open-source screenshot tool with built-in MCP server — let Claude see your screen",
   "main": "src/main/main.js",
   "license": "MIT",
   "author": "Shotik contributors",
   "homepage": "https://github.com/gorka2354/shotik",
-  "repository": { "type": "git", "url": "https://github.com/gorka2354/shotik.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gorka2354/shotik.git"
+  },
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --dev"
+    "dev": "electron . --dev",
+    "dist": "electron-builder --win"
   },
   "devDependencies": {
-    "electron": "^33.0.0"
+    "electron": "^33.0.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "dev.shotik.app",
+    "productName": "Shotik",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "src/main/ocr.ps1",
+      "src/main/windows-enum.ps1"
+    ],
+    "win": {
+      "icon": "assets/icon.png",
+      "target": [
+        { "target": "portable", "arch": ["x64"] },
+        { "target": "nsis", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "artifactName": "Shotik-Setup-${version}.exe",
+      "shortcutName": "Shotik"
+    },
+    "portable": {
+      "artifactName": "Shotik-${version}-portable.exe"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "gorka2354",
+      "repo": "shotik"
+    }
   }
 }

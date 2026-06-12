@@ -7,6 +7,7 @@
 const http = require('http');
 const crypto = require('crypto');
 
+const VERSION = require('../../package.json').version;
 const PROTOCOL_FALLBACK = '2025-03-26';
 
 let server = null;
@@ -45,7 +46,7 @@ async function handleRpc(msg) {
     return rpcResult(id, {
       protocolVersion: (params && params.protocolVersion) || PROTOCOL_FALLBACK,
       capabilities: { tools: { listChanged: false } },
-      serverInfo: { name: 'shotik', title: 'Shotik Screenshots', version: '0.1.0' },
+      serverInfo: { name: 'shotik', title: 'Shotik Screenshots', version: VERSION },
       instructions: 'Screenshot tools for the user\'s screen. Use take_screenshot to see the screen, ask_user_to_select_region to let the user mark a specific area.',
     });
   }

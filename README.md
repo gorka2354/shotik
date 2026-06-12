@@ -80,15 +80,20 @@ claude mcp add shotik --transport http http://127.0.0.1:7464/mcp
 `A` — копировать для Claude · `F` — весь экран · `1..0` — инструменты · `[` `]` — толщина ·
 `Ctrl+Z` — отмена · стрелки — сдвиг выделения · `Esc` — выход.
 
-## Установка и запуск
+## Установка
+
+**Готовые сборки:** [Releases](https://github.com/gorka2354/shotik/releases) →
+`Shotik-Setup-x.x.x.exe` (установщик с ярлыками) или `Shotik-x.x.x-portable.exe` (один файл, без установки).
+
+**Из исходников:**
 
 ```bash
-git clone <repo-url> && cd shotik
+git clone https://github.com/gorka2354/shotik && cd shotik
 npm install
 npm start
 ```
 
-Требуется Node.js ≥ 20 и Windows 10/11. Приложение живёт в трее; закрытие окна сворачивает его, выход — через меню трея.
+Требуется Windows 10/11 (для сборки из исходников — Node.js ≥ 20). Приложение живёт в трее; закрытие окна сворачивает его, выход — через меню трея.
 
 CLI: `electron . --capture region|full` — снять из командной строки; `--hidden` — тихий старт в трей.
 

@@ -6,4 +6,5 @@ contextBridge.exposeInMainWorld('shotik', {
   cancel: () => ipcRenderer.send('overlay:cancel'),
   copyColor: (hex) => ipcRenderer.send('overlay:color', hex),
   getTheme: () => ipcRenderer.invoke('theme:get'),
+  onWindows: (cb) => ipcRenderer.on('overlay:windows', (_e, list) => cb(list)),
 });

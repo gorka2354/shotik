@@ -2,6 +2,7 @@
 // Screen grabbing + overlay (region selection) session management.
 const { BrowserWindow, desktopCapturer, screen, app, ipcMain, nativeImage } = require('electron');
 const { EventEmitter } = require('events');
+const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
@@ -47,6 +48,35 @@ async function grabDisplay(display) {
   if (!sources.length) throw new Error('No screen sources available');
   const src = sources.find((s) => s.display_id === String(display.id)) || sources[0];
   return src.thumbnail;
+}
+
+// Visible top-level windows (physical px, z-order top first) for hover-to-snap.
+// Resolved asynchronously so the overlay opens instantly and snapping arrives
+// a moment later.
+function enumWindows() {
+  return new Promise((resolve) => {
+    if (FAKE_SCREEN) {
+      // matches the window drawn in test/fake-screen.png (1920x1080 fixture
+      // stretched onto the primary display)
+      const d = screen.getPrimaryDisplay();
+      const k = (d.size.width * d.scaleFactor) / 1920;
+      resolve([
+        { x: Math.round(240 * k), y: Math.round(140 * k), w: Math.round(1100 * k), h: Math.round(640 * k) },
+        { x: Math.round(1470 * k), y: Math.round(170 * k), w: Math.round(180 * k), h: Math.round(60 * k) },
+      ]);
+      return;
+    }
+    const script = path.join(__dirname, 'windows-enum.ps1')
+      .replace('app.asar' + path.sep, 'app.asar.unpacked' + path.sep);
+    execFile('powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+        '-File', script, '-ExcludePid', String(process.pid)],
+      { timeout: 8000, windowsHide: true },
+      (err, stdout) => {
+        if (err) return resolve([]);
+        try { resolve(JSON.parse(String(stdout).trim() || '[]')); } catch (_) { resolve([]); }
+      });
+  });
 }
 
 function displayById(id) {
@@ -186,7 +216,30 @@ function startOverlaySession(opts = {}) {
     } catch (e) {
       console.error('overlay session failed', e);
       settle(null);
+      return;
     }
+
+    // Deliver window rects for hover-to-snap (display-relative DIP coords).
+    // Note: the phys->DIP conversion assumes a uniform scale factor per
+    // display, which is exact on single-scale setups.
+    enumWindows().then((winRects) => {
+      if (!session || session.settled) return;
+      displays.forEach((d, i) => {
+        const w = wins[i];
+        if (!w || w.isDestroyed()) return;
+        const sf = d.scaleFactor;
+        const rel = winRects
+          .map((r) => ({
+            x: r.x / sf - d.bounds.x, y: r.y / sf - d.bounds.y,
+            w: r.w / sf, h: r.h / sf,
+          }))
+          .filter((r) => r.x < d.bounds.width && r.y < d.bounds.height && r.x + r.w > 0 && r.y + r.h > 0);
+        const deliver = () => { if (!w.isDestroyed()) w.webContents.send('overlay:windows', rel); };
+        // the renderer may not have registered its listener yet
+        if (w.webContents.isLoading()) w.webContents.once('did-finish-load', deliver);
+        else deliver();
+      });
+    });
   });
 }
 

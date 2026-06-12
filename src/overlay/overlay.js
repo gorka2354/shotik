@@ -44,6 +44,9 @@ let loaded = false;
 
 let mode = 'idle';             // idle | selecting | selected
 let sel = null;                // {x,y,w,h} image px
+let snapWindows = [];          // window rects under this display (css px, topmost first)
+let hoverRect = null;          // currently highlighted window (css px)
+let altDown = false;           // Alt suppresses window snapping
 let drag = null;
 let tool = 'move';
 let color = COLORS[0];
@@ -85,6 +88,28 @@ img.onload = () => {
 };
 img.src = IMG_URL;
 
+window.shotik.onWindows((list) => {
+  snapWindows = list;
+  updateHover();
+});
+
+function updateHover() {
+  const prev = hoverRect;
+  hoverRect = null;
+  if (mode === 'idle' && !altDown && mouse.x >= 0) {
+    const hit = snapWindows.find((r) =>
+      mouse.x >= r.x && mouse.x <= r.x + r.w && mouse.y >= r.y && mouse.y <= r.y + r.h);
+    if (hit) {
+      // clip to the viewport
+      const x1 = Math.max(0, hit.x), y1 = Math.max(0, hit.y);
+      const x2 = Math.min(window.innerWidth, hit.x + hit.w);
+      const y2 = Math.min(window.innerHeight, hit.y + hit.h);
+      if (x2 - x1 > 8 && y2 - y1 > 8) hoverRect = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+    }
+  }
+  if (JSON.stringify(prev) !== JSON.stringify(hoverRect)) scheduleRender();
+}
+
 /* color palette buttons */
 const colorRow = document.getElementById('colorRow');
 for (const c of COLORS) {
@@ -124,6 +149,21 @@ function render() {
     ctx.fillRect(r.x + r.w, r.y, imgW - r.x - r.w, r.h);
     ctx.fillRect(0, r.y + r.h, imgW, imgH - r.y - r.h);
     drawSelectionChrome(r);
+  } else if (mode === 'idle' && hoverRect) {
+    // window under cursor: un-dimmed + accent outline
+    const r = {
+      x: Math.round(hoverRect.x * kx), y: Math.round(hoverRect.y * ky),
+      w: Math.round(hoverRect.w * kx), h: Math.round(hoverRect.h * ky),
+    };
+    ctx.fillRect(0, 0, imgW, r.y);
+    ctx.fillRect(0, r.y, r.x, r.h);
+    ctx.fillRect(r.x + r.w, r.y, imgW - r.x - r.w, r.h);
+    ctx.fillRect(0, r.y + r.h, imgW, imgH - r.y - r.h);
+    ctx.save();
+    ctx.strokeStyle = ACCENT;
+    ctx.lineWidth = Math.max(2, 2 * kx);
+    ctx.strokeRect(r.x + ctx.lineWidth / 2, r.y + ctx.lineWidth / 2, r.w - ctx.lineWidth, r.h - ctx.lineWidth);
+    ctx.restore();
   } else {
     ctx.fillRect(0, 0, imgW, imgH);
   }
@@ -331,6 +371,11 @@ function updateDom() {
     if (by < 6) by = rc.y + 8;
     dimsEl.style.left = bx + 'px';
     dimsEl.style.top = by + 'px';
+  } else if (mode === 'idle' && hoverRect) {
+    dimsEl.hidden = false;
+    dimsEl.textContent = `${Math.round(hoverRect.w * kx)} × ${Math.round(hoverRect.h * ky)}`;
+    dimsEl.style.left = clamp(hoverRect.x, 8, window.innerWidth - 90) + 'px';
+    dimsEl.style.top = Math.max(6, hoverRect.y - 30) + 'px';
   } else dimsEl.hidden = true;
 
   // magnifier
@@ -530,7 +575,11 @@ window.addEventListener('mousemove', (e) => {
   } else {
     document.body.style.cursor = 'crosshair';
   }
-  if (mode === 'idle') scheduleRender();
+  if (mode === 'idle') {
+    altDown = e.altKey;
+    updateHover();
+    scheduleRender();
+  }
 });
 
 window.addEventListener('mouseup', (e) => {
@@ -541,7 +590,16 @@ window.addEventListener('mouseup', (e) => {
   if (d.kind === 'create') {
     const moved = Math.hypot(e.clientX - d.sCssX, e.clientY - d.sCssY);
     if (moved < 4) {
-      sel = { x: 0, y: 0, w: imgW, h: imgH };       // click = whole screen
+      // click: snap to the hovered window, otherwise whole screen
+      if (hoverRect) {
+        sel = {
+          x: hoverRect.x * kx, y: hoverRect.y * ky,
+          w: hoverRect.w * kx, h: hoverRect.h * ky,
+        };
+      } else {
+        sel = { x: 0, y: 0, w: imgW, h: imgH };
+      }
+      hoverRect = null;
     } else if (sel.w < 3 || sel.h < 3) {
       sel = null; mode = 'idle'; scheduleRender(); return;
     }
@@ -667,6 +725,11 @@ window.addEventListener('keydown', (e) => {
   if (!textEditor.hidden) return; // editor handles its own keys
   const code = e.code; // layout-independent (works on RU keyboard too)
 
+  if (e.key === 'Alt') {
+    e.preventDefault();
+    if (!altDown) { altDown = true; updateHover(); }
+    return;
+  }
   if (e.key === 'Escape') {
     if (drag) { drag = null; tempShape = null; if (mode === 'selecting') { sel = null; mode = 'idle'; } scheduleRender(); return; }
     doAction('cancel');
@@ -755,6 +818,13 @@ async function doAction(action) {
     actionInFlight = false;
   }
 }
+
+window.addEventListener('keyup', (e) => {
+  if (e.key === 'Alt') {
+    altDown = false;
+    updateHover();
+  }
+});
 
 /* initial tool */
 setTool('move');

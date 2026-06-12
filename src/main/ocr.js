@@ -6,7 +6,9 @@ const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-const SCRIPT = path.join(__dirname, 'ocr.ps1');
+// PowerShell can't read scripts from inside the asar archive — use the
+// unpacked copy when packaged (see build.asarUnpack).
+const SCRIPT = path.join(__dirname, 'ocr.ps1').replace('app.asar' + path.sep, 'app.asar.unpacked' + path.sep);
 
 // Accepts a PNG buffer, returns recognized text (string, may be empty).
 async function recognize(pngBuffer) {
