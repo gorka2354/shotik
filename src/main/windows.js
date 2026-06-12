@@ -1,8 +1,11 @@
 'use strict';
 // Main app window, toast notifications, pinned screenshot windows.
-const { BrowserWindow, screen, ipcMain, clipboard, nativeImage, dialog, Menu, shell } = require('electron');
+const { BrowserWindow, screen, ipcMain, clipboard, nativeImage, dialog, Menu, shell, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
+
+const winBg = () => (nativeTheme.shouldUseDarkColors ? '#202020' : '#f3f3f3');
+const symbolColor = () => (nativeTheme.shouldUseDarkColors ? '#cfcfcf' : '#1b1b1b');
 
 const GHOST = process.env.SHOTIK_GHOST === '1';
 const GHOST_OFFSET = 20000;
@@ -23,9 +26,9 @@ function createMainWindow({ show = true } = {}) {
   mainWin = new BrowserWindow({
     width: 1120, height: 740, minWidth: 880, minHeight: 600,
     ...(GHOST ? { x: GHOST_OFFSET, y: 60 } : {}),
-    show: false, frame: false, backgroundColor: '#0e1014',
+    show: false, frame: false, backgroundColor: winBg(),
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#0e1014', symbolColor: '#8b93a5', height: 44 },
+    titleBarOverlay: { color: '#00000000', symbolColor: symbolColor(), height: 44 },
     icon: path.join(__dirname, '..', '..', 'assets', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, '..', 'app', 'preload.js'),
@@ -171,11 +174,24 @@ ipcMain.on('pin:menu', (e, id) => {
 
 function closeAllPins() { for (const { win } of pins.values()) { try { win.close(); } catch (_) {} } }
 
+// Re-sync native chrome with the OS theme and notify renderers.
+function applyTheme(t) {
+  if (mainWin && !mainWin.isDestroyed()) {
+    mainWin.setBackgroundColor(winBg());
+    try { mainWin.setTitleBarOverlay({ color: '#00000000', symbolColor: symbolColor(), height: 44 }); } catch (_) {}
+    mainWin.webContents.send('theme:changed', t);
+  }
+  if (toastWin && !toastWin.isDestroyed()) toastWin.webContents.send('theme:changed', t);
+  for (const { win } of pins.values()) {
+    if (!win.isDestroyed()) win.webContents.send('theme:changed', t);
+  }
+}
+
 function getLastToast() { return lastToast; }
 function getToastWindow() { return toastWin && !toastWin.isDestroyed() ? toastWin : null; }
 function getPinWindows() { return [...pins.values()].map((p) => p.win).filter((w) => !w.isDestroyed()); }
 
 module.exports = {
   createMainWindow, getMainWindow, sendToMain, showToast, createPin, closeAllPins,
-  getLastToast, getToastWindow, getPinWindows,
+  getLastToast, getToastWindow, getPinWindows, applyTheme,
 };

@@ -2,6 +2,7 @@
 const q = new URLSearchParams(location.search);
 const id = q.get('id');
 document.getElementById('img').src = q.get('img');
+window.shotik.getTheme().then((t) => document.documentElement.style.setProperty('--accent', t.accent));
 
 window.addEventListener('wheel', (e) => window.shotik.zoom(id, e.deltaY < 0 ? 1 : -1), { passive: true });
 window.addEventListener('dblclick', () => window.shotik.close(id));

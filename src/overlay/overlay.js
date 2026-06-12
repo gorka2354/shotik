@@ -27,6 +27,16 @@ const DRAW_TOOLS = ['pen', 'arrow', 'line', 'rect', 'ellipse', 'highlight', 'blu
 const NEED_SIZE = ['pen', 'arrow', 'line', 'rect', 'ellipse', 'highlight', 'text'];
 const NEED_COLOR = ['pen', 'arrow', 'line', 'rect', 'ellipse', 'highlight', 'text', 'counter'];
 
+let ACCENT = '#0067C0';        // OS accent color, fetched at boot
+window.shotik.getTheme().then((t) => {
+  ACCENT = t.accent;
+  const n = parseInt(t.accent.slice(1), 16);
+  const lum = 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+  document.documentElement.style.setProperty('--accent', t.accent);
+  document.documentElement.style.setProperty('--accent-text', lum > 160 ? '#1b1b1b' : '#ffffff');
+  scheduleRender();
+});
+
 let img = new Image();
 let srcCv, srcCtx;             // pristine screenshot (image px)
 let imgW = 0, imgH = 0, kx = 1, ky = 1;
@@ -124,7 +134,7 @@ function drawSelectionChrome(r) {
   const lw = Math.max(1.5, 1.5 * kx);
   ctx.save();
   // border
-  ctx.strokeStyle = '#8f76ff';
+  ctx.strokeStyle = ACCENT;
   ctx.lineWidth = lw;
   ctx.strokeRect(r.x - lw / 2, r.y - lw / 2, r.w + lw, r.h + lw);
   // rule-of-thirds (subtle, only for medium+ selections)
@@ -142,7 +152,7 @@ function drawSelectionChrome(r) {
   if (mode === 'selected' && tool === 'move' && (!drag || drag.kind !== 'create')) {
     const hs = 7 * kx;
     ctx.fillStyle = '#ffffff';
-    ctx.strokeStyle = '#7c5cff';
+    ctx.strokeStyle = ACCENT;
     ctx.lineWidth = Math.max(1.2, 1.2 * kx);
     for (const [hx, hy] of handlePoints(r)) {
       ctx.beginPath();
@@ -345,7 +355,7 @@ function updateMagnifier() {
     magCtx.beginPath(); magCtx.moveTo(0, i * 11); magCtx.lineTo(143, i * 11); magCtx.stroke();
   }
   // center pixel marker
-  magCtx.strokeStyle = '#7c5cff'; magCtx.lineWidth = 2;
+  magCtx.strokeStyle = ACCENT; magCtx.lineWidth = 2;
   magCtx.strokeRect(66, 66, 11, 11);
 
   const px = srcCtx.getImageData(ix, iy, 1, 1).data;

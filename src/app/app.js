@@ -14,8 +14,20 @@ $$('.nav-item').forEach((b) => {
   });
 });
 
+/* ---------- system theme / accent ---------- */
+function applyTheme(t) {
+  const root = document.documentElement;
+  root.style.setProperty('--accent', t.accent);
+  const n = parseInt(t.accent.slice(1), 16);
+  const lum = 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+  root.style.setProperty('--accent-text', lum > 160 ? '#1b1b1b' : '#ffffff');
+  root.dataset.platform = t.platform;
+}
+window.shotik.onThemeChanged(applyTheme);
+
 /* ---------- boot ---------- */
 async function boot() {
+  applyTheme(await window.shotik.getTheme());
   state = await window.shotik.getState();
   $('#version').textContent = 'v' + state.version;
   renderSettings();

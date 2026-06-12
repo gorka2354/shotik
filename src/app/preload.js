@@ -23,4 +23,6 @@ contextBridge.exposeInMainWorld('shotik', {
   openSaveDir: invoke('app:open-save-dir'),
   onHistoryChanged: (cb) => ipcRenderer.on('history:changed', cb),
   onMcpLog: (cb) => ipcRenderer.on('mcp:log', (_e, entry) => cb(entry)),
+  getTheme: invoke('theme:get'),
+  onThemeChanged: (cb) => ipcRenderer.on('theme:changed', (_e, t) => cb(t)),
 });

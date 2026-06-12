@@ -1,6 +1,9 @@
 'use strict';
 let currentFile = null;
-const ICONS = { text: '📋', color: '🎨', claude: '✦', repeat: '⟳' };
+const ICONS = { text: '⎘', color: '◉', claude: '✦', repeat: '⟳' };
+
+window.shotik.getTheme().then((t) => document.documentElement.style.setProperty('--accent', t.accent));
+window.shotik.onThemeChanged((t) => document.documentElement.style.setProperty('--accent', t.accent));
 
 window.shotik.onData((d) => {
   currentFile = d.file || null;

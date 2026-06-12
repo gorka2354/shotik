@@ -12,6 +12,7 @@ const capture = require('./capture');
 const ocr = require('./ocr');
 const mcp = require('./mcp');
 const windows = require('./windows');
+const theme = require('./theme');
 
 const TEST_MODE = process.env.SHOTIK_TEST === '1' || process.argv.includes('--test');
 const GHOST = process.env.SHOTIK_GHOST === '1'; // invisible testing: no hotkeys, off-screen windows
@@ -421,6 +422,11 @@ function setupTestHandler() {
       }
       case 'last-toast': return windows.getLastToast();
       case 'pins': return windows.getPinWindows().map((w) => ({ bounds: w.getBounds() }));
+      case 'set-theme': {
+        const { nativeTheme } = require('electron');
+        nativeTheme.themeSource = body.mode || 'system';
+        return theme.getTheme();
+      }
       case 'show-main': { windows.createMainWindow({ show: true }); return 'ok'; }
       case 'quit': { global.__shotikQuitting = true; setTimeout(() => app.quit(), 100); return 'bye'; }
       default: throw new Error('unknown test route: ' + route);
@@ -511,6 +517,8 @@ function setupAppIpc() {
   });
   ipcMain.handle('capture:repeat', () => triggerRepeat());
 
+  ipcMain.handle('theme:get', () => theme.getTheme());
+
   ipcMain.handle('app:open-external', (_e, url) => {
     if (/^https?:\/\//.test(url)) shell.openExternal(url);
   });
@@ -539,6 +547,7 @@ app.whenReady().then(async () => {
     clipboard.writeText(hex);
     windows.showToast({ kind: 'color', title: 'Цвет скопирован', body: hex, color: hex });
   });
+  theme.watch((t) => windows.applyTheme(t));
 
   const hidden = process.argv.includes('--hidden');
   windows.createMainWindow({ show: !hidden });
