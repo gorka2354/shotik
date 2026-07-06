@@ -29,6 +29,10 @@
 <p align="center"><i>hover highlights a window → click → arrow, box, pixelate, markers, text → Enter → in your clipboard</i></p>
 
 <p align="center">
+  <a href="docs/promo.mp4"><b>▶ Watch the 28-second promo</b></a> — capture → annotate → OCR → one keypress to Claude
+</p>
+
+<p align="center">
   <img src="docs/app-dark.png" width="46%" alt="Dark theme">
   <img src="docs/app-light.png" width="46%" alt="Light theme">
 </p>
