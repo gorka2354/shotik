@@ -24,14 +24,9 @@
 ---
 
 <p align="center">
-  <img src="docs/demo.gif" width="88%" alt="Демо: hover-snap окна, аннотации, копирование">
-</p>
-<p align="center"><i>наведение подсвечивает окно → клик → стрелка, рамка, пикселизация, маркеры, текст → Enter → в буфере</i></p>
-
-<p align="center">
   <img src="docs/promo.gif" width="88%" alt="Промо Shotik: захват → аннотации → OCR → одна клавиша до Claude">
 </p>
-<p align="center"><i>промо-ролик (28 секунд) · <a href="docs/promo.mp4">mp4 в полном качестве</a></i></p>
+<p align="center"><i>захват → аннотации → OCR → одна клавиша до Claude · <a href="docs/promo.mp4">mp4 в полном качестве</a></i></p>
 
 ## Зачем ещё один скриншотер?
 

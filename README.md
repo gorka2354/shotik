@@ -24,14 +24,9 @@
 ---
 
 <p align="center">
-  <img src="docs/demo.gif" width="88%" alt="Demo: window hover-snap, annotations, copy">
-</p>
-<p align="center"><i>hover highlights a window → click → arrow, box, pixelate, markers, text → Enter → in your clipboard</i></p>
-
-<p align="center">
   <img src="docs/promo.gif" width="88%" alt="Shotik promo: capture → annotate → OCR → one keypress to Claude">
 </p>
-<p align="center"><i>the 28-second promo · <a href="docs/promo.mp4">full-quality mp4</a></i></p>
+<p align="center"><i>capture → annotate → OCR → one keypress to Claude · <a href="docs/promo.mp4">full-quality mp4</a></i></p>
 
 <p align="center">
   <img src="docs/app-dark.png" width="46%" alt="Dark theme">
