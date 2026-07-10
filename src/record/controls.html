@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+  html, body { background: transparent; overflow: hidden; }
+  body { font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif; }
+  #bar {
+    display: flex; align-items: center; gap: 8px; margin: 6px;
+    height: 36px; padding: 0 8px 0 12px;
+    background: rgba(24, 24, 28, 0.94); border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+    -webkit-app-region: drag;
+  }
+  #dot { width: 10px; height: 10px; border-radius: 50%; background: #ff4d4d; flex: 0 0 auto;
+         animation: blink 1.2s ease-in-out infinite; }
+  #dot.paused { animation: none; background: #ffb02e; }
+  @keyframes blink { 50% { opacity: 0.25; } }
+  #time { font-family: Consolas, monospace; font-size: 13px; color: #eef0f6; min-width: 44px; }
+  .sp { flex: 1; }
+  button { -webkit-app-region: no-drag; border: none; cursor: pointer; border-radius: 7px;
+           width: 28px; height: 28px; background: transparent; display: flex; align-items: center; justify-content: center; }
+  button:hover { background: rgba(255,255,255,0.1); }
+  button svg { width: 15px; height: 15px; fill: none; stroke: #d5d9e2; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  #stop { background: #ff4d4d; } #stop:hover { filter: brightness(1.1); } #stop svg { stroke: #fff; }
+  #stop rect { fill: #fff; stroke: none; }
+</style>
+</head>
+<body>
+  <div id="bar">
+    <span id="dot"></span>
+    <span id="time">0:00</span>
+    <span class="sp"></span>
+    <button id="pause" title="Pause"><svg viewBox="0 0 24 24" id="pauseIco"><path d="M7 5v14M17 5v14"/></svg></button>
+    <button id="stop" title="Stop"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>
+    <button id="cancel" title="Cancel"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <script src="controls.js"></script>
+</body>
+</html>

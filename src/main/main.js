@@ -15,6 +15,8 @@ const windows = require('./windows');
 const theme = require('./theme');
 const i18n = require('./i18n');
 const translate = require('./translate');
+const recorder = require('./recorder');
+const gifexport = require('./gifexport');
 const { t } = i18n;
 
 const TEST_MODE = process.env.SHOTIK_TEST === '1' || process.argv.includes('--test');
@@ -40,8 +42,14 @@ if (!gotLock) {
     else if (mode === 'full') triggerFull();
     else if (mode === 'repeat') triggerRepeat();
     else if (mode === 'text') triggerText();
+    else if (mode === 'record') triggerRecord();
     else windows.createMainWindow({ show: true });
   });
+}
+
+function formatDur(s) {
+  const m = Math.floor(s / 60), ss = Math.round(s % 60);
+  return m > 0 ? `${m}:${String(ss).padStart(2, '0')}` : `${ss}s`;
 }
 
 function cliCaptureMode(argv) {
@@ -147,6 +155,13 @@ async function handleOverlayResult(res) {
       }
       break;
     }
+    case 'record': {
+      await recorder.startRecording({
+        displayId: Number(res.displayId), rectPhys: res.rectPhys, rectDip: res.rectCss,
+      }, {});
+      lastProcessed = { action: 'record', file: null, ts: Date.now() };
+      return lastProcessed;
+    }
   }
   if (entry) windows.sendToMain('history:changed');
   lastProcessed = { action: res.action, file: entry ? entry.file : null, ts: Date.now() };
@@ -190,6 +205,17 @@ async function triggerText(opts = {}) {
     await new Promise((r) => setTimeout(r, 180));
   }
   const res = await capture.startOverlaySession({ forText: true });
+  if (res !== undefined) await handleOverlayResult(res);
+  return lastProcessed;
+}
+
+// Record: if already recording, stop; otherwise select an area and start.
+async function triggerRecord(opts = {}) {
+  if (recorder.isRecording()) { recorder.stopRecording(); return null; }
+  if (!ensureScreenPermission()) return null;
+  const main = windows.getMainWindow();
+  if (main && main.isVisible()) { main.hide(); await new Promise((r) => setTimeout(r, 180)); }
+  const res = await capture.startOverlaySession({ forRecord: true });
   if (res !== undefined) await handleOverlayResult(res);
   return lastProcessed;
 }
@@ -240,6 +266,7 @@ function registerHotkeys() {
     ['fullscreen', hk.fullscreen, () => triggerFull()],
     ['repeatLast', hk.repeatLast, () => triggerRepeat()],
     ['textGrab', hk.textGrab, () => triggerText()],
+    ['record', hk.record, () => triggerRecord()],
   ];
   for (const [name, acc, fn] of map) {
     if (!acc) continue;
@@ -259,6 +286,7 @@ function buildTrayMenu() {
     { label: t('trayFull'), sublabel: hk.fullscreen, click: () => triggerFull() },
     { label: t('trayRepeat'), sublabel: hk.repeatLast, click: () => triggerRepeat() },
     { label: t('trayText'), sublabel: hk.textGrab, click: () => triggerText() },
+    { label: recorder.isRecording() ? t('trayStopRec') : t('trayRecord'), sublabel: hk.record, click: () => triggerRecord() },
     { type: 'separator' },
     { label: t('trayOpen'), click: () => windows.createMainWindow({ show: true }) },
     { type: 'separator' },
@@ -410,10 +438,13 @@ function setupTestHandler() {
         if (body.mode === 'full') return await triggerFull();
         if (body.mode === 'repeat') return await triggerRepeat();
         if (body.mode === 'text') triggerText(); // don't await — overlay stays open
+        else if (body.mode === 'record') triggerRecord();
         else triggerRegion();
         await new Promise((r) => setTimeout(r, 1200));
         return { overlayOpen: capture.isOverlayOpen() };
       }
+      case 'record-stop': { recorder.stopRecording(); await new Promise((r) => setTimeout(r, 800)); return recorder.status(); }
+      case 'record-status': return recorder.status();
       case 'state': {
         return {
           overlayOpen: capture.isOverlayOpen(),
@@ -567,6 +598,20 @@ function setupAppIpc() {
   });
   ipcMain.handle('history:reveal', (_e, id) => { const it = history.get(id); if (it) shell.showItemInFolder(it.file); });
   ipcMain.handle('history:open', (_e, id) => { const it = history.get(id); if (it) shell.openPath(it.file); });
+  ipcMain.handle('history:export-gif', async (_e, id) => {
+    const it = history.get(id);
+    if (!it || it.kind !== 'video') return null;
+    const existing = it.file.replace(/\.[^.]+$/, '') + '.gif';
+    try {
+      const gifPath = await gifexport.exportGif(it.file, { fps: 12, maxWidth: 640 });
+      windows.showToast({ kind: 'video', title: t('gifReadyTitle'), body: path.basename(gifPath), file: gifPath });
+      clipboard.writeText(gifPath);
+      return gifPath;
+    } catch (e) {
+      windows.showToast({ kind: 'text', title: t('gifFailTitle'), body: String(e.message || e).slice(0, 120) });
+      return null;
+    }
+  });
   ipcMain.handle('history:ocr', async (_e, id) => {
     const it = history.get(id);
     if (!it) return null;
@@ -586,6 +631,9 @@ function setupAppIpc() {
 
   ipcMain.handle('capture:region', () => triggerRegion({ hideMain: true }));
   ipcMain.handle('capture:text', () => triggerText({ hideMain: true }));
+  ipcMain.handle('capture:record', () => triggerRecord());
+  ipcMain.handle('rec:stop', () => { recorder.stopRecording(); });
+  ipcMain.handle('rec:status', () => recorder.status());
   ipcMain.handle('capture:full', async () => {
     const main = windows.getMainWindow();
     if (main && main.isVisible()) { main.hide(); await new Promise((r) => setTimeout(r, 180)); }
@@ -625,6 +673,21 @@ app.whenReady().then(async () => {
   });
   theme.watch((t) => windows.applyTheme(t));
 
+  recorder.init({ history, windows, settings, t });
+  recorder.events.on('state', () => { refreshTray(); windows.sendToMain('rec:state', recorder.status()); });
+  recorder.events.on('done', (entry) => {
+    windows.sendToMain('history:changed');
+    if (settings.get().showToast) windows.showToast({
+      kind: 'video', title: t('recSavedTitle'),
+      body: entry.duration ? t('recSavedBody', formatDur(entry.duration)) : path.basename(entry.file),
+      thumb: entry.thumb, file: entry.file,
+    });
+    lastProcessed = { action: 'record-done', file: entry.file, ts: Date.now() };
+  });
+  recorder.events.on('error', (msg) => {
+    windows.showToast({ kind: 'text', title: t('recFailTitle'), body: String(msg).slice(0, 120) });
+  });
+
   const hidden = process.argv.includes('--hidden');
   windows.createMainWindow({ show: !hidden });
 
@@ -633,4 +696,5 @@ app.whenReady().then(async () => {
   else if (mode === 'full') setTimeout(() => triggerFull(), 400);
   else if (mode === 'repeat') setTimeout(() => triggerRepeat(), 400);
   else if (mode === 'text') setTimeout(() => triggerText(), 400);
+  else if (mode === 'record') setTimeout(() => triggerRecord(), 400);
 });

@@ -55,7 +55,30 @@ function savePng(buffer, { source = 'region', dir = null } = {}) {
 
   const entry = {
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    file, thumb, width, height, ts: Date.now(), source,
+    file, thumb, width, height, ts: Date.now(), source, kind: 'image',
+  };
+  items.unshift(entry);
+  if (items.length > MAX_ITEMS) items = items.slice(0, MAX_ITEMS);
+  persist();
+  return entry;
+}
+
+// Registers an already-written video file in history. thumbBuf is a JPEG of
+// the first frame (optional). Returns the entry.
+function addVideo({ file, thumbBuf, width, height, duration }) {
+  load();
+  let thumb = null;
+  if (thumbBuf) {
+    try {
+      fs.mkdirSync(THUMBS(), { recursive: true });
+      thumb = path.join(THUMBS(), path.basename(file).replace(/\.[^.]+$/, '') + '.jpg');
+      fs.writeFileSync(thumb, thumbBuf);
+    } catch (_) {}
+  }
+  const entry = {
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    file, thumb, width, height, ts: Date.now(), source: 'record', kind: 'video',
+    duration: Math.round((duration || 0) * 10) / 10,
   };
   items.unshift(entry);
   if (items.length > MAX_ITEMS) items = items.slice(0, MAX_ITEMS);
@@ -97,4 +120,11 @@ function clearAll({ deleteFiles = false } = {}) {
 function last() { load(); return items[0] || null; }
 function get(id) { load(); return items.find((x) => x.id === id) || null; }
 
-module.exports = { savePng, list, remove, clearAll, last, get };
+function update(id, patch) {
+  load();
+  const it = items.find((x) => x.id === id);
+  if (it) { Object.assign(it, patch); persist(); }
+  return it;
+}
+
+module.exports = { savePng, addVideo, list, remove, clearAll, last, get, update };

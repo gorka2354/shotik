@@ -197,6 +197,35 @@ h1 { font-family: var(--font-display); font-size: 22px; font-weight: 600; }
 .sa-btn.danger:hover { background: #c42b1c; }
 .sa-btn.danger:hover svg { stroke: #fff; }
 .sa-btn svg { width: 14px; height: 14px; fill: none; stroke: #e3e3e3; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.shot-thumb.is-video::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(0,0,0,0.15), transparent 40%, rgba(0,0,0,0.3));
+  pointer-events: none;
+}
+.play-badge {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 44px; height: 44px; border-radius: 50%;
+  background: rgba(20, 20, 24, 0.7); border: 1px solid rgba(255,255,255,0.25);
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(4px); transition: transform .12s, background .12s; z-index: 1;
+}
+.shot-thumb:hover .play-badge { background: var(--accent); transform: translate(-50%, -50%) scale(1.08); }
+.play-badge svg { width: 18px; height: 18px; fill: #fff; stroke: none; margin-left: 2px; }
+.dur-badge {
+  position: absolute; bottom: 8px; right: 8px; z-index: 1;
+  background: rgba(10, 10, 14, 0.78); color: #f0f0f0;
+  font-size: 11px; font-family: var(--mono); font-weight: 600;
+  border-radius: 4px; padding: 2px 6px; backdrop-filter: blur(4px);
+}
+.btn.recording { background: #d13438; border-color: transparent; color: #fff; }
+.btn.recording svg { stroke: #fff; }
+.btn.recording svg circle:last-child { fill: #fff; }
+.btn.recording::before {
+  content: ''; width: 7px; height: 7px; border-radius: 50%; background: #fff;
+  animation: recblink 1.2s ease-in-out infinite;
+}
+@keyframes recblink { 50% { opacity: 0.3; } }
+
 .shot-meta { padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; }
 .shot-name { font-size: 12px; color: var(--text-2); }
 .shot-size { font-size: 11px; font-family: var(--mono); color: var(--text-3); }

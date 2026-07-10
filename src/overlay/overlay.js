@@ -6,6 +6,7 @@ const IMG_URL = params.get('img');
 const DISPLAY_ID = Number(params.get('displayId'));
 const FOR_CLAUDE = params.get('claude') === '1';
 const FOR_TEXT = params.get('text') === '1';
+const FOR_RECORD = params.get('record') === '1';
 
 const cv = document.getElementById('cv');
 const ctx = cv.getContext('2d');
@@ -662,6 +663,11 @@ window.addEventListener('mouseup', (e) => {
     }
     mode = 'selected';
     scheduleRender();
+    if (FOR_RECORD) { // record hotkey: select → start recording immediately
+      const r = roundSel();
+      window.shotik.action({ action: 'record', displayId: DISPLAY_ID, rectPhys: r, rectCss: { x: r.x / kx, y: r.y / ky, w: r.w / kx, h: r.h / ky } });
+      return;
+    }
     if (FOR_TEXT) { enterTextMode(); return; } // text-grab hotkey: straight into Live Text
     requestAnimationFrame(positionToolbar);
     return;

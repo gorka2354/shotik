@@ -62,6 +62,10 @@
               <svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 012-2h2"/><path d="M17 3h2a2 2 0 012 2v2"/><path d="M21 17v2a2 2 0 01-2 2h-2"/><path d="M7 21H5a2 2 0 01-2-2v-2"/><path d="M7 8h10"/><path d="M7 12h6"/><path d="M7 16h8"/></svg>
               <span data-i18n="trayText">Extract text</span> <kbd id="kbdText">Ctrl+Shift+PrtSc</kbd>
             </button>
+            <button class="btn" id="btnRecord" data-i18n-tip="tipRecordBtn">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
+              <span id="btnRecordLabel" data-i18n="btnRecord">Record</span>
+            </button>
             <button class="btn ghost" id="btnOpenDir" data-i18n-tip="tipOpenDir">
               <svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2.5h8a2 2 0 012 2V17a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
             </button>
@@ -181,6 +185,34 @@
               <option value="en">English</option>
               <option value="ru">Русский</option>
             </select>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title" data-i18n="recSecTitle">Screen recording</div>
+          <div class="set-row">
+            <div><div class="set-name" data-i18n="recFps">Frame rate</div><div class="set-sub" data-i18n="recFpsSub">higher is smoother but larger files</div></div>
+            <select class="select" id="setFps">
+              <option value="15">15 fps</option>
+              <option value="24">24 fps</option>
+              <option value="30">30 fps</option>
+              <option value="60">60 fps</option>
+            </select>
+          </div>
+          <div class="set-row">
+            <div><div class="set-name" data-i18n="recFormat">Format</div><div class="set-sub" data-i18n="recFormatSub">WebM is reliable; MP4 depends on system codecs</div></div>
+            <select class="select" id="setFormat">
+              <option value="auto">WebM</option>
+              <option value="mp4">MP4</option>
+            </select>
+          </div>
+          <div class="set-row">
+            <div><div class="set-name" data-i18n="recAudio">System audio</div><div class="set-sub" data-i18n="recAudioSub">record the sound playing on your PC</div></div>
+            <label class="switch"><input type="checkbox" id="setSysAudio"><span></span></label>
+          </div>
+          <div class="set-row">
+            <div><div class="set-name" data-i18n="recCountdown">3-2-1 countdown</div><div class="set-sub" data-i18n="recCountdownSub">brief count before recording starts</div></div>
+            <label class="switch"><input type="checkbox" id="setCountdown"><span></span></label>
           </div>
         </div>
 

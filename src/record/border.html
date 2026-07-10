@@ -1,0 +1,19 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+  /* the 3px border occupies the window's outer ring, which sits just OUTSIDE the
+     recorded crop region, so it never appears in the recording */
+  #ring {
+    position: fixed; inset: 0; box-sizing: border-box;
+    border: 3px solid #ff4d4d;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { border-color: #ff4d4d; } 50% { border-color: rgba(255,77,77,0.45); } }
+</style>
+</head>
+<body><div id="ring"></div></body>
+</html>

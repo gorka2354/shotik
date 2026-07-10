@@ -71,6 +71,12 @@ Say “look at my screen” — and Claude sees it. Say “look here” — and 
 Same region, fresh pixels, instant, no overlay. Perfect for iteration loops:
 fix the CSS → `Shift+PrtSc` → `Ctrl+V` to Claude → “see it now?”. Survives restarts.
 
+### ✦ Screen recording → video or GIF (`Ctrl+Alt+PrtSc`)
+Select a region (or a window, or the whole screen — same as a screenshot) and record it to
+**WebM**, with a floating controls bar (timer, pause, stop) and a live red border around the
+captured area. Then **export any recording to GIF** in one click from the gallery — perfect for
+bug repros and PR demos. Optional system-audio capture, 15–60 fps, and a 3-2-1 countdown.
+
 ### ✦ Live Text — grab & translate text from anything (`Ctrl+Shift+PrtSc`)
 Select an area and the recognized words become **selectable, right on the frozen screen** — like
 macOS Live Text. Drag to grab exactly the words you want, `Enter` to copy, or hit **Translate** to
@@ -104,6 +110,7 @@ CLI works too: `Shotik.exe --capture region|full|repeat`.
 | Full screen (monitor under cursor) | `Ctrl+PrtSc` | `⌘⇧1` |
 | Repeat last area | `Shift+PrtSc` | `⌘⇧7` |
 | Extract text (Live Text) | `Ctrl+Shift+PrtSc` | `⌘⇧4` |
+| Record region → video / GIF | `Ctrl+Alt+PrtSc` | `⌘⇧6` |
 
 In the overlay: `Enter`/double-click — copy · `Ctrl+S` — save as · `P` — pin · `T` — OCR ·
 `A` — copy for Claude · `F` — whole screen · `1..0` — tools · `[` `]` — stroke width ·

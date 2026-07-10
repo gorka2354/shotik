@@ -194,6 +194,7 @@ function startOverlaySession(opts = {}) {
             focused: d.id === cursorDisplay.id ? '1' : '0',
             claude: opts.forClaude ? '1' : '0',
             text: opts.forText ? '1' : '0',
+            record: opts.forRecord ? '1' : '0',
           },
         });
         win.webContents.once('did-finish-load', () => {

@@ -51,6 +51,7 @@ async function boot() {
   renderSettings();
   renderMcp();
   renderMcpLog(state.mcpLog || []);
+  try { setRecUi(!!(await window.shotik.recStatus()).recording); } catch (_) {}
   await renderHistory();
 }
 boot();
@@ -63,16 +64,30 @@ $('#btnRegion').addEventListener('click', () => window.shotik.captureRegion());
 $('#btnFull').addEventListener('click', () => window.shotik.captureFull());
 $('#btnRepeat').addEventListener('click', () => window.shotik.captureRepeat());
 $('#btnText').addEventListener('click', () => window.shotik.captureText());
+$('#btnRecord').addEventListener('click', async () => {
+  if (recActive) await window.shotik.recStop();
+  else await window.shotik.captureRecord();
+});
 $('#btnOpenDir').addEventListener('click', () => window.shotik.openSaveDir());
 
+let recActive = false;
+function setRecUi(active) {
+  recActive = active;
+  $('#btnRecord').classList.toggle('recording', active);
+  $('#btnRecordLabel').textContent = active ? T('btnStopRec') : T('btnRecord');
+}
+window.shotik.onRecState((s) => setRecUi(!!s.recording));
+
 /* ---------- history ---------- */
-const sourceLabel = (s) => T({ region: 'srcRegion', fullscreen: 'srcFullscreen', repeat: 'srcRepeat', mcp: 'srcMcp', pin: 'srcPin' }[s] || s);
+const sourceLabel = (s) => T({ region: 'srcRegion', fullscreen: 'srcFullscreen', repeat: 'srcRepeat', mcp: 'srcMcp', pin: 'srcPin', record: 'srcRecord' }[s] || s);
 
 const ICONS = {
   copy: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>',
   path: '<svg viewBox="0 0 24 24"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg>',
   pin: '<svg viewBox="0 0 24 24"><path d="M12 17v5"/><path d="M9 4h6l.8 6.2L18 13H6l2.2-2.8L9 4z"/></svg>',
   ocr: '<svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 012-2h2"/><path d="M17 3h2a2 2 0 012 2v2"/><path d="M21 17v2a2 2 0 01-2 2h-2"/><path d="M7 21H5a2 2 0 01-2-2v-2"/><path d="M7 8h10"/><path d="M7 12h6"/><path d="M7 16h8"/></svg>',
+  play: '<svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z" fill="currentColor" stroke="none"/></svg>',
+  gif: '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M8 10.5a2 2 0 100 3h1.5V12"/><path d="M12.5 9.5v5"/><path d="M15.5 14.5v-5h2.5M15.5 12h2"/></svg>',
   folder: '<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2.5h8a2 2 0 012 2V17a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>',
   trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M6 7l1 13a1 1 0 001 1h8a1 1 0 001-1l1-13"/><path d="M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3"/></svg>',
 };
@@ -100,17 +115,26 @@ async function renderHistory() {
   for (const it of items) {
     const card = document.createElement('div');
     card.className = 'shot';
+    const isVideo = it.kind === 'video';
+    const actions = isVideo
+      ? `<button class="sa-btn" data-act="open" data-tip="${esc(T('actPlay'))}">${ICONS.play}</button>
+         <button class="sa-btn" data-act="gif" data-tip="${esc(T('actGif'))}">${ICONS.gif}</button>
+         <button class="sa-btn" data-act="path" data-tip="${esc(T('actPath'))}">${ICONS.path}</button>
+         <button class="sa-btn" data-act="folder" data-tip="${esc(T('actFolder'))}">${ICONS.folder}</button>
+         <button class="sa-btn danger" data-act="del" data-tip="${esc(T('actDelete'))}">${ICONS.trash}</button>`
+      : `<button class="sa-btn" data-act="copy" data-tip="${esc(T('actCopy'))}">${ICONS.copy}</button>
+         <button class="sa-btn" data-act="path" data-tip="${esc(T('actPath'))}">${ICONS.path}</button>
+         <button class="sa-btn" data-act="pin" data-tip="${esc(T('actPin'))}">${ICONS.pin}</button>
+         <button class="sa-btn" data-act="ocr" data-tip="${esc(T('actOcr'))}">${ICONS.ocr}</button>
+         <button class="sa-btn" data-act="folder" data-tip="${esc(T('actFolder'))}">${ICONS.folder}</button>
+         <button class="sa-btn danger" data-act="del" data-tip="${esc(T('actDelete'))}">${ICONS.trash}</button>`;
+    const playBadge = isVideo
+      ? `<div class="play-badge">${ICONS.play}</div>${it.duration ? `<span class="dur-badge">${esc(fmtDur(it.duration))}</span>` : ''}` : '';
     card.innerHTML = `
-      <div class="shot-thumb">
+      <div class="shot-thumb ${isVideo ? 'is-video' : ''}">
         <span class="badge">${esc(sourceLabel(it.source))}</span>
-        <div class="shot-actions">
-          <button class="sa-btn" data-act="copy" data-tip="${esc(T('actCopy'))}">${ICONS.copy}</button>
-          <button class="sa-btn" data-act="path" data-tip="${esc(T('actPath'))}">${ICONS.path}</button>
-          <button class="sa-btn" data-act="pin" data-tip="${esc(T('actPin'))}">${ICONS.pin}</button>
-          <button class="sa-btn" data-act="ocr" data-tip="${esc(T('actOcr'))}">${ICONS.ocr}</button>
-          <button class="sa-btn" data-act="folder" data-tip="${esc(T('actFolder'))}">${ICONS.folder}</button>
-          <button class="sa-btn danger" data-act="del" data-tip="${esc(T('actDelete'))}">${ICONS.trash}</button>
-        </div>
+        ${playBadge}
+        <div class="shot-actions">${actions}</div>
       </div>
       <div class="shot-meta">
         <span class="shot-name">${esc(timeAgo(it.ts))}</span>
@@ -126,6 +150,12 @@ async function renderHistory() {
       b.addEventListener('click', async (e) => {
         e.stopPropagation();
         const act = b.dataset.act;
+        if (act === 'open') await window.shotik.historyOpen(it.id);
+        if (act === 'gif') {
+          b.style.opacity = '0.4'; b.setAttribute('data-tip', T('actGifBusy'));
+          await window.shotik.historyExportGif(it.id);
+          b.style.opacity = ''; b.setAttribute('data-tip', T('actGif'));
+        }
         if (act === 'copy') await window.shotik.historyCopy(it.id);
         if (act === 'path') await window.shotik.historyCopyPath(it.id);
         if (act === 'pin') await window.shotik.historyPin(it.id);
@@ -140,6 +170,11 @@ async function renderHistory() {
     });
     gal.appendChild(card);
   }
+}
+
+function fmtDur(s) {
+  const m = Math.floor(s / 60), ss = Math.round(s % 60);
+  return m > 0 ? `${m}:${String(ss).padStart(2, '0')}` : `0:${String(ss).padStart(2, '0')}`;
 }
 
 /* ---------- claude / mcp ---------- */
@@ -221,6 +256,11 @@ function renderSettings() {
   $('#setProvider').value = tr.provider || 'free';
   $('#setDeeplKey').value = tr.deeplKey || '';
   $('#deeplKeyRow').hidden = (tr.provider || 'free') !== 'deepl';
+  const rec = s.recording || {};
+  $('#setFps').value = String(rec.fps || 30);
+  $('#setFormat').value = rec.format || 'auto';
+  $('#setSysAudio').checked = !!rec.systemAudio;
+  $('#setCountdown').checked = rec.countdown !== false;
   $('#emptyBody').innerHTML = T('emptyBody', `<kbd>${esc(short(s.hotkeys.region))}</kbd>`);
   renderHotkeyWarn();
 }
@@ -263,6 +303,10 @@ $('#setProvider').addEventListener('change', (e) => {
   applySettings({ translate: { provider: e.target.value } });
 });
 $('#setDeeplKey').addEventListener('change', (e) => applySettings({ translate: { deeplKey: e.target.value.trim() } }));
+$('#setFps').addEventListener('change', (e) => applySettings({ recording: { fps: Number(e.target.value) } }));
+$('#setFormat').addEventListener('change', (e) => applySettings({ recording: { format: e.target.value } }));
+$('#setSysAudio').addEventListener('change', (e) => applySettings({ recording: { systemAudio: e.target.checked } }));
+$('#setCountdown').addEventListener('change', (e) => applySettings({ recording: { countdown: e.target.checked } }));
 
 $('#btnChooseDir').addEventListener('click', async () => {
   const dir = await window.shotik.chooseDir();

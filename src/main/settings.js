@@ -18,14 +18,17 @@ const DEFAULTS = () => ({
     fullscreen: 'Cmd+Shift+1',
     repeatLast: 'Cmd+Shift+7',
     textGrab: 'Cmd+Shift+4',
+    record: 'Cmd+Shift+6',
   } : {
     region: 'PrintScreen',
     fullscreen: 'Ctrl+PrintScreen',
     repeatLast: 'Shift+PrintScreen',
     textGrab: 'Ctrl+Shift+PrintScreen',
+    record: 'Ctrl+Alt+PrintScreen',
   },
   // default target = the user's own language (they read foreign text → their language)
   translate: { target: String((() => { try { return app.getLocale(); } catch (_) { return 'en'; } })()).toLowerCase().startsWith('ru') ? 'ru' : 'en', provider: 'free', deeplKey: '' },
+  recording: { fps: 30, format: 'auto', systemAudio: false, countdown: true },
   mcp: { enabled: true, port: 7464 },
   language: 'system', // 'system' | 'en' | 'ru'
   launchAtStartup: false,
