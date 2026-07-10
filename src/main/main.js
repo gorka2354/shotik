@@ -305,12 +305,16 @@ function createTray() {
   tray = new Tray(icon);
   tray.setToolTip(t('trayTooltip'));
   tray.setContextMenu(buildTrayMenu());
-  tray.on('click', () => windows.createMainWindow({ show: true }));
+  // while recording, a tray click stops it (no need to remember the hotkey)
+  tray.on('click', () => {
+    if (recorder.isRecording()) triggerRecord();
+    else windows.createMainWindow({ show: true });
+  });
 }
 
 function refreshTray() {
   if (!tray) return;
-  tray.setToolTip(t('trayTooltip'));
+  tray.setToolTip(recorder.isRecording() ? t('trayRecTooltip') : t('trayTooltip'));
   tray.setContextMenu(buildTrayMenu());
 }
 
@@ -491,6 +495,7 @@ function setupTestHandler() {
         if (body.target === 'main') target = windows.getMainWindow();
         else if (body.target === 'toast') target = windows.getToastWindow();
         else if (body.target === 'pin') target = windows.getPinWindows()[body.index || 0];
+        else if (body.target === 'rec-controls') target = recorder.getControlsWindow();
         else target = capture.overlayWindows()[body.index || 0];
         if (!target) throw new Error('no target window');
         return await target.webContents.executeJavaScript(body.code);
@@ -500,6 +505,8 @@ function setupTestHandler() {
         if (body.target === 'main') target = windows.getMainWindow();
         else if (body.target === 'toast') target = windows.getToastWindow();
         else if (body.target === 'pin') target = windows.getPinWindows()[body.index || 0];
+        else if (body.target === 'rec-controls') target = recorder.getControlsWindow();
+        else if (body.target === 'rec-border') target = recorder.getBorderWindow();
         else target = capture.overlayWindows()[body.index || 0];
         if (!target) throw new Error('no target window: ' + (body.target || 'overlay'));
         if (!target.isVisible()) target.showInactive();

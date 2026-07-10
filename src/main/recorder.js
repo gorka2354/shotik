@@ -13,6 +13,9 @@ const GHOST = process.env.SHOTIK_GHOST === '1';
 // SHOTIK_REAL_CAPTURE lets a test instance capture the real screen (instead of
 // the synthetic source) — used for the one thing ghost can't verify.
 const REAL_CAPTURE = process.env.SHOTIK_REAL_CAPTURE === '1';
+// SHOTIK_FORCE_CONTROLS builds the border/controls windows even in ghost mode
+// (placed off-screen) so their rendering + stop wiring can be verified.
+const FORCE_CONTROLS = process.env.SHOTIK_FORCE_CONTROLS === '1';
 const TEST = process.env.SHOTIK_TEST === '1' && !REAL_CAPTURE;
 const GHOST_OFFSET = 20000;
 
@@ -117,14 +120,15 @@ async function startRecording({ displayId, rectPhys, rectDip }, opts = {}) {
     },
   });
 
-  if (!GHOST) buildOverlayWindows(display, rectDip);
+  if (!GHOST || FORCE_CONTROLS) buildOverlayWindows(display, rectDip);
   events.emit('state', status());
   return status();
 }
 
 function buildOverlayWindows(display, rectDip) {
   // region border (just outside the crop, so it isn't recorded)
-  const gx = display.bounds.x, gy = display.bounds.y;
+  const off = GHOST ? GHOST_OFFSET : 0; // keep test windows off-screen
+  const gx = display.bounds.x + off, gy = display.bounds.y;
   const b = { x: gx + rectDip.x - 3, y: gy + rectDip.y - 3, w: rectDip.w + 6, h: rectDip.h + 6 };
   const borderWin = new BrowserWindow({
     x: Math.round(b.x), y: Math.round(b.y), width: Math.round(b.w), height: Math.round(b.h),
@@ -138,11 +142,15 @@ function buildOverlayWindows(display, rectDip) {
   borderWin.loadFile(path.join(__dirname, '..', 'record', 'border.html'));
   session.borderWin = borderWin;
 
-  // controls bar, docked just below the region (outside the crop)
+  // controls bar, docked just below the region (outside the crop), always on-screen
   const cw = 240, ch = 48;
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const dx = display.bounds.x + off, dy = display.bounds.y;
   let cx = gx + rectDip.x + rectDip.w / 2 - cw / 2;
   let cy = gy + rectDip.y + rectDip.h + 10;
-  if (cy + ch > display.bounds.y + display.bounds.height - 4) cy = gy + rectDip.y - ch - 10;
+  if (cy + ch > dy + display.bounds.height - 4) cy = gy + rectDip.y - ch - 10; // flip above
+  cx = clamp(cx, dx + 4, dx + display.bounds.width - cw - 4);
+  cy = clamp(cy, dy + 4, dy + display.bounds.height - ch - 4);
   const controlsWin = new BrowserWindow({
     x: Math.round(cx), y: Math.round(cy), width: cw, height: ch,
     frame: false, transparent: true, resizable: false, movable: false,
@@ -234,4 +242,7 @@ ipcMain.on('rec:controls-stop', () => stopRecording());
 ipcMain.on('rec:controls-pause', () => (session && session.paused ? resumeRecording() : pauseRecording()));
 ipcMain.on('rec:controls-cancel', () => cancelRecording());
 
-module.exports = { init, events, startRecording, stopRecording, pauseRecording, resumeRecording, cancelRecording, isRecording, status };
+function getControlsWindow() { return session && session.controlsWin && !session.controlsWin.isDestroyed() ? session.controlsWin : null; }
+function getBorderWindow() { return session && session.borderWin && !session.borderWin.isDestroyed() ? session.borderWin : null; }
+
+module.exports = { init, events, startRecording, stopRecording, pauseRecording, resumeRecording, cancelRecording, isRecording, status, getControlsWindow, getBorderWindow };

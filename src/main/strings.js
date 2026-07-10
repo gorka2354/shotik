@@ -6,6 +6,7 @@ const DICTS = {
   en: {
     // tray
     trayTooltip: 'Shotik — screenshots for humans & AI',
+    trayRecTooltip: 'Recording… — click to stop',
     trayRegion: 'Capture area',
     trayFull: 'Capture screen',
     trayRepeat: 'Repeat last area',
@@ -134,6 +135,7 @@ const DICTS = {
 
   ru: {
     trayTooltip: 'Shotik — скриншоты для людей и AI',
+    trayRecTooltip: 'Идёт запись… — клик, чтобы остановить',
     trayRegion: 'Снимок области',
     trayFull: 'Весь экран',
     trayRepeat: 'Переснять область',
