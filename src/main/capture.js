@@ -167,6 +167,7 @@ function startOverlaySession(opts = {}) {
     const cursorDisplay = displayUnderCursor();
     const wins = [];
     const files = [];
+    const winInfos = []; // { win, display } — keyed pairs (wins[] order is nondeterministic under parallel capture)
     session = { resolve, wins, files, settled: false };
 
     // Build each display's freeze-frame overlay. Displays are captured in
@@ -234,6 +235,7 @@ function startOverlaySession(opts = {}) {
         if (session && !session.settled) settle(null);
       });
       wins.push(win);
+      winInfos.push({ win, display: d });
     }
 
     try {
@@ -249,8 +251,9 @@ function startOverlaySession(opts = {}) {
     // display, which is exact on single-scale setups.
     enumWindows().then((winRects) => {
       if (!session || session.settled) return;
-      displays.forEach((d, i) => {
-        const w = wins[i];
+      // deliver each display's window rects to THAT display's overlay window
+      // (pairing by winInfos, not by array index — parallel capture reorders wins[])
+      winInfos.forEach(({ win: w, display: d }) => {
         if (!w || w.isDestroyed()) return;
         const sf = d.scaleFactor;
         const rel = winRects
