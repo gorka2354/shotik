@@ -280,7 +280,7 @@ function startSelectionWatcher() {
   const script = path.join(__dirname, 'selection-watch.ps1').replace('app.asar' + path.sep, 'app.asar.unpacked' + path.sep);
   try {
     selWatcher = spawn('powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script],
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, String(process.pid)],
       { windowsHide: true });
   } catch (e) { selWatcher = null; return; }
   const rl = readline.createInterface({ input: selWatcher.stdout });
@@ -791,7 +791,10 @@ app.on('before-quit', () => { global.__shotikQuitting = true; stopSelectionWatch
 app.on('will-quit', () => { globalShortcut.unregisterAll(); stopSelectionWatcher(); });
 app.on('window-all-closed', () => { /* tray app — keep running */ });
 
-app.whenReady().then(async () => {
+// Only the first instance runs startup. A second launch fails requestSingleInstanceLock
+// (handled above via 'second-instance'); without this guard it would still run whenReady
+// and spawn a duplicate tray / MCP / selection watcher before quitting.
+if (gotLock) app.whenReady().then(async () => {
   app.setAppUserModelId('dev.shotik.app');
   settings.get();
   registerMcpTools();

@@ -2,6 +2,9 @@
 # Passively READS the currently selected text via UI Automation and prints one
 # JSON line whenever a stable text selection appears / changes / clears.
 # It NEVER moves the mouse, clicks, or touches the clipboard — read-only.
+# Arg: the parent (Shotik) PID — the watcher self-exits if that process is gone,
+# so it never lingers as an orphan after a crash or forced kill.
+param([int]$ParentPid = 0)
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
@@ -49,9 +52,15 @@ function Write-Event($obj) {
 $wasDown = $false
 $lastEmitted = ''   # last selection text we told the app about ('' = none/cleared)
 $idle = 0
+$tick = 0
 
 while ($true) {
   Start-Sleep -Milliseconds 90
+  # Exit if the parent (Shotik) is gone, so we never linger as an orphan (~every 2s).
+  $tick++
+  if ($ParentPid -gt 0 -and ($tick % 22 -eq 0)) {
+    try { $null = [System.Diagnostics.Process]::GetProcessById($ParentPid) } catch { exit 0 }
+  }
   # High bit of GetAsyncKeyState (negative Int16) = button currently down.
   $down = ([NativeSel]::GetAsyncKeyState(0x01)) -lt 0
   $justReleased = $wasDown -and (-not $down)
