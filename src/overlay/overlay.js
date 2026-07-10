@@ -93,6 +93,7 @@ let sel = null;                // {x,y,w,h} image px
 let snapWindows = [];          // window rects under this display (css px, topmost first)
 let hoverRect = null;          // currently highlighted window (css px)
 let altDown = false;           // Alt suppresses window snapping
+let shiftDown = false;         // Shift suppresses snapping too; Shift+click = whole screen
 let drag = null;
 let tool = 'move';
 let color = COLORS[0];
@@ -149,7 +150,7 @@ window.shotik.onWindows((list) => {
 function updateHover() {
   const prev = hoverRect;
   hoverRect = null;
-  if (mode === 'idle' && !altDown && mouse.x >= 0) {
+  if (mode === 'idle' && !altDown && !shiftDown && mouse.x >= 0) {
     const hit = snapWindows.find((r) =>
       mouse.x >= r.x && mouse.x <= r.x + r.w && mouse.y >= r.y && mouse.y <= r.y + r.h);
     if (hit) {
@@ -633,6 +634,7 @@ window.addEventListener('mousemove', (e) => {
   }
   if (mode === 'idle') {
     altDown = e.altKey;
+    shiftDown = e.shiftKey;
     updateHover();
     scheduleRender();
   }
@@ -648,8 +650,8 @@ window.addEventListener('mouseup', (e) => {
   if (d.kind === 'create') {
     const moved = Math.hypot(e.clientX - d.sCssX, e.clientY - d.sCssY);
     if (moved < 4) {
-      // click: snap to the hovered window, otherwise whole screen
-      if (hoverRect) {
+      // click: Shift = whole screen; otherwise snap to the hovered window, else whole screen
+      if (!e.shiftKey && hoverRect) {
         sel = {
           x: hoverRect.x * kx, y: hoverRect.y * ky,
           w: hoverRect.w * kx, h: hoverRect.h * ky,
@@ -1005,6 +1007,10 @@ window.addEventListener('keydown', (e) => {
     if (!altDown) { altDown = true; updateHover(); }
     return;
   }
+  if (e.key === 'Shift' && mode === 'idle') {
+    if (!shiftDown) { shiftDown = true; updateHover(); } // hide window highlight → click = whole screen
+    return;
+  }
   if (e.key === 'Escape') {
     if (drag) { drag = null; tempShape = null; if (mode === 'selecting') { sel = null; mode = 'idle'; } scheduleRender(); return; }
     doAction('cancel');
@@ -1102,10 +1108,8 @@ async function doAction(action) {
 }
 
 window.addEventListener('keyup', (e) => {
-  if (e.key === 'Alt') {
-    altDown = false;
-    updateHover();
-  }
+  if (e.key === 'Alt') { altDown = false; updateHover(); }
+  if (e.key === 'Shift') { shiftDown = false; updateHover(); }
 });
 
 /* initial tool */

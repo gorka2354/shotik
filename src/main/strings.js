@@ -48,7 +48,7 @@ const DICTS = {
     // overlay
     hintDrag: 'Drag', hintDragDesc: 'select area',
     hintClick: 'Click', hintClickDesc: 'window / screen',
-    hintAlt: 'Alt', hintAltDesc: 'ignore windows',
+    hintAlt: 'Shift+click', hintAltDesc: 'whole screen',
     hintColor: 'C', hintColorDesc: 'pick pixel color',
     hintEsc: 'Esc', hintEscDesc: 'cancel',
     claudeBadge: 'Claude is waiting — select an area and confirm',
@@ -173,7 +173,7 @@ const DICTS = {
     permBody: 'Системные настройки → Конфиденциальность и безопасность → Запись экрана → включить Shotik, затем перезапустить приложение.',
     hintDrag: 'Тяни', hintDragDesc: 'область',
     hintClick: 'Клик', hintClickDesc: 'окно / экран',
-    hintAlt: 'Alt', hintAltDesc: 'без привязки',
+    hintAlt: 'Shift+клик', hintAltDesc: 'весь экран',
     hintColor: 'C', hintColorDesc: 'цвет пикселя',
     hintEsc: 'Esc', hintEscDesc: 'отмена',
     claudeBadge: 'Claude ждёт область — выдели и подтверди',
