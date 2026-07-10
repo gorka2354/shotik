@@ -66,7 +66,7 @@ window.shotik.getI18n().then(({ dict }) => {
   };
   document.querySelectorAll('#toolButtons .tb-btn').forEach((b) => b.setAttribute('data-tip', d(tips[b.dataset.tool])));
   const byId = {
-    btnUndo: 'tipUndo', btnRedo: 'tipRedo', btnOcr: 'tipOcr', btnPin: 'tipPin',
+    btnUndo: 'tipUndo', btnRedo: 'tipRedo', btnOcr: 'tipOcr', btnPin: 'tipPin', btnRec: 'tipRec',
     btnSave: 'tipSave', btnClaude: 'tipClaude', btnCopy: 'tipCopy', btnCancel: 'tipCancel',
   };
   for (const [id, key] of Object.entries(byId)) document.getElementById(id).setAttribute('data-tip', d(key));
@@ -964,6 +964,7 @@ document.getElementById('btnUndo').addEventListener('click', undo);
 document.getElementById('btnRedo').addEventListener('click', redo);
 document.getElementById('btnOcr').addEventListener('click', () => enterTextMode());
 document.getElementById('btnPin').addEventListener('click', () => doAction('pin'));
+document.getElementById('btnRec').addEventListener('click', () => doAction('record'));
 document.getElementById('btnSave').addEventListener('click', () => doAction('save'));
 document.getElementById('btnClaude').addEventListener('click', () => doAction('claude'));
 document.getElementById('btnCopy').addEventListener('click', () => doAction('copy'));
@@ -1037,6 +1038,7 @@ window.addEventListener('keydown', (e) => {
   }
   if (mode === 'selected') {
     if (code === 'KeyP') { doAction('pin'); return; }
+    if (code === 'KeyV') { doAction('record'); return; }
     if (code === 'KeyT') { enterTextMode(); return; }
     if (code === 'KeyA') { doAction('claude'); return; }
     if (code === 'BracketLeft' || code === 'BracketRight') {
@@ -1069,6 +1071,12 @@ async function doAction(action) {
   if (actionInFlight) return;
   if (action === 'cancel') { window.shotik.cancel(); return; }
   if (!sel || mode !== 'selected') return;
+  // recording only needs the region rect (no rendered PNG)
+  if (action === 'record') {
+    const r = roundSel();
+    window.shotik.action({ action: 'record', displayId: DISPLAY_ID, rectPhys: r, rectCss: { x: r.x / kx, y: r.y / ky, w: r.w / kx, h: r.h / ky } });
+    return;
+  }
   actionInFlight = true;
   try {
     if (!textEditor.hidden) commitText();

@@ -116,6 +116,8 @@ body { font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
 .tb-btn.primary svg { stroke: var(--accent-text); }
 .tb-btn.primary:hover { filter: brightness(1.1); }
 .tb-btn.claude svg { stroke: var(--accent); }
+.tb-btn.rec svg { stroke: #ff4d4d; }
+.tb-btn.rec:hover { background: rgba(255, 77, 77, 0.16); }
 .tb-btn.danger:hover { background: rgba(196, 43, 28, 0.16); }
 .tb-btn.danger:hover svg { stroke: #e0574a; }
 .tb-btn:disabled { opacity: .35; pointer-events: none; }

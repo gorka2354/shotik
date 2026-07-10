@@ -55,7 +55,7 @@ const DICTS = {
     toolRect: 'Box (5)', toolEllipse: 'Ellipse (6)', toolHighlight: 'Highlighter (7)',
     toolBlur: 'Pixelate (8)', toolText: 'Text (9)', toolCounter: 'Numbering (0)',
     tipUndo: 'Undo (Ctrl+Z)', tipRedo: 'Redo (Ctrl+Y)',
-    tipOcr: 'Extract text (T)', tipPin: 'Pin on top (P)', tipSave: 'Save as… (Ctrl+S)',
+    tipOcr: 'Extract text (T)', tipPin: 'Pin on top (P)', tipRec: 'Record video (V)', tipSave: 'Save as… (Ctrl+S)',
     tipClaude: 'Copy for Claude (A)', tipCopy: 'Copy (Enter)', tipCancel: 'Cancel (Esc)',
     tipThin: 'Thin ([)', tipMedium: 'Medium', tipThick: 'Thick (])',
     // Live Text mode
@@ -178,7 +178,7 @@ const DICTS = {
     toolRect: 'Рамка (5)', toolEllipse: 'Эллипс (6)', toolHighlight: 'Маркер (7)',
     toolBlur: 'Пикселизация (8)', toolText: 'Текст (9)', toolCounter: 'Нумерация (0)',
     tipUndo: 'Отменить (Ctrl+Z)', tipRedo: 'Вернуть (Ctrl+Y)',
-    tipOcr: 'Вытащить текст (T)', tipPin: 'Закрепить поверх окон (P)', tipSave: 'Сохранить как… (Ctrl+S)',
+    tipOcr: 'Вытащить текст (T)', tipPin: 'Закрепить поверх окон (P)', tipRec: 'Записать видео (V)', tipSave: 'Сохранить как… (Ctrl+S)',
     tipClaude: 'Скопировать для Claude (A)', tipCopy: 'Копировать (Enter)', tipCancel: 'Отмена (Esc)',
     tipThin: 'Тонко ([)', tipMedium: 'Средне', tipThick: 'Толсто (])',
     // Live Text mode

@@ -1,7 +1,7 @@
 {
   "name": "shotik",
   "productName": "Shotik",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Beautiful open-source screenshot tool with built-in MCP server — let Claude see your screen",
   "main": "src/main/main.js",
   "license": "MIT",
