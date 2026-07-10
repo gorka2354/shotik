@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('shotik', {
   captureRegion: invoke('capture:region'),
   captureFull: invoke('capture:full'),
   captureRepeat: invoke('capture:repeat'),
+  captureText: invoke('capture:text'),
   openExternal: invoke('app:open-external'),
   openSaveDir: invoke('app:open-save-dir'),
   onHistoryChanged: (cb) => ipcRenderer.on('history:changed', cb),

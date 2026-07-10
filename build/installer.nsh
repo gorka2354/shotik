@@ -5,10 +5,12 @@
   CreateShortcut "$SMPROGRAMS\Shotik Area Screenshot.lnk" "$INSTDIR\Shotik.exe" "--capture region" "$INSTDIR\Shotik.exe" 0
   CreateShortcut "$SMPROGRAMS\Shotik Full Screen.lnk" "$INSTDIR\Shotik.exe" "--capture full" "$INSTDIR\Shotik.exe" 0
   CreateShortcut "$SMPROGRAMS\Shotik Repeat Last Area.lnk" "$INSTDIR\Shotik.exe" "--capture repeat" "$INSTDIR\Shotik.exe" 0
+  CreateShortcut "$SMPROGRAMS\Shotik Extract Text.lnk" "$INSTDIR\Shotik.exe" "--capture text" "$INSTDIR\Shotik.exe" 0
 !macroend
 
 !macro customUnInstall
   Delete "$SMPROGRAMS\Shotik Area Screenshot.lnk"
   Delete "$SMPROGRAMS\Shotik Full Screen.lnk"
   Delete "$SMPROGRAMS\Shotik Repeat Last Area.lnk"
+  Delete "$SMPROGRAMS\Shotik Extract Text.lnk"
 !macroend

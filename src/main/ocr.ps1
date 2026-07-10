@@ -1,4 +1,7 @@
-param([Parameter(Mandatory=$true)][string]$Path)
+param(
+  [Parameter(Mandatory=$true)][string]$Path,
+  [switch]$Boxes   # emit JSON with per-word bounding rects instead of plain text
+)
 # Windows built-in OCR (Windows.Media.Ocr) - no external dependencies.
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -31,4 +34,24 @@ if ($null -eq $engine) { $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromL
 if ($null -eq $engine) { Write-Error 'No OCR language available'; exit 2 }
 
 $result = Await ($engine.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
-foreach ($line in $result.Lines) { Write-Output $line.Text }
+
+if ($Boxes) {
+  $lines = @()
+  foreach ($line in $result.Lines) {
+    $words = @()
+    foreach ($w in $line.Words) {
+      $r = $w.BoundingRect
+      $words += [PSCustomObject]@{
+        text = $w.Text
+        x = [Math]::Round($r.X); y = [Math]::Round($r.Y)
+        w = [Math]::Round($r.Width); h = [Math]::Round($r.Height)
+      }
+    }
+    $lines += [PSCustomObject]@{ text = $line.Text; words = $words }
+  }
+  $out = [PSCustomObject]@{ lines = $lines }
+  # -Compress keeps it one line; -Depth for nested arrays
+  Write-Output ($out | ConvertTo-Json -Depth 6 -Compress)
+} else {
+  foreach ($line in $result.Lines) { Write-Output $line.Text }
+}

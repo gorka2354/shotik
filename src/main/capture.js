@@ -193,6 +193,7 @@ function startOverlaySession(opts = {}) {
             physH: String(physSize.height),
             focused: d.id === cursorDisplay.id ? '1' : '0',
             claude: opts.forClaude ? '1' : '0',
+            text: opts.forText ? '1' : '0',
           },
         });
         win.webContents.once('did-finish-load', () => {

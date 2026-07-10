@@ -58,6 +58,10 @@
               <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 019-9 9 9 0 016.7 3L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 01-9 9 9 9 0 01-6.7-3L3 16"/><path d="M3 21v-5h5"/></svg>
               <span data-i18n="btnRepeat">Repeat</span> <kbd id="kbdRepeat">Shift+PrtSc</kbd>
             </button>
+            <button class="btn" id="btnText" data-i18n-tip="hkTextSub">
+              <svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 012-2h2"/><path d="M17 3h2a2 2 0 012 2v2"/><path d="M21 17v2a2 2 0 01-2 2h-2"/><path d="M7 21H5a2 2 0 01-2-2v-2"/><path d="M7 8h10"/><path d="M7 12h6"/><path d="M7 16h8"/></svg>
+              <span data-i18n="trayText">Extract text</span> <kbd id="kbdText">Ctrl+Shift+PrtSc</kbd>
+            </button>
             <button class="btn ghost" id="btnOpenDir" data-i18n-tip="tipOpenDir">
               <svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2.5h8a2 2 0 012 2V17a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
             </button>
@@ -133,6 +137,10 @@
             <div><div class="set-name" data-i18n="hkRepeat">Repeat last area</div><div class="set-sub" data-i18n="hkRepeatSub">same area, fresh pixels — perfect for iterating with Claude</div></div>
             <input class="hotkey" id="hkRepeat" readonly data-i18n-ph="hkPlaceholder">
           </div>
+          <div class="set-row">
+            <div><div class="set-name" data-i18n="hkText">Extract text</div><div class="set-sub" data-i18n="hkTextSub">select an area → grab and translate the text in it</div></div>
+            <input class="hotkey" id="hkText" readonly data-i18n-ph="hkPlaceholder">
+          </div>
           <div class="set-sub" id="hotkeyWarn" hidden></div>
         </div>
 
@@ -173,6 +181,39 @@
               <option value="en">English</option>
               <option value="ru">Русский</option>
             </select>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title" data-i18n="trTitle">Text &amp; translation</div>
+          <div class="set-row">
+            <div><div class="set-name" data-i18n="trTarget">Translate into</div><div class="set-sub" data-i18n="trTargetSub">target language for extracted text</div></div>
+            <select class="select" id="setTarget">
+              <option value="en">English</option>
+              <option value="ru">Русский</option>
+              <option value="uk">Українська</option>
+              <option value="de">Deutsch</option>
+              <option value="es">Español</option>
+              <option value="fr">Français</option>
+              <option value="it">Italiano</option>
+              <option value="pt">Português</option>
+              <option value="pl">Polski</option>
+              <option value="tr">Türkçe</option>
+              <option value="zh">中文</option>
+              <option value="ja">日本語</option>
+              <option value="ko">한국어</option>
+            </select>
+          </div>
+          <div class="set-row">
+            <div><div class="set-name" data-i18n="trProvider">Translator</div><div class="set-sub" data-i18n="trProviderSub">free works out of the box; a DeepL key is more reliable</div></div>
+            <select class="select" id="setProvider">
+              <option value="free" data-i18n="trProviderFree">Free (no key)</option>
+              <option value="deepl" data-i18n="trProviderDeepl">DeepL (key)</option>
+            </select>
+          </div>
+          <div class="set-row" id="deeplKeyRow" hidden>
+            <div><div class="set-name" data-i18n="trKey">DeepL API key</div><div class="set-sub" data-i18n="trKeySub">free tier gives 500k chars/month — key ends with :fx</div></div>
+            <input class="port" id="setDeeplKey" type="password" style="width:200px" data-i18n-ph="trKeyPh">
           </div>
         </div>
 

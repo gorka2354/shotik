@@ -5,6 +5,7 @@ const params = new URLSearchParams(location.search);
 const IMG_URL = params.get('img');
 const DISPLAY_ID = Number(params.get('displayId'));
 const FOR_CLAUDE = params.get('claude') === '1';
+const FOR_TEXT = params.get('text') === '1';
 
 const cv = document.getElementById('cv');
 const ctx = cv.getContext('2d');
@@ -19,6 +20,10 @@ const toolbar = document.getElementById('toolbar');
 const optionsBar = document.getElementById('optionsBar');
 const textEditor = document.getElementById('textEditor');
 const claudeBadge = document.getElementById('claudeBadge');
+const textLayer = document.getElementById('textLayer');
+const textToolbar = document.getElementById('textToolbar');
+const translateCard = document.getElementById('translateCard');
+let I18N = {};
 
 const COLORS = ['#FF4D5E', '#FF9F2E', '#FFE03A', '#3DDC84', '#3E9EFF', '#B36BFF', '#FF6BD5', '#FFFFFF', '#16181D'];
 const STROKES = { S: 2.2, M: 4, L: 7 };       // css px
@@ -31,7 +36,14 @@ let ACCENT = '#0067C0';        // OS accent color, fetched at boot
 
 /* localized chrome: hint chips, tooltips, badge */
 window.shotik.getI18n().then(({ dict }) => {
+  I18N = dict;
   const d = (k) => dict[k] || k;
+  document.getElementById('btnTextCopy').setAttribute('data-tip', d('txtCopy'));
+  document.getElementById('btnTextAll').setAttribute('data-tip', d('txtAll'));
+  document.getElementById('btnTextTranslate').setAttribute('data-tip', d('txtTranslate'));
+  document.getElementById('btnTextClose').setAttribute('data-tip', d('txtBack'));
+  document.getElementById('translateTitle').textContent = d('txtTranslation');
+  document.getElementById('translateCopy').textContent = d('txtCopyTranslation');
   hintEl.innerHTML = '';
   for (const [b, desc] of [
     ['hintDrag', 'hintDragDesc'], ['hintClick', 'hintClickDesc'], ['hintAlt', 'hintAltDesc'],
@@ -91,6 +103,13 @@ let tempShape = null;
 let mouse = { x: -100, y: -100 };
 let renderQueued = false;
 let textPending = null;        // {imgX, imgY}
+
+// Live Text mode
+let textMode = false;
+let words = [];                // [{ text, line, x, y, w, h }] in css px
+let selWords = new Set();      // selected word indices
+let rubber = null;             // { sx, sy } css during rubber-band select
+let rubberEl = null;
 
 /* ============================ geometry helpers ============================ */
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -222,7 +241,7 @@ function drawSelectionChrome(r) {
     }
   }
   // handles
-  if (mode === 'selected' && tool === 'move' && (!drag || drag.kind !== 'create')) {
+  if (mode === 'selected' && tool === 'move' && !textMode && (!drag || drag.kind !== 'create')) {
     const hs = 7 * kx;
     ctx.fillStyle = '#ffffff';
     ctx.strokeStyle = ACCENT;
@@ -395,7 +414,7 @@ function lightOrDark(hex) {
 /* ============================ DOM chrome ============================ */
 function updateDom() {
   // dims badge
-  if (sel && mode !== 'idle') {
+  if (sel && mode !== 'idle' && !textMode) {
     const r = roundSel(), rc = selCss();
     dimsEl.hidden = false;
     dimsEl.textContent = `${r.w} × ${r.h}`;
@@ -449,7 +468,7 @@ function updateMagnifier() {
 }
 
 function positionToolbar() {
-  if (mode !== 'selected') { toolbar.hidden = true; optionsBar.hidden = true; return; }
+  if (mode !== 'selected' || textMode) { toolbar.hidden = true; optionsBar.hidden = true; return; }
   toolbar.hidden = false;
   const rc = selCss();
   const tw = toolbar.offsetWidth, th = toolbar.offsetHeight;
@@ -482,11 +501,13 @@ function updateUndoButtons() {
 
 /* ============================ interactions ============================ */
 function isUiTarget(e) {
-  return e.target.closest('#toolbar, #optionsBar, #textEditor');
+  return e.target.closest('#toolbar, #optionsBar, #textEditor, #textToolbar, #translateCard');
 }
 
 window.addEventListener('mousedown', (e) => {
-  if (!loaded || e.button !== 0 || isUiTarget(e)) return;
+  if (!loaded || e.button !== 0) return;
+  if (textMode) { if (!isUiTarget(e)) textDown(e); return; }
+  if (isUiTarget(e)) return;
   if (!textEditor.hidden) { commitText(); return; }
   const ip = toImg(e.clientX, e.clientY);
 
@@ -544,6 +565,7 @@ window.addEventListener('mousedown', (e) => {
 window.addEventListener('mousemove', (e) => {
   mouse = { x: e.clientX, y: e.clientY };
   if (!loaded) return;
+  if (textMode) { textMoveDrag(e); return; }
   const ip = toImg(e.clientX, e.clientY);
 
   if (drag) {
@@ -616,7 +638,9 @@ window.addEventListener('mousemove', (e) => {
 });
 
 window.addEventListener('mouseup', (e) => {
-  if (!loaded || e.button !== 0 || !drag) return;
+  if (!loaded || e.button !== 0) return;
+  if (textMode) { textUp(e); return; }
+  if (!drag) return;
   const d = drag;
   drag = null;
 
@@ -638,6 +662,7 @@ window.addEventListener('mouseup', (e) => {
     }
     mode = 'selected';
     scheduleRender();
+    if (FOR_TEXT) { enterTextMode(); return; } // text-grab hotkey: straight into Live Text
     requestAnimationFrame(positionToolbar);
     return;
   }
@@ -670,6 +695,206 @@ function pushAnno(a) {
   scheduleRender();
   updateUndoButtons();
 }
+
+/* ============================ Live Text mode ============================ */
+const td = (k) => I18N[k] || k;
+
+async function enterTextMode() {
+  if (textMode || mode !== 'selected' || !sel) return;
+  textMode = true;
+  toolbar.hidden = true; optionsBar.hidden = true; hintEl.hidden = true;
+  claudeBadge.hidden = true;
+  document.body.style.cursor = 'progress';
+  scheduleRender();
+  flash(td('txtRecognizing'));
+
+  // OCR the current selection crop
+  const r = roundSel();
+  const oc = document.createElement('canvas');
+  oc.width = r.w; oc.height = r.h;
+  oc.getContext('2d').drawImage(srcCv, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
+  const blob = await new Promise((res) => oc.toBlob(res, 'image/png'));
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  let data = { lines: [] };
+  try { data = await window.shotik.ocrBoxes(buf); } catch (_) {}
+
+  document.body.style.cursor = 'text';
+  // map crop-px word boxes -> css, keeping line grouping
+  words = [];
+  (data.lines || []).forEach((ln, li) => {
+    (ln.words || []).forEach((w) => {
+      words.push({
+        text: w.text, line: li,
+        x: (r.x + w.x) / kx, y: (r.y + w.y) / ky,
+        w: w.w / kx, h: w.h / ky,
+      });
+    });
+  });
+  selWords = new Set();
+  renderWords();
+  if (!words.length) flash(td('ocrNoText'));
+  positionTextToolbar();
+}
+
+function exitTextMode() {
+  textMode = false;
+  textLayer.hidden = true; textLayer.innerHTML = '';
+  textToolbar.hidden = true; translateCard.hidden = true;
+  words = []; selWords = new Set(); rubber = null;
+  if (rubberEl) { rubberEl.remove(); rubberEl = null; }
+  document.body.style.cursor = 'crosshair';
+  scheduleRender();
+  requestAnimationFrame(positionToolbar);
+}
+
+function renderWords() {
+  textLayer.hidden = false;
+  textLayer.innerHTML = '';
+  words.forEach((w, i) => {
+    const el = document.createElement('div');
+    el.className = 'word' + (selWords.has(i) ? ' sel' : '');
+    el.style.left = w.x + 'px'; el.style.top = w.y + 'px';
+    el.style.width = w.w + 'px'; el.style.height = w.h + 'px';
+    el.dataset.i = i;
+    textLayer.appendChild(el);
+  });
+}
+
+function wordAt(cx, cy) {
+  for (let i = words.length - 1; i >= 0; i--) {
+    const w = words[i];
+    if (cx >= w.x && cx <= w.x + w.w && cy >= w.y && cy <= w.y + w.h) return i;
+  }
+  return -1;
+}
+
+function textDown(e) {
+  translateCard.hidden = true;
+  const i = wordAt(e.clientX, e.clientY);
+  if (i >= 0 && !e.shiftKey) {
+    // start from a word — select it, allow drag to extend by rubber band
+    selWords = new Set([i]);
+  } else if (!e.shiftKey) {
+    selWords = new Set();
+  }
+  rubber = { sx: e.clientX, sy: e.clientY, base: new Set(selWords) };
+  renderWords();
+}
+
+function textMoveDrag(e) {
+  if (!rubber) return;
+  const x = Math.min(rubber.sx, e.clientX), y = Math.min(rubber.sy, e.clientY);
+  const w = Math.abs(e.clientX - rubber.sx), h = Math.abs(e.clientY - rubber.sy);
+  if (!rubberEl) { rubberEl = document.createElement('div'); rubberEl.id = 'selRubber'; document.body.appendChild(rubberEl); }
+  rubberEl.style.left = x + 'px'; rubberEl.style.top = y + 'px';
+  rubberEl.style.width = w + 'px'; rubberEl.style.height = h + 'px';
+  const next = new Set(rubber.base);
+  words.forEach((wd, i) => {
+    if (wd.x < x + w && wd.x + wd.w > x && wd.y < y + h && wd.y + wd.h > y) next.add(i);
+  });
+  selWords = next;
+  renderWords();
+}
+
+function textUp() {
+  rubber = null;
+  if (rubberEl) { rubberEl.remove(); rubberEl = null; }
+  positionTextToolbar();
+}
+
+function selectedText() {
+  const idx = selWords.size ? [...selWords] : words.map((_, i) => i); // nothing selected → all
+  const byLine = new Map();
+  idx.forEach((i) => {
+    const w = words[i];
+    if (!byLine.has(w.line)) byLine.set(w.line, []);
+    byLine.get(w.line).push(w);
+  });
+  return [...byLine.keys()].sort((a, b) => a - b)
+    .map((li) => byLine.get(li).sort((a, b) => a.x - b.x).map((w) => w.text).join(' '))
+    .join('\n');
+}
+
+function positionTextToolbar() {
+  if (!textMode) return;
+  textToolbar.hidden = false;
+  const rc = selCss();
+  const tw = textToolbar.offsetWidth, th = textToolbar.offsetHeight, m = 10;
+  let x = clamp(rc.x + rc.w / 2 - tw / 2, 8, window.innerWidth - tw - 8);
+  let y = rc.y + rc.h + m;
+  if (y + th > window.innerHeight - 8) y = Math.max(8, rc.y - th - m);
+  textToolbar.style.left = x + 'px';
+  textToolbar.style.top = y + 'px';
+}
+
+let flashTimer = null;
+function flash(msg) {
+  let el = document.getElementById('textFlash');
+  if (!el) { el = document.createElement('div'); el.id = 'textFlash'; document.body.appendChild(el); }
+  el.textContent = msg;
+  const rc = selCss() || { x: window.innerWidth / 2, y: 40, w: 0 };
+  el.style.left = clamp(rc.x + rc.w / 2, 80, window.innerWidth - 80) + 'px';
+  el.style.top = Math.max(20, rc.y - 40) + 'px';
+  el.hidden = false;
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => { el.hidden = true; }, 1400);
+}
+
+function copyTextSelection(close) {
+  const text = selectedText();
+  if (!text) { flash(td('ocrNoText')); return; }
+  if (close) {
+    window.shotik.action({ action: 'copytext', text, displayId: DISPLAY_ID });
+  } else {
+    navigator.clipboard.writeText(text);
+    flash(td('copiedTitle'));
+  }
+}
+
+async function translateSelection() {
+  const text = selectedText();
+  if (!text) { flash(td('ocrNoText')); return; }
+  translateCard.hidden = false;
+  const body = document.getElementById('translateBody');
+  const meta = document.getElementById('translateMeta');
+  body.classList.add('loading');
+  body.textContent = td('txtTranslating');
+  meta.textContent = '';
+  positionTranslateCard();
+  try {
+    const res = await window.shotik.translate(text);
+    body.classList.remove('loading');
+    body.textContent = res.text || '—';
+    meta.textContent = res.source && res.source !== 'auto' ? (res.source + ' → ' + (res.target || '')) : '';
+  } catch (e) {
+    body.classList.remove('loading');
+    body.textContent = td('txtTranslateFail');
+  }
+  positionTranslateCard();
+}
+
+function positionTranslateCard() {
+  const rc = selCss();
+  const cw = translateCard.offsetWidth, ch = translateCard.offsetHeight, m = 12;
+  let x = clamp(rc.x + rc.w + m, 8, window.innerWidth - cw - 8);
+  if (rc.x + rc.w + m + cw > window.innerWidth) x = clamp(rc.x - cw - m, 8, window.innerWidth - cw - 8);
+  let y = clamp(rc.y, 8, window.innerHeight - ch - 8);
+  translateCard.style.left = x + 'px';
+  translateCard.style.top = y + 'px';
+}
+
+// text toolbar wiring
+textToolbar.addEventListener('mousedown', (e) => e.stopPropagation());
+translateCard.addEventListener('mousedown', (e) => e.stopPropagation());
+document.getElementById('btnTextCopy').addEventListener('click', () => copyTextSelection(true));
+document.getElementById('btnTextAll').addEventListener('click', () => { selWords = new Set(words.map((_, i) => i)); renderWords(); });
+document.getElementById('btnTextTranslate').addEventListener('click', () => translateSelection());
+document.getElementById('btnTextClose').addEventListener('click', () => exitTextMode());
+document.getElementById('translateClose').addEventListener('click', () => { translateCard.hidden = true; });
+document.getElementById('translateCopy').addEventListener('click', () => {
+  navigator.clipboard.writeText(document.getElementById('translateBody').textContent);
+  flash(td('copiedTitle'));
+});
 
 /* ============================ text editor ============================ */
 function openTextEditor(cssX, cssY, ip) {
@@ -731,7 +956,7 @@ document.querySelectorAll('.size-btn').forEach((b) => {
 
 document.getElementById('btnUndo').addEventListener('click', undo);
 document.getElementById('btnRedo').addEventListener('click', redo);
-document.getElementById('btnOcr').addEventListener('click', () => doAction('ocr'));
+document.getElementById('btnOcr').addEventListener('click', () => enterTextMode());
 document.getElementById('btnPin').addEventListener('click', () => doAction('pin'));
 document.getElementById('btnSave').addEventListener('click', () => doAction('save'));
 document.getElementById('btnClaude').addEventListener('click', () => doAction('claude'));
@@ -757,6 +982,16 @@ function redo() {
 window.addEventListener('keydown', (e) => {
   if (!textEditor.hidden) return; // editor handles its own keys
   const code = e.code; // layout-independent (works on RU keyboard too)
+
+  // Live Text mode owns the keyboard while active
+  if (textMode) {
+    if (e.key === 'Escape') { e.preventDefault(); if (!translateCard.hidden) { translateCard.hidden = true; } else exitTextMode(); return; }
+    if (e.ctrlKey && code === 'KeyA') { e.preventDefault(); selWords = new Set(words.map((_, i) => i)); renderWords(); return; }
+    if (e.ctrlKey && code === 'KeyC') { e.preventDefault(); copyTextSelection(false); return; }
+    if (e.key === 'Enter') { e.preventDefault(); copyTextSelection(true); return; }
+    if (code === 'KeyR') { e.preventDefault(); translateSelection(); return; }
+    return;
+  }
 
   if (e.key === 'Alt') {
     e.preventDefault();
@@ -796,7 +1031,7 @@ window.addEventListener('keydown', (e) => {
   }
   if (mode === 'selected') {
     if (code === 'KeyP') { doAction('pin'); return; }
-    if (code === 'KeyT') { doAction('ocr'); return; }
+    if (code === 'KeyT') { enterTextMode(); return; }
     if (code === 'KeyA') { doAction('claude'); return; }
     if (code === 'BracketLeft' || code === 'BracketRight') {
       const order = ['S', 'M', 'L'];

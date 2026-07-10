@@ -62,6 +62,7 @@ window.shotik.onMcpLog((entry) => prependLog(entry));
 $('#btnRegion').addEventListener('click', () => window.shotik.captureRegion());
 $('#btnFull').addEventListener('click', () => window.shotik.captureFull());
 $('#btnRepeat').addEventListener('click', () => window.shotik.captureRepeat());
+$('#btnText').addEventListener('click', () => window.shotik.captureText());
 $('#btnOpenDir').addEventListener('click', () => window.shotik.openSaveDir());
 
 /* ---------- history ---------- */
@@ -210,9 +211,16 @@ function renderSettings() {
   $('#hkRegion').value = s.hotkeys.region || '';
   $('#hkFull').value = s.hotkeys.fullscreen || '';
   $('#hkRepeat').value = s.hotkeys.repeatLast || '';
+  $('#hkText').value = s.hotkeys.textGrab || '';
   $('#kbdRegion').textContent = short(s.hotkeys.region);
   $('#kbdFull').textContent = short(s.hotkeys.fullscreen);
   $('#kbdRepeat').textContent = short(s.hotkeys.repeatLast);
+  $('#kbdText').textContent = short(s.hotkeys.textGrab);
+  const tr = s.translate || {};
+  $('#setTarget').value = tr.target || 'en';
+  $('#setProvider').value = tr.provider || 'free';
+  $('#setDeeplKey').value = tr.deeplKey || '';
+  $('#deeplKeyRow').hidden = (tr.provider || 'free') !== 'deepl';
   $('#emptyBody').innerHTML = T('emptyBody', `<kbd>${esc(short(s.hotkeys.region))}</kbd>`);
   renderHotkeyWarn();
 }
@@ -249,6 +257,12 @@ $('#setLanguage').addEventListener('change', async (e) => {
   await applySettings({ language: e.target.value });
   location.reload(); // re-render everything in the new language
 });
+$('#setTarget').addEventListener('change', (e) => applySettings({ translate: { target: e.target.value } }));
+$('#setProvider').addEventListener('change', (e) => {
+  $('#deeplKeyRow').hidden = e.target.value !== 'deepl';
+  applySettings({ translate: { provider: e.target.value } });
+});
+$('#setDeeplKey').addEventListener('change', (e) => applySettings({ translate: { deeplKey: e.target.value.trim() } }));
 
 $('#btnChooseDir').addEventListener('click', async () => {
   const dir = await window.shotik.chooseDir();
@@ -260,6 +274,7 @@ const HK_FIELDS = [
   ['#hkRegion', 'region'],
   ['#hkFull', 'fullscreen'],
   ['#hkRepeat', 'repeatLast'],
+  ['#hkText', 'textGrab'],
 ];
 for (const [selr, key] of HK_FIELDS) {
   const input = $(selr);

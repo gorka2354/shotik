@@ -17,11 +17,15 @@ const DEFAULTS = () => ({
     region: 'Cmd+Shift+2',
     fullscreen: 'Cmd+Shift+1',
     repeatLast: 'Cmd+Shift+7',
+    textGrab: 'Cmd+Shift+4',
   } : {
     region: 'PrintScreen',
     fullscreen: 'Ctrl+PrintScreen',
     repeatLast: 'Shift+PrintScreen',
+    textGrab: 'Ctrl+Shift+PrintScreen',
   },
+  // default target = the user's own language (they read foreign text → their language)
+  translate: { target: String((() => { try { return app.getLocale(); } catch (_) { return 'en'; } })()).toLowerCase().startsWith('ru') ? 'ru' : 'en', provider: 'free', deeplKey: '' },
   mcp: { enabled: true, port: 7464 },
   language: 'system', // 'system' | 'en' | 'ru'
   launchAtStartup: false,

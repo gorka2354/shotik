@@ -71,6 +71,13 @@ Say “look at my screen” — and Claude sees it. Say “look here” — and 
 Same region, fresh pixels, instant, no overlay. Perfect for iteration loops:
 fix the CSS → `Shift+PrtSc` → `Ctrl+V` to Claude → “see it now?”. Survives restarts.
 
+### ✦ Live Text — grab & translate text from anything (`Ctrl+Shift+PrtSc`)
+Select an area and the recognized words become **selectable, right on the frozen screen** — like
+macOS Live Text. Drag to grab exactly the words you want, `Enter` to copy, or hit **Translate** to
+turn them into your language in a click. Works on screenshots, videos, PDFs, error dialogs — anything
+on screen. Offline OCR (Russian + English + your Windows languages); translation works out of the box
+(free) or via your own DeepL key. Better than PowerToys Text Extractor — that one just dumps everything.
+
 ### ✦ Flameshot-style overlay with annotations
 Freeze-frame, magnifier with pixel-perfect HEX picker, boxes, arrows, pen, highlighter,
 **pixelate your secrets**, text, numbered markers — all inside the overlay, before saving.
@@ -96,6 +103,7 @@ CLI works too: `Shotik.exe --capture region|full|repeat`.
 | Capture area | `PrtSc` | `⌘⇧2` |
 | Full screen (monitor under cursor) | `Ctrl+PrtSc` | `⌘⇧1` |
 | Repeat last area | `Shift+PrtSc` | `⌘⇧7` |
+| Extract text (Live Text) | `Ctrl+Shift+PrtSc` | `⌘⇧4` |
 
 In the overlay: `Enter`/double-click — copy · `Ctrl+S` — save as · `P` — pin · `T` — OCR ·
 `A` — copy for Claude · `F` — whole screen · `1..0` — tools · `[` `]` — stroke width ·

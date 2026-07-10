@@ -106,6 +106,36 @@
 
   <div id="textEditor" contenteditable="plaintext-only" hidden></div>
 
+  <!-- Live Text mode: selectable OCR words + toolbar + translation card -->
+  <div id="textLayer" hidden></div>
+
+  <div id="textToolbar" hidden>
+    <button class="tb-btn primary" id="btnTextCopy" data-tip="Копировать (Enter)">
+      <svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>
+    </button>
+    <button class="tb-btn" id="btnTextAll" data-tip="Выделить всё (Ctrl+A)">
+      <svg viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 011-1h3"/><path d="M16 4h3a1 1 0 011 1v3"/><path d="M20 16v3a1 1 0 01-1 1h-3"/><path d="M8 20H5a1 1 0 01-1-1v-3"/><path d="M8 12h8"/></svg>
+    </button>
+    <button class="tb-btn" id="btnTextTranslate" data-tip="Перевести (R)">
+      <svg viewBox="0 0 24 24"><path d="M4 5h7"/><path d="M7 5v.5C7 9 5.5 12 3 13"/><path d="M5 9c0 2 2 3.5 5 4.5"/><path d="M12 20l4-9 4 9"/><path d="M13.5 17h5"/></svg>
+    </button>
+    <div class="tb-sep"></div>
+    <button class="tb-btn danger" id="btnTextClose" data-tip="Назад (Esc)">
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>
+    </button>
+  </div>
+
+  <div id="translateCard" hidden>
+    <div id="translateHead">
+      <svg viewBox="0 0 24 24"><path d="M4 5h7"/><path d="M7 5v.5C7 9 5.5 12 3 13"/><path d="M5 9c0 2 2 3.5 5 4.5"/><path d="M12 20l4-9 4 9"/><path d="M13.5 17h5"/></svg>
+      <span id="translateTitle">Перевод</span>
+      <span id="translateMeta"></span>
+      <button id="translateClose">✕</button>
+    </div>
+    <div id="translateBody"></div>
+    <button class="btn-card" id="translateCopy">Копировать перевод</button>
+  </div>
+
   <script src="overlay.js"></script>
 </body>
 </html>

@@ -14,6 +14,7 @@ const mcp = require('./mcp');
 const windows = require('./windows');
 const theme = require('./theme');
 const i18n = require('./i18n');
+const translate = require('./translate');
 const { t } = i18n;
 
 const TEST_MODE = process.env.SHOTIK_TEST === '1' || process.argv.includes('--test');
@@ -38,6 +39,7 @@ if (!gotLock) {
     if (mode === 'region') triggerRegion();
     else if (mode === 'full') triggerFull();
     else if (mode === 'repeat') triggerRepeat();
+    else if (mode === 'text') triggerText();
     else windows.createMainWindow({ show: true });
   });
 }
@@ -138,6 +140,13 @@ async function handleOverlayResult(res) {
       }
       break;
     }
+    case 'copytext': {
+      if (res.text) {
+        clipboard.writeText(res.text);
+        if (st.showToast) windows.showToast({ kind: 'text', title: t('ocrDoneTitle'), body: res.text.slice(0, 120) });
+      }
+      break;
+    }
   }
   if (entry) windows.sendToMain('history:changed');
   lastProcessed = { action: res.action, file: entry ? entry.file : null, ts: Date.now() };
@@ -168,6 +177,19 @@ async function triggerRegion(opts = {}) {
     await new Promise((r) => setTimeout(r, 180));
   }
   const res = await capture.startOverlaySession();
+  if (res !== undefined) await handleOverlayResult(res);
+  return lastProcessed;
+}
+
+// Live Text: select an area, then extract/translate the text inside it.
+async function triggerText(opts = {}) {
+  if (!ensureScreenPermission()) return null;
+  const main = windows.getMainWindow();
+  if (opts.hideMain && main && main.isVisible()) {
+    main.hide();
+    await new Promise((r) => setTimeout(r, 180));
+  }
+  const res = await capture.startOverlaySession({ forText: true });
   if (res !== undefined) await handleOverlayResult(res);
   return lastProcessed;
 }
@@ -217,6 +239,7 @@ function registerHotkeys() {
     ['region', hk.region, () => triggerRegion()],
     ['fullscreen', hk.fullscreen, () => triggerFull()],
     ['repeatLast', hk.repeatLast, () => triggerRepeat()],
+    ['textGrab', hk.textGrab, () => triggerText()],
   ];
   for (const [name, acc, fn] of map) {
     if (!acc) continue;
@@ -235,6 +258,7 @@ function buildTrayMenu() {
     { label: t('trayRegion'), sublabel: hk.region, click: () => triggerRegion() },
     { label: t('trayFull'), sublabel: hk.fullscreen, click: () => triggerFull() },
     { label: t('trayRepeat'), sublabel: hk.repeatLast, click: () => triggerRepeat() },
+    { label: t('trayText'), sublabel: hk.textGrab, click: () => triggerText() },
     { type: 'separator' },
     { label: t('trayOpen'), click: () => windows.createMainWindow({ show: true }) },
     { type: 'separator' },
@@ -385,7 +409,8 @@ function setupTestHandler() {
       case 'trigger': {
         if (body.mode === 'full') return await triggerFull();
         if (body.mode === 'repeat') return await triggerRepeat();
-        triggerRegion(); // don't await — overlay stays open for input simulation
+        if (body.mode === 'text') triggerText(); // don't await — overlay stays open
+        else triggerRegion();
         await new Promise((r) => setTimeout(r, 1200));
         return { overlayOpen: capture.isOverlayOpen() };
       }
@@ -550,7 +575,17 @@ function setupAppIpc() {
     return text;
   });
 
+  // Live Text overlay IPC
+  ipcMain.handle('overlay:ocr-boxes', async (_e, pngArray) => {
+    try { return await ocr.recognizeBoxes(Buffer.from(pngArray)); } catch (_) { return { lines: [] }; }
+  });
+  ipcMain.handle('overlay:translate', async (_e, text) => {
+    const res = await translate.translate(text);
+    return { ...res, target: (settings.get().translate || {}).target };
+  });
+
   ipcMain.handle('capture:region', () => triggerRegion({ hideMain: true }));
+  ipcMain.handle('capture:text', () => triggerText({ hideMain: true }));
   ipcMain.handle('capture:full', async () => {
     const main = windows.getMainWindow();
     if (main && main.isVisible()) { main.hide(); await new Promise((r) => setTimeout(r, 180)); }
@@ -597,4 +632,5 @@ app.whenReady().then(async () => {
   if (mode === 'region') setTimeout(() => triggerRegion(), 400);
   else if (mode === 'full') setTimeout(() => triggerFull(), 400);
   else if (mode === 'repeat') setTimeout(() => triggerRepeat(), 400);
+  else if (mode === 'text') setTimeout(() => triggerText(), 400);
 });
