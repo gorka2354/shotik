@@ -170,14 +170,27 @@ function startOverlaySession(opts = {}) {
     const winInfos = []; // { win, display } — keyed pairs (wins[] order is nondeterministic under parallel capture)
     session = { resolve, wins, files, settled: false };
 
-    // Build each display's freeze-frame overlay. Displays are captured in
-    // PARALLEL — sequential getSources per monitor is the main latency (≈300ms
-    // each), so on multi-monitor setups this cuts the delay roughly N-fold. The
-    // cursor display goes first so the active monitor appears as early as possible.
-    const ordered = [...displays].sort((a, b) => (a.id === cursorDisplay.id ? -1 : b.id === cursorDisplay.id ? 1 : 0));
+    // Window rects for hover-snap arrive async; deliver to each overlay once
+    // BOTH the rects and that window exist (order-independent — see PERF.md).
+    let winRects = null;
+    const deliver = (info) => {
+      if (!winRects || info.delivered || !info.win || info.win.isDestroyed()) return;
+      info.delivered = true;
+      const d = info.display, sf = d.scaleFactor;
+      const rel = winRects
+        .map((r) => ({ x: r.x / sf - d.bounds.x, y: r.y / sf - d.bounds.y, w: r.w / sf, h: r.h / sf }))
+        .filter((r) => r.x < d.bounds.width && r.y < d.bounds.height && r.x + r.w > 0 && r.y + r.h > 0);
+      const send = () => { if (!info.win.isDestroyed()) info.win.webContents.send('overlay:windows', rel); };
+      if (info.win.webContents.isLoading()) info.win.webContents.once('did-finish-load', send);
+      else send();
+    };
+    enumWindows().then((r) => { if (!session || session.settled) return; winRects = r; winInfos.slice().forEach(deliver); });
 
-    async function makeOverlay(d) {
-      const img = await grabDisplay(d);
+    // getSources captures ALL screens per call, so per-display calls multiply the
+    // cost. Capture the cursor display first with one call and show it right away
+    // (~25ms warm); capture the other monitors natively in the background.
+    async function makeOverlay(d, preImg) {
+      const img = preImg || await grabDisplay(d);
       const physSize = img.getSize();
       // raw BGRA bitmap handed to the overlay over IPC — no PNG encode/decode,
       // no disk round-trip (saves ~120ms/display + I/O)
@@ -234,40 +247,23 @@ function startOverlaySession(opts = {}) {
       win.on('closed', () => {
         if (session && !session.settled) settle(null);
       });
+      const info = { win, display: d, delivered: false };
       wins.push(win);
-      winInfos.push({ win, display: d });
+      winInfos.push(info);
+      deliver(info); // in case window rects are already in
     }
 
     try {
-      await Promise.all(ordered.map(makeOverlay));
+      // cursor display first — capture + show it immediately (perceived latency)
+      await makeOverlay(cursorDisplay);
+      // other monitors natively, in the background (don't block the active one)
+      const others = displays.filter((d) => d.id !== cursorDisplay.id);
+      Promise.all(others.map((d) => makeOverlay(d).catch((e) => console.error('overlay display failed', e))));
     } catch (e) {
       console.error('overlay session failed', e);
       settle(null);
       return;
     }
-
-    // Deliver window rects for hover-to-snap (display-relative DIP coords).
-    // Note: the phys->DIP conversion assumes a uniform scale factor per
-    // display, which is exact on single-scale setups.
-    enumWindows().then((winRects) => {
-      if (!session || session.settled) return;
-      // deliver each display's window rects to THAT display's overlay window
-      // (pairing by winInfos, not by array index — parallel capture reorders wins[])
-      winInfos.forEach(({ win: w, display: d }) => {
-        if (!w || w.isDestroyed()) return;
-        const sf = d.scaleFactor;
-        const rel = winRects
-          .map((r) => ({
-            x: r.x / sf - d.bounds.x, y: r.y / sf - d.bounds.y,
-            w: r.w / sf, h: r.h / sf,
-          }))
-          .filter((r) => r.x < d.bounds.width && r.y < d.bounds.height && r.x + r.w > 0 && r.y + r.h > 0);
-        const deliver = () => { if (!w.isDestroyed()) w.webContents.send('overlay:windows', rel); };
-        // the renderer may not have registered its listener yet
-        if (w.webContents.isLoading()) w.webContents.once('did-finish-load', deliver);
-        else deliver();
-      });
-    });
   });
 }
 
