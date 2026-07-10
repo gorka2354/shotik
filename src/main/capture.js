@@ -19,6 +19,15 @@ const events = new EventEmitter();
 
 let session = null; // { resolve, wins: BrowserWindow[], files: string[] }
 let lastRegion = undefined; // { displayId, rectPhys: {x,y,width,height} }; lazy-loaded from settings
+let lastOverlayTiming = []; // step-by-step ms for the cursor overlay (perf diagnostics)
+function getOverlayTiming() { return lastOverlayTiming; }
+const { performance } = require('perf_hooks');
+// Always record the last capture's timing to a file so real-machine latency can
+// be inspected without a debug build (overwrite — no growth). Path in temp.
+function flushTiming(timing) {
+  lastOverlayTiming = timing.slice();
+  try { fs.writeFileSync(path.join(app.getPath('temp'), 'shotik-overlay-timing.log'), timing.join(' ')); } catch (_) {}
+}
 
 function getLastRegion() {
   if (lastRegion === undefined) lastRegion = settings.get().lastRegion || null;
@@ -163,6 +172,9 @@ function startOverlaySession(opts = {}) {
     return Promise.resolve(undefined); // undefined = "was busy", caller ignores
   }
   return new Promise(async (resolve) => {
+    const t0 = performance.now();
+    const timing = [];
+    const mark = (l) => { timing.push(`${l}=${Math.round(performance.now() - t0)}`); };
     const displays = screen.getAllDisplays();
     const cursorDisplay = displayUnderCursor();
     const wins = [];
@@ -190,7 +202,9 @@ function startOverlaySession(opts = {}) {
     // cost. Capture the cursor display first with one call and show it right away
     // (~25ms warm); capture the other monitors natively in the background.
     async function makeOverlay(d, preImg) {
+      const isCursor = d.id === cursorDisplay.id;
       const img = preImg || await grabDisplay(d);
+      if (isCursor) mark('grab');
       const physSize = img.getSize();
       // raw BGRA bitmap handed to the overlay over IPC — no PNG encode/decode,
       // no disk round-trip (saves ~120ms/display + I/O)
@@ -228,12 +242,16 @@ function startOverlaySession(opts = {}) {
           record: opts.forRecord ? '1' : '0',
         },
       });
+      if (isCursor) mark('winCreate');
       win.webContents.once('did-finish-load', () => {
         if (win.isDestroyed()) return;
+        if (isCursor) mark('load');
         win.setBounds(bounds);
         win.webContents.send('overlay:frame', { bitmap, width: physSize.width, height: physSize.height });
+        if (isCursor) mark('frameSent');
         if (GHOST) {
           win.showInactive(); // painted but off-screen, never steals focus
+          if (isCursor) { mark('show'); flushTiming(timing); }
           return;
         }
         win.show();
@@ -242,7 +260,9 @@ function startOverlaySession(opts = {}) {
         if (b.width !== bounds.width || b.height !== bounds.height || b.x !== bounds.x || b.y !== bounds.y) {
           win.setBounds(bounds);
         }
-        if (d.id === cursorDisplay.id) win.focus();
+        // 'ready-to-show'/first paint is when pixels actually land — mark it too
+        win.once('show', () => { if (isCursor) { mark('painted'); flushTiming(timing); } });
+        if (isCursor) { win.focus(); mark('show'); flushTiming(timing); }
       });
       win.on('closed', () => {
         if (session && !session.settled) settle(null);
@@ -292,5 +312,5 @@ ipcMain.on('overlay:color', (_e, hex) => events.emit('color-copied', hex));
 module.exports = {
   events, grabDisplay, captureFullscreen, captureRegion, captureLastRegion,
   setLastRegion, hasLastRegion, startOverlaySession, isOverlayOpen, overlayWindows,
-  displayById, displayUnderCursor, keepWarm, prewarm,
+  displayById, displayUnderCursor, keepWarm, prewarm, getOverlayTiming,
 };

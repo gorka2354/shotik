@@ -5,6 +5,7 @@ const {
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { execFile } = require('child_process');
 
 const settings = require('./settings');
 const history = require('./history');
@@ -43,6 +44,7 @@ if (!gotLock) {
     else if (mode === 'repeat') triggerRepeat();
     else if (mode === 'text') triggerText();
     else if (mode === 'record') triggerRecord();
+    else if (mode === 'translate') triggerTranslateSelection();
     else windows.createMainWindow({ show: true });
   });
 }
@@ -209,6 +211,42 @@ async function triggerText(opts = {}) {
   return lastProcessed;
 }
 
+// Translate the currently selected text anywhere on screen (no screenshot):
+// copy the selection via a synthetic Ctrl+C, then translate + show a popup.
+function runCopySelection() {
+  if (TEST_MODE) return Promise.resolve(); // tests set the clipboard directly
+  const script = path.join(__dirname, 'copy-selection.ps1').replace('app.asar' + path.sep, 'app.asar.unpacked' + path.sep);
+  return new Promise((resolve) => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script],
+      { timeout: 5000, windowsHide: true }, () => resolve());
+  });
+}
+
+async function triggerTranslateSelection() {
+  const savedText = clipboard.readText();
+  const savedImg = clipboard.readImage();
+  if (!TEST_MODE) clipboard.clear();
+  await runCopySelection();
+  await new Promise((r) => setTimeout(r, 60));
+  const text = clipboard.readText().trim();
+  if (!TEST_MODE) { // restore the user's clipboard right away
+    if (!savedImg.isEmpty()) clipboard.writeImage(savedImg);
+    else if (savedText) clipboard.writeText(savedText);
+    else clipboard.clear();
+  }
+  if (!text) { windows.showToast({ kind: 'text', title: t('trNoSelTitle'), body: t('trNoSelBody') }); return null; }
+  const target = (settings.get().translate || {}).target;
+  windows.showTranslatePopup({ loading: true, original: text, loadingText: t('txtTranslating') });
+  try {
+    const res = await translate.translate(text);
+    windows.updateTranslatePopup({ original: text, translated: res.text, source: res.source, target });
+    lastProcessed = { action: 'translate-selection', file: null, ts: Date.now() };
+  } catch (e) {
+    windows.updateTranslatePopup({ original: text, error: t('txtTranslateFail') });
+  }
+  return lastProcessed;
+}
+
 // Record: if already recording, stop; otherwise select an area and start.
 async function triggerRecord(opts = {}) {
   if (recorder.isRecording()) { recorder.stopRecording(); return null; }
@@ -267,6 +305,7 @@ function registerHotkeys() {
     ['repeatLast', hk.repeatLast, () => triggerRepeat()],
     ['textGrab', hk.textGrab, () => triggerText()],
     ['record', hk.record, () => triggerRecord()],
+    ['translateSelection', hk.translateSelection, () => triggerTranslateSelection()],
   ];
   for (const [name, acc, fn] of map) {
     if (!acc) continue;
@@ -286,6 +325,7 @@ function buildTrayMenu() {
     { label: t('trayFull'), sublabel: hk.fullscreen, click: () => triggerFull() },
     { label: t('trayRepeat'), sublabel: hk.repeatLast, click: () => triggerRepeat() },
     { label: t('trayText'), sublabel: hk.textGrab, click: () => triggerText() },
+    { label: t('trayTranslate'), sublabel: hk.translateSelection, click: () => triggerTranslateSelection() },
     { label: recorder.isRecording() ? t('trayStopRec') : t('trayRecord'), sublabel: hk.record, click: () => triggerRecord() },
     { type: 'separator' },
     { label: t('trayOpen'), click: () => windows.createMainWindow({ show: true }) },
@@ -449,6 +489,8 @@ function setupTestHandler() {
       }
       case 'record-stop': { recorder.stopRecording(); await new Promise((r) => setTimeout(r, 800)); return recorder.status(); }
       case 'record-status': return recorder.status();
+      case 'overlay-timing': return capture.getOverlayTiming();
+      case 'translate-selection': { await triggerTranslateSelection(); await new Promise((r) => setTimeout(r, 500)); return { popup: !!windows.getTranslatePopup() }; }
       case 'state': {
         return {
           overlayOpen: capture.isOverlayOpen(),
@@ -496,6 +538,7 @@ function setupTestHandler() {
         else if (body.target === 'toast') target = windows.getToastWindow();
         else if (body.target === 'pin') target = windows.getPinWindows()[body.index || 0];
         else if (body.target === 'rec-controls') target = recorder.getControlsWindow();
+        else if (body.target === 'tp') target = windows.getTranslatePopup();
         else target = capture.overlayWindows()[body.index || 0];
         if (!target) throw new Error('no target window');
         return await target.webContents.executeJavaScript(body.code);
@@ -507,6 +550,7 @@ function setupTestHandler() {
         else if (body.target === 'pin') target = windows.getPinWindows()[body.index || 0];
         else if (body.target === 'rec-controls') target = recorder.getControlsWindow();
         else if (body.target === 'rec-border') target = recorder.getBorderWindow();
+        else if (body.target === 'tp') target = windows.getTranslatePopup();
         else target = capture.overlayWindows()[body.index || 0];
         if (!target) throw new Error('no target window: ' + (body.target || 'overlay'));
         if (!target.isVisible()) target.showInactive();
@@ -706,4 +750,5 @@ app.whenReady().then(async () => {
   else if (mode === 'repeat') setTimeout(() => triggerRepeat(), 400);
   else if (mode === 'text') setTimeout(() => triggerText(), 400);
   else if (mode === 'record') setTimeout(() => triggerRecord(), 400);
+  else if (mode === 'translate') setTimeout(() => triggerTranslateSelection(), 400);
 });

@@ -248,6 +248,7 @@ function renderSettings() {
   $('#hkRepeat').value = s.hotkeys.repeatLast || '';
   $('#hkText').value = s.hotkeys.textGrab || '';
   $('#hkRecord').value = s.hotkeys.record || '';
+  $('#hkTranslate').value = s.hotkeys.translateSelection || '';
   $('#kbdRegion').textContent = short(s.hotkeys.region);
   $('#kbdFull').textContent = short(s.hotkeys.fullscreen);
   $('#kbdRepeat').textContent = short(s.hotkeys.repeatLast);
@@ -321,6 +322,7 @@ const HK_FIELDS = [
   ['#hkRepeat', 'repeatLast'],
   ['#hkText', 'textGrab'],
   ['#hkRecord', 'record'],
+  ['#hkTranslate', 'translateSelection'],
 ];
 for (const [selr, key] of HK_FIELDS) {
   const input = $(selr);

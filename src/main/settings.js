@@ -19,12 +19,14 @@ const DEFAULTS = () => ({
     repeatLast: 'Cmd+Shift+7',
     textGrab: 'Cmd+Shift+4',
     record: 'Cmd+Shift+6',
+    translateSelection: 'Cmd+Alt+T',
   } : {
     region: 'PrintScreen',
     fullscreen: 'Ctrl+PrintScreen',
     repeatLast: 'Shift+PrintScreen',
     textGrab: 'Ctrl+Shift+PrintScreen',
     record: 'Ctrl+Alt+PrintScreen',
+    translateSelection: 'Ctrl+Alt+T',
   },
   // default target = the user's own language (they read foreign text → their language)
   translate: { target: String((() => { try { return app.getLocale(); } catch (_) { return 'en'; } })()).toLowerCase().startsWith('ru') ? 'ru' : 'en', provider: 'free', deeplKey: '' },

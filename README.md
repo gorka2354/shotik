@@ -77,6 +77,11 @@ Select a region (or a window, or the whole screen — same as a screenshot) and 
 captured area. Then **export any recording to GIF** in one click from the gallery — perfect for
 bug repros and PR demos. Optional system-audio capture, 15–60 fps, and a 3-2-1 countdown.
 
+### ✦ Translate any selected text (`Ctrl+Alt+T`) — no screenshot
+Select text in **any** app — browser, editor, PDF, chat — press the shortcut, and a translation
+pops up next to your cursor. Works via a synthetic copy, translates with the free service or your
+DeepL key, and restores your clipboard. A drop-in replacement for the DeepL desktop app.
+
 ### ✦ Live Text — grab & translate text from anything (`Ctrl+Shift+PrtSc`)
 Select an area and the recognized words become **selectable, right on the frozen screen** — like
 macOS Live Text. Drag to grab exactly the words you want, `Enter` to copy, or hit **Translate** to
@@ -111,6 +116,7 @@ CLI works too: `Shotik.exe --capture region|full|repeat`.
 | Repeat last area | `Shift+PrtSc` | `⌘⇧7` |
 | Extract text (Live Text) | `Ctrl+Shift+PrtSc` | `⌘⇧4` |
 | Record region → video / GIF | `Ctrl+Alt+PrtSc` | `⌘⇧6` |
+| Translate selected text | `Ctrl+Alt+T` | `⌘⌥T` |
 
 In the overlay: `Enter`/double-click — copy · `Ctrl+S` — save as · `P` — pin · `T` — OCR ·
 `A` — copy for Claude · `F` — whole screen · `1..0` — tools · `[` `]` — stroke width ·

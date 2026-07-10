@@ -179,6 +179,74 @@ ipcMain.on('pin:menu', (e, id) => {
 
 function closeAllPins() { for (const { win } of pins.values()) { try { win.close(); } catch (_) {} } }
 
+// ---------- translation popup (global select → translate) ----------
+let tpWin = null;
+let tpData = null;   // latest payload (so did-finish-load sends the current state)
+let tpReady = false;
+const TP_W = 380;
+
+function sendTpData() {
+  if (tpReady && tpWin && !tpWin.isDestroyed() && tpData) tpWin.webContents.send('tp:data', tpData);
+}
+
+function showTranslatePopup(data) {
+  tpData = data;
+  const pt = screen.getCursorScreenPoint();
+  const area = screen.getDisplayNearestPoint(pt).workArea;
+  let x = pt.x + 12, y = pt.y + 16;
+  if (x + TP_W > area.x + area.width) x = area.x + area.width - TP_W - 8;
+  if (x < area.x) x = area.x + 8;
+  if (y > area.y + area.height - 160) y = area.y + area.height - 240;
+
+  if (tpWin && !tpWin.isDestroyed()) {
+    tpWin.setBounds({ x: Math.round(x) + (GHOST ? GHOST_OFFSET : 0), y: Math.round(y), width: TP_W, height: 220 });
+    if (GHOST) tpWin.showInactive(); else tpWin.show();
+    sendTpData();
+    return;
+  }
+  tpReady = false;
+  tpWin = new BrowserWindow({
+    x: Math.round(x) + (GHOST ? GHOST_OFFSET : 0), y: Math.round(y),
+    width: TP_W, height: 220, show: false,
+    frame: false, transparent: true, resizable: false, skipTaskbar: true,
+    alwaysOnTop: true, minimizable: false, maximizable: false, hasShadow: false,
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'translate-popup', 'preload.js'),
+      contextIsolation: true, nodeIntegration: false, backgroundThrottling: false,
+    },
+  });
+  tpWin.removeMenu();
+  tpWin.setAlwaysOnTop(true, 'screen-saver');
+  tpWin.loadFile(path.join(__dirname, '..', 'translate-popup', 'popup.html'));
+  tpWin.webContents.once('did-finish-load', () => {
+    if (!tpWin || tpWin.isDestroyed()) return;
+    tpReady = true;
+    if (GHOST) tpWin.showInactive(); else tpWin.show();
+    sendTpData();
+  });
+  tpWin.on('closed', () => { tpWin = null; tpReady = false; });
+  // dismiss on click-away (only after it has actually been focused, to avoid
+  // an immediate self-dismiss right after show)
+  let focusedOnce = false;
+  tpWin.on('focus', () => { focusedOnce = true; });
+  tpWin.on('blur', () => { if (focusedOnce && tpWin && !tpWin.isDestroyed()) tpWin.hide(); });
+}
+
+function updateTranslatePopup(data) {
+  tpData = data;
+  sendTpData();
+}
+
+ipcMain.on('tp:copy', (_e, text) => { if (text) clipboard.writeText(text); if (tpWin && !tpWin.isDestroyed()) tpWin.hide(); });
+ipcMain.on('tp:close', () => { if (tpWin && !tpWin.isDestroyed()) tpWin.hide(); });
+ipcMain.on('tp:resize', (_e, h) => {
+  if (tpWin && !tpWin.isDestroyed()) {
+    const b = tpWin.getBounds();
+    tpWin.setBounds({ x: b.x, y: b.y, width: TP_W, height: Math.max(120, Math.min(520, Math.round(h))) });
+    tpWin.showInactive();
+  }
+});
+
 // Re-sync native chrome with the OS theme and notify renderers.
 function applyTheme(t) {
   if (mainWin && !mainWin.isDestroyed()) {
@@ -196,7 +264,10 @@ function getLastToast() { return lastToast; }
 function getToastWindow() { return toastWin && !toastWin.isDestroyed() ? toastWin : null; }
 function getPinWindows() { return [...pins.values()].map((p) => p.win).filter((w) => !w.isDestroyed()); }
 
+function getTranslatePopup() { return tpWin && !tpWin.isDestroyed() ? tpWin : null; }
+
 module.exports = {
   createMainWindow, getMainWindow, sendToMain, showToast, createPin, closeAllPins,
   getLastToast, getToastWindow, getPinWindows, applyTheme,
+  showTranslatePopup, updateTranslatePopup, getTranslatePopup,
 };
