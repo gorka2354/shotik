@@ -3,23 +3,28 @@
 // this module wires its chunks to a file, manages the border/controls windows,
 // and registers the result in history.
 const { BrowserWindow, desktopCapturer, screen, app, ipcMain } = require('electron');
+const electronSession = require('electron').session;
 const { EventEmitter } = require('events');
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 
 const GHOST = process.env.SHOTIK_GHOST === '1';
-const TEST = process.env.SHOTIK_TEST === '1';
+// SHOTIK_REAL_CAPTURE lets a test instance capture the real screen (instead of
+// the synthetic source) — used for the one thing ghost can't verify.
+const REAL_CAPTURE = process.env.SHOTIK_REAL_CAPTURE === '1';
+const TEST = process.env.SHOTIK_TEST === '1' && !REAL_CAPTURE;
 const GHOST_OFFSET = 20000;
 
 const events = new EventEmitter();
 
 let session = null; // { recWin, borderWin, controlsWin, stream, file, ext, firstFrame, startTs, paused, settled }
+let trace = [];
 
 function isRecording() { return !!session; }
 function status() {
-  if (!session) return { recording: false };
-  return { recording: true, paused: session.paused, file: session.file, startTs: session.startTs };
+  if (!session) return { recording: false, trace };
+  return { recording: true, paused: session.paused, file: session.file, startTs: session.startTs, trace, chunks: session.chunks || 0, bytes: session.bytes || 0 };
 }
 
 function tsName() {
@@ -42,6 +47,7 @@ function init(d) { deps = { ...deps, ...d }; }
 // startRecording({ displayId, rectPhys:{x,y,w,h}, rectDip:{x,y,w,h} }, opts)
 async function startRecording({ displayId, rectPhys, rectDip }, opts = {}) {
   if (session) return null;
+  trace = [];
   const display = screen.getAllDisplays().find((d) => d.id === Number(displayId)) || screen.getPrimaryDisplay();
   const physW = Math.round(display.size.width * display.scaleFactor);
   const physH = Math.round(display.size.height * display.scaleFactor);
@@ -70,6 +76,17 @@ async function startRecording({ displayId, rectPhys, rectDip }, opts = {}) {
     try { if (!cd.isDestroyed()) cd.destroy(); } catch (_) {}
   }
 
+  // Route the recorder window's getDisplayMedia() to the chosen screen (real capture).
+  if (!TEST) {
+    electronSession.defaultSession.setDisplayMediaRequestHandler(async (req, cb) => {
+      try {
+        const srcs = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } });
+        const src = srcs.find((s) => s.display_id === String(displayId)) || srcs[0];
+        cb({ video: src, audio: rec.systemAudio ? 'loopback' : undefined });
+      } catch (_) { cb({}); }
+    }, { useSystemPicker: false });
+  }
+
   const recWin = new BrowserWindow({
     width: 200, height: 200, x: GHOST_OFFSET, y: 200, show: false,
     frame: false, skipTaskbar: true,
@@ -79,6 +96,10 @@ async function startRecording({ displayId, rectPhys, rectDip }, opts = {}) {
     },
   });
   recWin.removeMenu();
+  // getDisplayMedia needs a user gesture — executeJavaScript(..., true) provides it
+  recWin.webContents.once('did-finish-load', () => {
+    if (!recWin.isDestroyed()) recWin.webContents.executeJavaScript('window.__shotikStart && window.__shotikStart()', true).catch(() => {});
+  });
 
   const stream = fs.createWriteStream(partFile);
   session = {
@@ -167,11 +188,13 @@ function finalize(info) {
   if (!session || session.settled) return;
   session.settled = true;
   const s = session;
+  trace.push('finalize chunks=' + (s.chunks || 0) + ' bytes=' + (s.bytes || 0) + ' canceled=' + !!s.canceled + ' partExists=' + fs.existsSync(s.partFile));
   session = null;
   try { s.stream.end(); } catch (_) {}
 
   const cleanup = () => {
     for (const w of [s.recWin, s.borderWin, s.controlsWin]) { try { if (w && !w.isDestroyed()) w.destroy(); } catch (_) {} }
+    if (!TEST) { try { electronSession.defaultSession.setDisplayMediaRequestHandler(null); } catch (_) {} }
   };
 
   setTimeout(() => {
@@ -202,10 +225,11 @@ function finalize(info) {
 
 // ---- IPC from the recorder window ----
 ipcMain.on('rec:ready', (_e, info) => { if (session) { session.ext = (info && info.ext) || 'webm'; events.emit('ready'); } });
-ipcMain.on('rec:chunk', (_e, chunk) => { if (session && session.stream.writable) { try { session.stream.write(Buffer.from(chunk)); } catch (_) {} } });
+ipcMain.on('rec:chunk', (_e, chunk) => { if (session && session.stream.writable) { try { session.stream.write(Buffer.from(chunk)); session.chunks = (session.chunks || 0) + 1; session.bytes = (session.bytes || 0) + chunk.length; } catch (_) {} } });
 ipcMain.on('rec:first-frame', (_e, buf) => { if (session) session.firstFrame = Buffer.from(buf); });
 ipcMain.on('rec:done', (_e, info) => finalize(info || {}));
 ipcMain.on('rec:error', (_e, msg) => { events.emit('error', msg); if (session) { session.canceled = true; finalize({ duration: 0 }); } });
+ipcMain.on('rec:trace', (_e, msg) => { trace.push(msg); if (trace.length > 30) trace.shift(); });
 ipcMain.on('rec:controls-stop', () => stopRecording());
 ipcMain.on('rec:controls-pause', () => (session && session.paused ? resumeRecording() : pauseRecording()));
 ipcMain.on('rec:controls-cancel', () => cancelRecording());
