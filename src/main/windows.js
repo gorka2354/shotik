@@ -237,6 +237,60 @@ function updateTranslatePopup(data) {
   sendTpData();
 }
 
+// ---------- selection bubble (auto-translate on selection) ----------
+// A tiny always-on-top button that appears next to a fresh text selection.
+// Clicking it (handled in main.js via 'bubble:activate') opens the translation.
+let sbWin = null;
+let sbTimer = null;
+const SB = 46; // window box; the visible button is 32px centered inside it
+const SB_TTL = 4200;
+
+function ensureBubble() {
+  if (sbWin && !sbWin.isDestroyed()) return sbWin;
+  sbWin = new BrowserWindow({
+    width: SB, height: SB, show: false,
+    frame: false, transparent: true, resizable: false, movable: false,
+    alwaysOnTop: true, skipTaskbar: true, focusable: false, hasShadow: false,
+    minimizable: false, maximizable: false, fullscreenable: false,
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'bubble', 'preload.js'),
+      contextIsolation: true, nodeIntegration: false, backgroundThrottling: false,
+    },
+  });
+  sbWin.removeMenu();
+  sbWin.setAlwaysOnTop(true, 'screen-saver');
+  sbWin.loadFile(path.join(__dirname, '..', 'bubble', 'bubble.html'));
+  return sbWin;
+}
+
+function armBubbleHide() {
+  clearTimeout(sbTimer);
+  sbTimer = setTimeout(() => hideSelectionBubble(), SB_TTL);
+}
+
+// showSelectionBubble({x, y}) — DIP coords near the end of the selection.
+function showSelectionBubble({ x, y }) {
+  const w = ensureBubble();
+  const area = screen.getDisplayNearestPoint({ x: Math.round(x), y: Math.round(y) }).workArea;
+  let bx = x + 14, by = y + 16; // offset so the button isn't under the pointer
+  if (bx + SB > area.x + area.width) bx = x - SB - 8;
+  if (by + SB > area.y + area.height) by = y - SB - 8;
+  if (bx < area.x) bx = area.x + 4;
+  if (by < area.y) by = area.y + 4;
+  w.setBounds({ x: Math.round(bx) + (GHOST ? GHOST_OFFSET : 0), y: Math.round(by), width: SB, height: SB });
+  w.showInactive(); // never steal focus from the app the user is selecting in
+  armBubbleHide();
+}
+
+function hideSelectionBubble() {
+  clearTimeout(sbTimer);
+  if (sbWin && !sbWin.isDestroyed()) sbWin.hide();
+}
+
+function getSelectionBubble() { return sbWin && !sbWin.isDestroyed() ? sbWin : null; }
+
+ipcMain.on('bubble:keepalive', () => armBubbleHide());
+
 ipcMain.on('tp:copy', (_e, text) => { if (text) clipboard.writeText(text); if (tpWin && !tpWin.isDestroyed()) tpWin.hide(); });
 ipcMain.on('tp:close', () => { if (tpWin && !tpWin.isDestroyed()) tpWin.hide(); });
 ipcMain.on('tp:resize', (_e, h) => {
@@ -270,4 +324,5 @@ module.exports = {
   createMainWindow, getMainWindow, sendToMain, showToast, createPin, closeAllPins,
   getLastToast, getToastWindow, getPinWindows, applyTheme,
   showTranslatePopup, updateTranslatePopup, getTranslatePopup,
+  showSelectionBubble, hideSelectionBubble, getSelectionBubble,
 };

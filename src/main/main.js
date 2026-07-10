@@ -5,7 +5,8 @@ const {
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { execFile } = require('child_process');
+const readline = require('readline');
+const { execFile, spawn } = require('child_process');
 
 const settings = require('./settings');
 const history = require('./history');
@@ -222,6 +223,21 @@ function runCopySelection() {
   });
 }
 
+// Translate a piece of text and show it in the popup near the cursor.
+// Shared by the hotkey (text via clipboard) and the selection bubble (text via UIA).
+async function translateTextToPopup(text) {
+  const target = (settings.get().translate || {}).target;
+  windows.showTranslatePopup({ loading: true, original: text, loadingText: t('txtTranslating') });
+  try {
+    const res = await translate.translate(text);
+    windows.updateTranslatePopup({ original: text, translated: res.text, source: res.source, target });
+    lastProcessed = { action: 'translate-selection', file: null, ts: Date.now() };
+  } catch (e) {
+    windows.updateTranslatePopup({ original: text, error: t('txtTranslateFail') });
+  }
+  return lastProcessed;
+}
+
 async function triggerTranslateSelection() {
   const savedText = clipboard.readText();
   const savedImg = clipboard.readImage();
@@ -235,17 +251,64 @@ async function triggerTranslateSelection() {
     else clipboard.clear();
   }
   if (!text) { windows.showToast({ kind: 'text', title: t('trNoSelTitle'), body: t('trNoSelBody') }); return null; }
-  const target = (settings.get().translate || {}).target;
-  windows.showTranslatePopup({ loading: true, original: text, loadingText: t('txtTranslating') });
-  try {
-    const res = await translate.translate(text);
-    windows.updateTranslatePopup({ original: text, translated: res.text, source: res.source, target });
-    lastProcessed = { action: 'translate-selection', file: null, ts: Date.now() };
-  } catch (e) {
-    windows.updateTranslatePopup({ original: text, error: t('txtTranslateFail') });
-  }
-  return lastProcessed;
+  lastTranslated = text; // don't let the auto-bubble re-pop for what we just translated
+  return translateTextToPopup(text);
 }
+
+// ---------- auto-translate bubble (background selection watcher) ----------
+// A tiny PowerShell process reads the selected text via UI Automation (no
+// clipboard, no synthetic keys) and reports it; we float a bubble next to it.
+let selWatcher = null;
+let pendingSelection = null; // { text } captured for the currently shown bubble
+let lastTranslated = null;   // suppress re-popping the bubble for text we just translated
+
+function onSelectionDetected(ev) {
+  const text = String(ev.text || '').trim();
+  if (!text) return;
+  if (text === lastTranslated) return; // already translated this exact selection
+  pendingSelection = { text };
+  let pt = { x: ev.x || 0, y: ev.y || 0 };
+  try { pt = screen.screenToDipPoint({ x: ev.x, y: ev.y }); } catch (_) {} // physical px → DIP
+  windows.showSelectionBubble({ x: pt.x, y: pt.y });
+}
+
+function startSelectionWatcher() {
+  if (TEST_MODE || GHOST) return;             // tests drive it over HTTP; ghost never spawns
+  if (process.platform !== 'win32') return;   // UIA selection path is Windows-only
+  if (selWatcher) return;
+  if (!(settings.get().translate || {}).autoBubble) return;
+  const script = path.join(__dirname, 'selection-watch.ps1').replace('app.asar' + path.sep, 'app.asar.unpacked' + path.sep);
+  try {
+    selWatcher = spawn('powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script],
+      { windowsHide: true });
+  } catch (e) { selWatcher = null; return; }
+  const rl = readline.createInterface({ input: selWatcher.stdout });
+  rl.on('line', (line) => {
+    line = line.trim();
+    if (!line) return;
+    let ev; try { ev = JSON.parse(line); } catch (_) { return; }
+    if (ev.clear) { windows.hideSelectionBubble(); pendingSelection = null; lastTranslated = null; return; }
+    onSelectionDetected(ev);
+  });
+  if (selWatcher.stderr) selWatcher.stderr.on('data', () => {}); // drain, ignore
+  selWatcher.on('exit', () => { selWatcher = null; });
+  selWatcher.on('error', () => { selWatcher = null; });
+}
+
+function stopSelectionWatcher() {
+  windows.hideSelectionBubble();
+  pendingSelection = null;
+  if (selWatcher) { try { selWatcher.kill(); } catch (_) {} selWatcher = null; }
+}
+
+// Clicking the bubble → translate the selection it was raised for.
+ipcMain.on('bubble:activate', () => {
+  const sel = pendingSelection;
+  pendingSelection = null;
+  windows.hideSelectionBubble();
+  if (sel && sel.text) { lastTranslated = sel.text; translateTextToPopup(sel.text); }
+});
 
 // Record: if already recording, stop; otherwise select an area and start.
 async function triggerRecord(opts = {}) {
@@ -491,6 +554,19 @@ function setupTestHandler() {
       case 'record-status': return recorder.status();
       case 'overlay-timing': return capture.getOverlayTiming();
       case 'translate-selection': { await triggerTranslateSelection(); await new Promise((r) => setTimeout(r, 500)); return { popup: !!windows.getTranslatePopup() }; }
+      case 'selection-bubble': {
+        // simulate the watcher reporting a selection (real watcher never runs in tests)
+        onSelectionDetected({ x: (body.x != null ? body.x : 900), y: (body.y != null ? body.y : 500), text: body.text || '' });
+        await new Promise((r) => setTimeout(r, 250));
+        const b = windows.getSelectionBubble();
+        return { bubble: !!(b && b.isVisible()), bounds: b ? b.getBounds() : null };
+      }
+      case 'bubble-activate': {
+        ipcMain.emit('bubble:activate');
+        await new Promise((r) => setTimeout(r, 500));
+        return { popup: !!windows.getTranslatePopup() };
+      }
+      case 'bubble-clear': { windows.hideSelectionBubble(); return { bubble: !!(windows.getSelectionBubble() && windows.getSelectionBubble().isVisible()) }; }
       case 'state': {
         return {
           overlayOpen: capture.isOverlayOpen(),
@@ -539,6 +615,7 @@ function setupTestHandler() {
         else if (body.target === 'pin') target = windows.getPinWindows()[body.index || 0];
         else if (body.target === 'rec-controls') target = recorder.getControlsWindow();
         else if (body.target === 'tp') target = windows.getTranslatePopup();
+        else if (body.target === 'bubble') target = windows.getSelectionBubble();
         else target = capture.overlayWindows()[body.index || 0];
         if (!target) throw new Error('no target window');
         return await target.webContents.executeJavaScript(body.code);
@@ -551,6 +628,7 @@ function setupTestHandler() {
         else if (body.target === 'rec-controls') target = recorder.getControlsWindow();
         else if (body.target === 'rec-border') target = recorder.getBorderWindow();
         else if (body.target === 'tp') target = windows.getTranslatePopup();
+        else if (body.target === 'bubble') target = windows.getSelectionBubble();
         else target = capture.overlayWindows()[body.index || 0];
         if (!target) throw new Error('no target window: ' + (body.target || 'overlay'));
         if (!target.isVisible()) target.showInactive();
@@ -602,6 +680,10 @@ function setupAppIpc() {
       app.setLoginItemSettings({ openAtLogin: after.launchAtStartup, args: ['--hidden'] });
     }
     if (before.language !== after.language) refreshTray();
+    if ((before.translate || {}).autoBubble !== (after.translate || {}).autoBubble) {
+      if ((after.translate || {}).autoBubble) startSelectionWatcher();
+      else stopSelectionWatcher();
+    }
     return { settings: settings.get(), mcp: mcp.status(), hotkeyErrors };
   });
 
@@ -705,8 +787,8 @@ function setupAppIpc() {
 }
 
 // ---------- lifecycle ----------
-app.on('before-quit', () => { global.__shotikQuitting = true; });
-app.on('will-quit', () => globalShortcut.unregisterAll());
+app.on('before-quit', () => { global.__shotikQuitting = true; stopSelectionWatcher(); });
+app.on('will-quit', () => { globalShortcut.unregisterAll(); stopSelectionWatcher(); });
 app.on('window-all-closed', () => { /* tray app — keep running */ });
 
 app.whenReady().then(async () => {
@@ -740,6 +822,7 @@ app.whenReady().then(async () => {
   });
 
   capture.keepWarm(); // warm the capture engine so the first hotkey press is snappy
+  startSelectionWatcher(); // watch for text selections → auto-translate bubble (if enabled)
 
   const hidden = process.argv.includes('--hidden');
   windows.createMainWindow({ show: !hidden });

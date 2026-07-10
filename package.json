@@ -1,7 +1,7 @@
 {
   "name": "shotik",
   "productName": "Shotik",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Beautiful open-source screenshot tool with built-in MCP server — let Claude see your screen",
   "main": "src/main/main.js",
   "license": "MIT",
@@ -37,7 +37,8 @@
       "src/main/ocr.ps1",
       "src/main/windows-enum.ps1",
       "src/main/ocr-mac.js",
-      "src/main/copy-selection.ps1"
+      "src/main/copy-selection.ps1",
+      "src/main/selection-watch.ps1"
     ],
     "win": {
       "icon": "assets/icon.png",

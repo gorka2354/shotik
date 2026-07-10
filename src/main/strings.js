@@ -134,6 +134,8 @@ const DICTS = {
     trProviderFree: 'Free (no key)', trProviderDeepl: 'DeepL (key)',
     trKey: 'DeepL API key', trKeySub: 'free tier gives 500k chars/month — key ends with :fx',
     trKeyPh: 'paste your key',
+    trAutoBubble: 'Translate bubble on selection',
+    trAutoBubbleSub: 'select text anywhere → a small button pops up; click it to translate (no clipboard, no screenshot)',
   },
 
   ru: {
@@ -259,6 +261,8 @@ const DICTS = {
     trProviderFree: 'Бесплатный (без ключа)', trProviderDeepl: 'DeepL (по ключу)',
     trKey: 'API-ключ DeepL', trKeySub: 'бесплатный тариф — 500k символов/мес, ключ заканчивается на :fx',
     trKeyPh: 'вставь свой ключ',
+    trAutoBubble: 'Пузырь перевода при выделении',
+    trAutoBubbleSub: 'выдели текст где угодно → рядом всплывёт кнопка; клик — перевод (без буфера обмена и скриншота)',
   },
 };
 

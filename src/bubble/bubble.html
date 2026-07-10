@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+  :root { --accent: #0067C0; --ink: #fff; }
+  @media (prefers-color-scheme: dark)  { :root { --bg: #2b2b30; --border: rgba(255,255,255,0.14); } }
+  @media (prefers-color-scheme: light) { :root { --bg: #ffffff; --border: rgba(0,0,0,0.10); } }
+  html, body { background: transparent; overflow: hidden; width: 100%; height: 100%; }
+  body { display: flex; align-items: center; justify-content: center;
+         font-family: 'Segoe UI Variable Text','Segoe UI',-apple-system,system-ui,sans-serif; }
+  #b {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: var(--bg); border: 1px solid var(--border);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.28);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: transform .1s ease, box-shadow .1s ease;
+    animation: pop .16s cubic-bezier(.2,.9,.3,1.3);
+  }
+  #b:hover { transform: scale(1.12); box-shadow: 0 6px 18px rgba(0,0,0,0.34); }
+  #b:active { transform: scale(0.96); }
+  #b svg { width: 18px; height: 18px; fill: none; stroke: var(--accent);
+           stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  @keyframes pop { from { opacity: 0; transform: scale(0.6); } }
+</style>
+</head>
+<body>
+  <div id="b" title="Translate">
+    <!-- translate glyph: latin 'A' stroke + CJK stroke, matching the app's icon set -->
+    <svg viewBox="0 0 24 24"><path d="M4 5h7"/><path d="M7 5v.5C7 9 5.5 12 3 13"/><path d="M5 9c0 2 2 3.5 5 4.5"/><path d="M12 20l4-9 4 9"/><path d="M13.5 17h5"/></svg>
+  </div>
+  <script src="bubble.js"></script>
+</body>
+</html>
