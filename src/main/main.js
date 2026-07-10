@@ -695,6 +695,8 @@ app.whenReady().then(async () => {
     windows.showToast({ kind: 'text', title: t('recFailTitle'), body: String(msg).slice(0, 120) });
   });
 
+  capture.keepWarm(); // warm the capture engine so the first hotkey press is snappy
+
   const hidden = process.argv.includes('--hidden');
   windows.createMainWindow({ show: !hidden });
 

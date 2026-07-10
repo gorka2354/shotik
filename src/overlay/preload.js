@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('shotik', {
   getTheme: () => ipcRenderer.invoke('theme:get'),
   getI18n: () => ipcRenderer.invoke('i18n:get'),
   onWindows: (cb) => ipcRenderer.on('overlay:windows', (_e, list) => cb(list)),
+  onFrame: (cb) => ipcRenderer.on('overlay:frame', (_e, data) => cb(data)),
   ocrBoxes: (png) => ipcRenderer.invoke('overlay:ocr-boxes', png),
   translate: (text) => ipcRenderer.invoke('overlay:translate', text),
 });

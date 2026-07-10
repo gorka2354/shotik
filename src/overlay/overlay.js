@@ -2,7 +2,6 @@
 /* Shotik overlay: freeze-frame, region selection, annotations, action toolbar. */
 
 const params = new URLSearchParams(location.search);
-const IMG_URL = params.get('img');
 const DISPLAY_ID = Number(params.get('displayId'));
 const FOR_CLAUDE = params.get('claude') === '1';
 const FOR_TEXT = params.get('text') === '1';
@@ -83,7 +82,6 @@ window.shotik.getTheme().then((t) => {
   scheduleRender();
 });
 
-let img = new Image();
 let srcCv, srcCtx;             // pristine screenshot (image px)
 let imgW = 0, imgH = 0, kx = 1, ky = 1;
 let loaded = false;
@@ -127,20 +125,26 @@ const roundSel = () => ({
 });
 
 /* ============================ boot ============================ */
-img.onload = () => {
-  imgW = img.naturalWidth; imgH = img.naturalHeight;
+// Freeze frame arrives as a raw BGRA bitmap over IPC (no PNG encode/decode) —
+// convert to RGBA and paint it onto the source canvas.
+window.shotik.onFrame(({ bitmap, width, height }) => {
+  imgW = width; imgH = height;
   cv.width = imgW; cv.height = imgH;
   kx = imgW / window.innerWidth; ky = imgH / window.innerHeight;
   srcCv = document.createElement('canvas');
   srcCv.width = imgW; srcCv.height = imgH;
   srcCtx = srcCv.getContext('2d', { willReadFrequently: true });
-  srcCtx.drawImage(img, 0, 0);
+  const src = bitmap instanceof Uint8Array ? bitmap : new Uint8Array(bitmap);
+  const rgba = new Uint8ClampedArray(src.length);
+  for (let i = 0; i < src.length; i += 4) {
+    rgba[i] = src[i + 2]; rgba[i + 1] = src[i + 1]; rgba[i + 2] = src[i]; rgba[i + 3] = 255;
+  }
+  srcCtx.putImageData(new ImageData(rgba, imgW, imgH), 0, 0);
   loaded = true;
   hintEl.hidden = false;
   if (FOR_CLAUDE) claudeBadge.hidden = false;
   scheduleRender();
-};
-img.src = IMG_URL;
+});
 
 window.shotik.onWindows((list) => {
   snapWindows = list;

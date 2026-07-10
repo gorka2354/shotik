@@ -83,6 +83,20 @@ function enumWindows() {
   });
 }
 
+// The first desktopCapturer.getSources in a process is slow (~300-600ms) — it
+// spins up the capture engine. Warming it at startup (and keeping it hot) makes
+// the first real capture, when the user hits the hotkey, snappy.
+let warmTimer = null;
+async function prewarm() {
+  try { await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } }); } catch (_) {}
+}
+function keepWarm() {
+  if (FAKE_SCREEN) return;
+  prewarm();
+  clearInterval(warmTimer);
+  warmTimer = setInterval(prewarm, 30000);
+}
+
 function displayById(id) {
   return screen.getAllDisplays().find((d) => d.id === id) || screen.getPrimaryDisplay();
 }
@@ -155,70 +169,75 @@ function startOverlaySession(opts = {}) {
     const files = [];
     session = { resolve, wins, files, settled: false };
 
-    try {
-      for (const d of displays) {
-        const img = await grabDisplay(d);
-        const file = path.join(tempDir(), `freeze-${d.id}-${Date.now()}.png`);
-        fs.writeFileSync(file, img.toPNG());
-        files.push(file);
-        const physSize = img.getSize();
+    // Build each display's freeze-frame overlay. Displays are captured in
+    // PARALLEL — sequential getSources per monitor is the main latency (≈300ms
+    // each), so on multi-monitor setups this cuts the delay roughly N-fold. The
+    // cursor display goes first so the active monitor appears as early as possible.
+    const ordered = [...displays].sort((a, b) => (a.id === cursorDisplay.id ? -1 : b.id === cursorDisplay.id ? 1 : 0));
 
-        const bounds = {
-          x: d.bounds.x + (GHOST ? GHOST_OFFSET : 0), y: d.bounds.y,
-          width: d.bounds.width, height: d.bounds.height,
-        };
-        const win = new BrowserWindow({
-          ...bounds,
-          // resizable MUST be true: on Windows a non-resizable window is clamped
-          // to the display work area and can't cover the taskbar. thickFrame:false
-          // removes the resize border, so the user still can't resize it.
-          frame: false, show: false, transparent: false, backgroundColor: '#0b0d11',
-          skipTaskbar: true, resizable: true, thickFrame: false, movable: false,
-          minimizable: false, maximizable: false, fullscreenable: false,
-          enableLargerThanScreen: true, hasShadow: false, roundedCorners: false,
-          webPreferences: {
-            preload: path.join(__dirname, '..', 'overlay', 'preload.js'),
-            contextIsolation: true, nodeIntegration: false, spellcheck: false,
-            backgroundThrottling: false,
-          },
-        });
-        win.removeMenu();
-        win.setBounds(bounds); // force exact size — creation may have clamped it
-        win.loadFile(path.join(__dirname, '..', 'overlay', 'overlay.html'), {
-          query: {
-            img: pathToFileURL(file).href,
-            displayId: String(d.id),
-            scale: String(d.scaleFactor),
-            physW: String(physSize.width),
-            physH: String(physSize.height),
-            focused: d.id === cursorDisplay.id ? '1' : '0',
-            claude: opts.forClaude ? '1' : '0',
-            text: opts.forText ? '1' : '0',
-            record: opts.forRecord ? '1' : '0',
-          },
-        });
-        win.webContents.once('did-finish-load', () => {
-          if (win.isDestroyed()) return;
+    async function makeOverlay(d) {
+      const img = await grabDisplay(d);
+      const physSize = img.getSize();
+      // raw BGRA bitmap handed to the overlay over IPC — no PNG encode/decode,
+      // no disk round-trip (saves ~120ms/display + I/O)
+      const bitmap = img.toBitmap();
+      const bounds = {
+        x: d.bounds.x + (GHOST ? GHOST_OFFSET : 0), y: d.bounds.y,
+        width: d.bounds.width, height: d.bounds.height,
+      };
+      const win = new BrowserWindow({
+        ...bounds,
+        // resizable MUST be true: on Windows a non-resizable window is clamped
+        // to the display work area and can't cover the taskbar. thickFrame:false
+        // removes the resize border, so the user still can't resize it.
+        frame: false, show: false, transparent: false, backgroundColor: '#0b0d11',
+        skipTaskbar: true, resizable: true, thickFrame: false, movable: false,
+        minimizable: false, maximizable: false, fullscreenable: false,
+        enableLargerThanScreen: true, hasShadow: false, roundedCorners: false,
+        webPreferences: {
+          preload: path.join(__dirname, '..', 'overlay', 'preload.js'),
+          contextIsolation: true, nodeIntegration: false, spellcheck: false,
+          backgroundThrottling: false,
+        },
+      });
+      win.removeMenu();
+      win.setBounds(bounds); // force exact size — creation may have clamped it
+      win.loadFile(path.join(__dirname, '..', 'overlay', 'overlay.html'), {
+        query: {
+          displayId: String(d.id),
+          scale: String(d.scaleFactor),
+          physW: String(physSize.width),
+          physH: String(physSize.height),
+          focused: d.id === cursorDisplay.id ? '1' : '0',
+          claude: opts.forClaude ? '1' : '0',
+          text: opts.forText ? '1' : '0',
+          record: opts.forRecord ? '1' : '0',
+        },
+      });
+      win.webContents.once('did-finish-load', () => {
+        if (win.isDestroyed()) return;
+        win.setBounds(bounds);
+        win.webContents.send('overlay:frame', { bitmap, width: physSize.width, height: physSize.height });
+        if (GHOST) {
+          win.showInactive(); // painted but off-screen, never steals focus
+          return;
+        }
+        win.show();
+        win.setAlwaysOnTop(true, 'screen-saver');
+        const b = win.getBounds();
+        if (b.width !== bounds.width || b.height !== bounds.height || b.x !== bounds.x || b.y !== bounds.y) {
           win.setBounds(bounds);
-          if (GHOST) {
-            win.showInactive(); // painted but off-screen, never steals focus
-            return;
-          }
-          win.show();
-          win.setAlwaysOnTop(true, 'screen-saver');
-          // showing can re-clamp the bounds — verify and force once more
-          const b = win.getBounds();
-          if (b.width !== bounds.width || b.height !== bounds.height || b.x !== bounds.x || b.y !== bounds.y) {
-            win.setBounds(bounds);
-          }
-          if (d.id === cursorDisplay.id) win.focus();
-        });
-        win.on('closed', () => {
-          // If a window dies unexpectedly, cancel the whole session.
-          if (session && !session.settled) settle(null);
-        });
-        wins.push(win);
-      }
+        }
+        if (d.id === cursorDisplay.id) win.focus();
+      });
+      win.on('closed', () => {
+        if (session && !session.settled) settle(null);
+      });
+      wins.push(win);
+    }
+
+    try {
+      await Promise.all(ordered.map(makeOverlay));
     } catch (e) {
       console.error('overlay session failed', e);
       settle(null);
@@ -274,5 +293,5 @@ ipcMain.on('overlay:color', (_e, hex) => events.emit('color-copied', hex));
 module.exports = {
   events, grabDisplay, captureFullscreen, captureRegion, captureLastRegion,
   setLastRegion, hasLastRegion, startOverlaySession, isOverlayOpen, overlayWindows,
-  displayById, displayUnderCursor,
+  displayById, displayUnderCursor, keepWarm, prewarm,
 };
