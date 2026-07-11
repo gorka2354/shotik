@@ -68,4 +68,24 @@ test('OCR fallback: fixture → bubble → click → translated popup', async ()
   }
 });
 
+// Double-click path: recognizeWordAt must return a single word from the text
+// (not the whole line) near the click point.
+test('recognizeWordAt returns the word near the click (double-click path)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shotik-ocrwd-'));
+  execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass',
+    '-File', path.join(__dirname, 'ocr-fixtures.ps1'), '-OutDir', dir], { stdio: 'ignore' });
+  const app = makeApp({ port: PORT });
+  try {
+    await app.waitReady();
+    const r = await app.post('word-at', { path: path.join(dir, 'en_white.png'), x: 10, y: 10 }); // left edge
+    const w = (r && r.text || '').trim();
+    assert(!/\s/.test(w), 'a single word, not a line, got: "' + w + '"');
+    assert(norm('Good morning, please review the pull request').split(' ').includes(norm(w)),
+      'the word belongs to the phrase, got: "' + w + '"');
+  } finally {
+    await app.stop();
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
+  }
+});
+
 module.exports = {};

@@ -254,6 +254,11 @@ function showTranslatePopup(data) {
   tpWin.on('closed', () => { tpWin = null; tpReady = false; clearTimeout(tpHideTimer); });
 }
 
+function hideTranslatePopup() {
+  clearTimeout(tpHideTimer);
+  if (tpWin && !tpWin.isDestroyed()) tpWin.hide();
+}
+
 function updateTranslatePopup(data) {
   tpData = data;
   armPopupHide(); // result/error is on screen now — start the auto-hide countdown
@@ -265,8 +270,9 @@ function updateTranslatePopup(data) {
 // Clicking it (handled in main.js via 'bubble:activate') opens the translation.
 let sbWin = null;
 let sbTimer = null;
-const SB = 48; // window box; the whole window is clickable (see bubble.js)
-const SB_TTL = 6000;
+const SB = 60; // window box; larger than the visible circle so its round CSS
+               // shadow isn't clipped to a square. The whole window is clickable.
+const SB_TTL = 4000;
 
 function ensureBubble() {
   if (sbWin && !sbWin.isDestroyed()) return sbWin;
@@ -354,6 +360,6 @@ function getTranslatePopup() { return tpWin && !tpWin.isDestroyed() ? tpWin : nu
 module.exports = {
   createMainWindow, getMainWindow, sendToMain, showToast, createPin, closeAllPins,
   getLastToast, getToastWindow, getPinWindows, applyTheme,
-  showTranslatePopup, updateTranslatePopup, getTranslatePopup,
+  showTranslatePopup, updateTranslatePopup, getTranslatePopup, hideTranslatePopup,
   showSelectionBubble, hideSelectionBubble, getSelectionBubble,
 };

@@ -78,15 +78,16 @@ async function recognizeForSelection(pngBuffer) {
 // Returns { lines: [ { text, words: [ { text, x, y, w, h } ] } ] } in the
 // pixel coordinates of the passed image. Windows only (Live Text mode);
 // macOS falls back to a single line with no boxes.
-async function recognizeBoxes(pngBuffer) {
-  const tmp = path.join(app.getPath('temp'), `shotik-ocrb-${Date.now()}.png`);
+async function recognizeBoxes(pngBuffer, lang) {
+  const tmp = path.join(app.getPath('temp'), `shotik-ocrb-${Date.now()}-${Math.round(performance.now())}.png`);
   fs.writeFileSync(tmp, pngBuffer);
   try {
     if (process.platform !== 'win32') {
       const text = await recognize(pngBuffer).catch(() => '');
       return { lines: text ? text.split('\n').map((t) => ({ text: t, words: [] })) : [] };
     }
-    const out = await runPowerShell([tmp, '-Boxes']);
+    const args = lang ? [tmp, '-Boxes', '-Lang', lang] : [tmp, '-Boxes'];
+    const out = await runPowerShell(args);
     if (!out) return { lines: [] };
     try { return JSON.parse(out); } catch (_) { return { lines: [] }; }
   } finally {
@@ -94,4 +95,31 @@ async function recognizeBoxes(pngBuffer) {
   }
 }
 
-module.exports = { recognize, recognizeBoxes, recognizeForSelection };
+// Double-click: return just the word at (relX, relY) in the region's pixel
+// coords. Upscales like recognizeForSelection and picks the language the same
+// Cyrillic-first way, then returns the word whose box holds the point (nearest
+// if none contains it).
+async function recognizeWordAt(pngBuffer, relX, relY) {
+  if (process.platform !== 'win32') return (await recognize(pngBuffer).catch(() => '')).trim();
+  let png = pngBuffer, scale = 1;
+  try {
+    const img = nativeImage.createFromBuffer(pngBuffer);
+    const s = img.getSize();
+    if (s.width && s.width < 1400) { png = img.resize({ width: s.width * 2, height: s.height * 2, quality: 'best' }).toPNG(); scale = 2; }
+  } catch (_) {}
+  const probe = (await recognize(png, 'ru').catch(() => '')).trim();
+  const lang = (cyr(probe) > 0 && cyr(probe) >= lat(probe)) ? 'ru' : 'en-US';
+  const boxes = await recognizeBoxes(png, lang).catch(() => ({ lines: [] }));
+  const cx = relX * scale, cy = relY * scale;
+  let best = null, bestDist = Infinity;
+  for (const line of boxes.lines || []) {
+    for (const w of line.words || []) {
+      if (cx >= w.x && cx <= w.x + w.w && cy >= w.y && cy <= w.y + w.h) return String(w.text).trim();
+      const d = Math.abs(w.x + w.w / 2 - cx) + Math.abs(w.y + w.h / 2 - cy);
+      if (d < bestDist) { bestDist = d; best = w.text; }
+    }
+  }
+  return best ? String(best).trim() : probe;
+}
+
+module.exports = { recognize, recognizeBoxes, recognizeForSelection, recognizeWordAt };

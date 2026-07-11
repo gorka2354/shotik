@@ -67,6 +67,7 @@ function Get-Cursor {
 
 $wasDown = $false
 $downX = 0; $downY = 0  # where the left button went down (for drag detection)
+$lastPressT = 0; $lastPressX = 0; $lastPressY = 0; $isDbl = $false
 $lastEmitted = ''   # last UIA selection text we told the app about ('' = none/cleared)
 $idle = 0
 $tick = 0
@@ -74,10 +75,10 @@ $emptyStreak = 0    # consecutive empty reads — debounce so a transient empty 
                     # doesn't yank the bubble out from under a click
 
 while ($true) {
-  Start-Sleep -Milliseconds 90
+  Start-Sleep -Milliseconds 55
   # Exit if the parent (Shotik) is gone, so we never linger as an orphan (~every 2s).
   $tick++
-  if ($ParentPid -gt 0 -and ($tick % 22 -eq 0)) {
+  if ($ParentPid -gt 0 -and ($tick % 36 -eq 0)) {
     try { $null = [System.Diagnostics.Process]::GetProcessById($ParentPid) } catch { exit 0 }
   }
   # High bit of GetAsyncKeyState (negative Int16) = button currently down.
@@ -85,10 +86,18 @@ while ($true) {
   $justPressed = (-not $wasDown) -and $down
   $justReleased = $wasDown -and (-not $down)
   $wasDown = $down
-  if ($justPressed) { $d = Get-Cursor; $downX = $d.X; $downY = $d.Y }
+  if ($justPressed) {
+    $d = Get-Cursor; $downX = $d.X; $downY = $d.Y
+    # Report every press so the app can dismiss the bubble/popup on a click-away.
+    Write-Event @{ down = 1; x = $d.X; y = $d.Y }
+    # Double-click = two presses within 450ms at ~the same spot (selects a word).
+    $nowT = [Environment]::TickCount
+    $isDbl = (($nowT - $lastPressT) -lt 450) -and ([Math]::Abs($d.X - $lastPressX) -le 8) -and ([Math]::Abs($d.Y - $lastPressY) -le 8)
+    $lastPressT = $nowT; $lastPressX = $d.X; $lastPressY = $d.Y
+  }
   if ($down) { $idle = 0; continue }   # skip while the user is still dragging
 
-  # Read right after a mouse release (snappy), or every ~540ms while idle
+  # Read right after a mouse release (snappy), or every ~330ms while idle
   # (to catch keyboard selection / Ctrl+A). Keeps UIA reads cheap when idle.
   $idle++
   if (-not $justReleased -and ($idle % 6 -ne 0)) { continue }
@@ -99,17 +108,20 @@ while ($true) {
 
   if ([string]::IsNullOrEmpty($sel)) {
     # No UIA selection. If the focused element has NO TextPattern at all (a
-    # custom-drawn app like Telegram posts) and the user just finished a real
-    # horizontal-ish drag, report it so the app can OCR that region. In normal
-    # UIA apps (browsers/editors) HasPattern is true, so this never fires and the
-    # clean UIA path is used. Otherwise debounce a clear.
+    # custom-drawn app like Telegram posts), report the gesture so the app can
+    # OCR that region: a horizontal-ish drag → the dragged span; a double-click →
+    # the word at that point. Normal UIA apps have a TextPattern, so this never
+    # fires there. Otherwise debounce a clear.
     if ($justReleased -and (-not $info.HasPattern)) {
       $up = Get-Cursor
       $dx = [Math]::Abs($up.X - $downX); $dy = [Math]::Abs($up.Y - $downY)
+      if ($isDbl -and $dx -lt 25) {
+        Write-Event @{ gesture = $true; dbl = $true; x1 = $up.X; y1 = $up.Y; x2 = $up.X; y2 = $up.Y }
+        $isDbl = $false; $emptyStreak = 0; continue
+      }
       if ($dx -ge 25 -and $dx -ge $dy) {   # selection drags run along a line, not vertical
         Write-Event @{ gesture = $true; x1 = $downX; y1 = $downY; x2 = $up.X; y2 = $up.Y }
-        $emptyStreak = 0
-        continue
+        $emptyStreak = 0; continue
       }
     }
     $emptyStreak++

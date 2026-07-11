@@ -290,11 +290,30 @@ function onSelectionDetected(ev) {
 // We capture that region and OCR it — reading the pixels the user selected, no
 // clipboard, no synthetic keys. Reuses the Live Text engine (recognizeForSelection
 // upscales + picks the right language; see test/ghost/ocr.test.js).
+const toDip = (x, y) => { try { return screen.screenToDipPoint({ x, y }); } catch (_) { return { x, y }; } };
+
+// Click-away dismiss: the watcher reports every left-press, so we can hide the
+// bubble/popup when the user clicks anywhere that isn't on them (robust, no
+// reliance on flaky window blur). A press ON the bubble/popup is left alone —
+// that window handles its own click (activate / copy).
+function onMouseDown(ev) {
+  const pt = toDip(ev.x, ev.y);
+  const outside = (w) => {
+    if (!w || w.isDestroyed() || !w.isVisible()) return false;
+    const b = w.getBounds();
+    return !(pt.x >= b.x && pt.x <= b.x + b.width && pt.y >= b.y && pt.y <= b.y + b.height);
+  };
+  const bub = windows.getSelectionBubble();
+  if (bub && bub.isVisible() && outside(bub)) { windows.hideSelectionBubble(); pendingSelection = null; }
+  const pop = windows.getTranslatePopup();
+  if (pop && pop.isVisible() && outside(pop)) windows.hideTranslatePopup();
+}
+
 let ocrBusy = false;
 async function onGesture(ev) {
   if (!(settings.get().translate || {}).ocrFallback) return;
   if (ocrBusy) return; // one OCR at a time — drags can arrive quickly
-  const toDip = (x, y) => { try { return screen.screenToDipPoint({ x, y }); } catch (_) { return { x, y }; } };
+  if (ev.dbl) return onGestureDbl(ev);
   const p1 = toDip(ev.x1, ev.y1), p2 = toDip(ev.x2, ev.y2);
   const gx1 = Math.min(p1.x, p2.x), gx2 = Math.max(p1.x, p2.x);
   const gy1 = Math.min(p1.y, p2.y), gy2 = Math.max(p1.y, p2.y);
@@ -319,6 +338,34 @@ async function onGesture(ev) {
     windows.showSelectionBubble({ x: p2.x, y: p2.y });
   } catch (e) {
     blog('gesture OCR failed: ' + (e && e.message));
+  } finally { ocrBusy = false; }
+}
+
+// Double-click in a non-UIA app selects a word — OCR a band around the point and
+// return just the word under it (recognizeWordAt), so we translate exactly what
+// was double-clicked, not the whole line.
+async function onGestureDbl(ev) {
+  const p = toDip(ev.x1, ev.y1);
+  const disp = screen.getDisplayNearestPoint({ x: Math.round(p.x), y: Math.round(p.y) });
+  const bandW = 260, bandH = 34; // DIP: enough for the word + neighbours to read boxes
+  const rect = {
+    x: Math.max(0, Math.round(p.x - bandW / 2 - disp.bounds.x)),
+    y: Math.max(0, Math.round(p.y - bandH / 2 - disp.bounds.y)),
+    width: bandW, height: bandH,
+  };
+  ocrBusy = true;
+  try {
+    const { png } = await capture.captureRegion(disp.id, rect);
+    // click position within the captured region, in that region's pixel coords
+    const relX = (p.x - disp.bounds.x - rect.x) * disp.scaleFactor;
+    const relY = (p.y - disp.bounds.y - rect.y) * disp.scaleFactor;
+    const text = (await ocr.recognizeWordAt(png, relX, relY) || '').trim();
+    blog(`dblclick OCR word → "${text}"`);
+    if (!text || text === lastTranslated) return;
+    pendingSelection = { text };
+    windows.showSelectionBubble({ x: p.x, y: p.y });
+  } catch (e) {
+    blog('dblclick OCR failed: ' + (e && e.message));
   } finally { ocrBusy = false; }
 }
 
@@ -347,6 +394,7 @@ function startSelectionWatcher() {
     line = line.trim();
     if (!line) return;
     let ev; try { ev = JSON.parse(line); } catch (_) { blog('watcher line unparsed: ' + line.slice(0, 60)); return; }
+    if (ev.down) { onMouseDown(ev); return; }
     if (ev.clear) { clearSelectionBubble(); return; }
     if (ev.gesture) { onGesture(ev); return; }
     onSelectionDetected(ev);
@@ -643,6 +691,13 @@ function setupTestHandler() {
       }
       case 'tp-hover': { ipcMain.emit('tp:hover', null, !!body.over); return 'ok'; }
       case 'ocr-selection': { const text = await ocr.recognizeForSelection(fs.readFileSync(body.path)); return { text }; }
+      case 'word-at': { const text = await ocr.recognizeWordAt(fs.readFileSync(body.path), body.x || 0, body.y || 0); return { text }; }
+      case 'sim-down': {
+        onMouseDown({ x: body.x, y: body.y });
+        await new Promise((r) => setTimeout(r, 40));
+        const b = windows.getSelectionBubble(), p = windows.getTranslatePopup();
+        return { bubble: !!(b && b.isVisible()), popup: !!(p && p.isVisible()) };
+      }
       case 'gesture-sim': {
         // simulate onGesture's tail (post-OCR wiring) with a known fixture image,
         // so the OCR→bubble→translate chain is testable without real display geometry

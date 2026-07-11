@@ -81,6 +81,31 @@ test('popup auto-hides a while after the result (no blur needed)', async () => {
   });
 });
 
+// Click-away dismiss (the "it stays after I deselect" complaint): a press that
+// isn't on the bubble hides it; a press on it is left alone (that's the click).
+test('a click away hides the bubble; a click on it does not', async () => {
+  await withApp({}, async ({ post }) => {
+    const s = await post('selection-bubble', { text: 'hello', x: 900, y: 500 });
+    const b = s.bounds;
+    const away = await post('sim-down', { x: b.x - 300, y: b.y - 300 });
+    assert(away.bubble === false, 'bubble hidden after a click away');
+    await post('selection-bubble', { text: 'hello2', x: 900, y: 500 });
+    const on = await post('sim-down', { x: b.x + 5, y: b.y + 5 });
+    assert(on.bubble === true, 'bubble kept when the click is on it');
+  });
+});
+
+test('a click away hides the translate popup', async () => {
+  await withApp({}, async ({ post }) => {
+    await post('selection-bubble', { text: 'hello', x: 900, y: 500 });
+    await post('bubble-activate', {});
+    const before = await post('tp-visible', {});
+    assert(before.popupVisible === true, 'popup is up');
+    const d = await post('sim-down', { x: 100, y: 100 });
+    assert(d.popup === false, 'popup hidden after a click away');
+  });
+});
+
 test('hovering the popup pauses its auto-hide', async () => {
   await withApp({ SHOTIK_TP_TTL: '400' }, async ({ post, sleep }) => {
     await post('selection-bubble', { text: 'hello', x: 900, y: 500 });
