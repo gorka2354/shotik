@@ -61,4 +61,6 @@ async function translate(text, target) {
   return await freeTranslate(text, tl);
 }
 
-module.exports = { translate };
+// _internal exported for unit tests (freeTranslate/deeplTranslate are pure —
+// they take text+target and a mockable global fetch, no settings needed).
+module.exports = { translate, _internal: { freeTranslate, deeplTranslate } };

@@ -9,6 +9,19 @@ const symbolColor = () => (nativeTheme.shouldUseDarkColors ? '#cfcfcf' : '#1b1b1
 
 const GHOST = process.env.SHOTIK_GHOST === '1';
 const GHOST_OFFSET = 20000;
+// Tests: force the focusable show() path (and blur-dismiss) even in ghost, so the
+// real popup focus behaviour can be exercised off-screen. Off = ghost uses showInactive.
+const POPUP_REAL = process.env.SHOTIK_POPUP_REAL === '1';
+const popupShow = (w) => { if (GHOST && !POPUP_REAL) w.showInactive(); else w.show(); };
+
+// Shared diagnostics file (see main.js blog()) — trace the popup's own show/blur.
+function wlog(msg) {
+  try {
+    const { app } = require('electron');
+    fs.appendFileSync(path.join(app.getPath('temp'), 'shotik-bubble.log'),
+      new Date().toISOString().slice(11, 23) + ' [win] ' + msg + '\n');
+  } catch (_) {}
+}
 
 let mainWin = null;
 let lastToast = null; // recorded for tests
@@ -183,7 +196,10 @@ function closeAllPins() { for (const { win } of pins.values()) { try { win.close
 let tpWin = null;
 let tpData = null;   // latest payload (so did-finish-load sends the current state)
 let tpReady = false;
+let tpShownAt = 0;        // when the result was shown (blur-dismiss grace starts here)
+let tpReadyToClose = false; // false while loading — never dismiss before the result lands
 const TP_W = 380;
+const TP_GRACE = Number(process.env.SHOTIK_TP_GRACE || 600); // ms to ignore blur after the result
 
 function sendTpData() {
   if (tpReady && tpWin && !tpWin.isDestroyed() && tpData) tpWin.webContents.send('tp:data', tpData);
@@ -191,6 +207,8 @@ function sendTpData() {
 
 function showTranslatePopup(data) {
   tpData = data;
+  tpReadyToClose = !data.loading; // if shown already-resolved, it may dismiss; if loading, not yet
+  wlog(`popup show (${data.loading ? 'loading' : (data.error ? 'error' : 'result')}) reuse=${!!(tpWin && !tpWin.isDestroyed())}`);
   const pt = screen.getCursorScreenPoint();
   const area = screen.getDisplayNearestPoint(pt).workArea;
   let x = pt.x + 12, y = pt.y + 16;
@@ -200,7 +218,8 @@ function showTranslatePopup(data) {
 
   if (tpWin && !tpWin.isDestroyed()) {
     tpWin.setBounds({ x: Math.round(x) + (GHOST ? GHOST_OFFSET : 0), y: Math.round(y), width: TP_W, height: 220 });
-    if (GHOST) tpWin.showInactive(); else tpWin.show();
+    tpShownAt = Date.now();
+    popupShow(tpWin);
     sendTpData();
     return;
   }
@@ -221,19 +240,28 @@ function showTranslatePopup(data) {
   tpWin.webContents.once('did-finish-load', () => {
     if (!tpWin || tpWin.isDestroyed()) return;
     tpReady = true;
-    if (GHOST) tpWin.showInactive(); else tpWin.show();
+    tpShownAt = Date.now();
+    popupShow(tpWin);
     sendTpData();
   });
   tpWin.on('closed', () => { tpWin = null; tpReady = false; });
-  // dismiss on click-away (only after it has actually been focused, to avoid
-  // an immediate self-dismiss right after show)
-  let focusedOnce = false;
-  tpWin.on('focus', () => { focusedOnce = true; });
-  tpWin.on('blur', () => { if (focusedOnce && tpWin && !tpWin.isDestroyed()) tpWin.hide(); });
+  // Dismiss on genuine click-away, but ignore blur within a grace window after
+  // showing: right after show() a transient blur can fire (focus settling, the
+  // source app repainting) and would otherwise hide the popup before the
+  // translation even lands. See the popup-dismiss test.
+  tpWin.on('blur', () => {
+    if (!tpWin || tpWin.isDestroyed()) return;
+    if (!tpReadyToClose) { wlog('popup blur while loading → kept'); return; } // never vanish before the result
+    const dt = Date.now() - tpShownAt;
+    if (dt > TP_GRACE) { wlog(`popup blur @${dt}ms → hide`); tpWin.hide(); }
+    else wlog(`popup blur @${dt}ms → kept (grace ${TP_GRACE})`);
+  });
 }
 
 function updateTranslatePopup(data) {
   tpData = data;
+  tpReadyToClose = true;   // result/error is on screen now — allow click-away dismiss…
+  tpShownAt = Date.now();  // …but only after the grace measured from this moment
   sendTpData();
 }
 
@@ -289,6 +317,11 @@ function hideSelectionBubble() {
 
 function getSelectionBubble() { return sbWin && !sbWin.isDestroyed() ? sbWin : null; }
 
+// Test helper: steal focus to the main window so the popup receives a blur.
+function focusMainForTest() {
+  if (mainWin && !mainWin.isDestroyed()) { mainWin.show(); mainWin.focus(); }
+}
+
 ipcMain.on('bubble:keepalive', () => armBubbleHide());
 
 ipcMain.on('tp:copy', (_e, text) => { if (text) clipboard.writeText(text); if (tpWin && !tpWin.isDestroyed()) tpWin.hide(); });
@@ -325,4 +358,5 @@ module.exports = {
   getLastToast, getToastWindow, getPinWindows, applyTheme,
   showTranslatePopup, updateTranslatePopup, getTranslatePopup,
   showSelectionBubble, hideSelectionBubble, getSelectionBubble,
+  focusMainForTest,
 };

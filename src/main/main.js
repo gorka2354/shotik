@@ -227,12 +227,15 @@ function runCopySelection() {
 // Shared by the hotkey (text via clipboard) and the selection bubble (text via UIA).
 async function translateTextToPopup(text) {
   const target = (settings.get().translate || {}).target;
+  blog(`translate: start → target=${target}, provider=${(settings.get().translate || {}).provider}`);
   windows.showTranslatePopup({ loading: true, original: text, loadingText: t('txtTranslating') });
   try {
     const res = await translate.translate(text);
+    blog(`translate: ok source=${res.source} provider=${res.provider} out="${String(res.text).slice(0, 40)}"`);
     windows.updateTranslatePopup({ original: text, translated: res.text, source: res.source, target });
     lastProcessed = { action: 'translate-selection', file: null, ts: Date.now() };
   } catch (e) {
+    blog('translate: FAIL ' + (e && e.message));
     windows.updateTranslatePopup({ original: text, error: t('txtTranslateFail') });
   }
   return lastProcessed;
@@ -262,14 +265,33 @@ let selWatcher = null;
 let pendingSelection = null; // { text } captured for the currently shown bubble
 let lastTranslated = null;   // suppress re-popping the bubble for text we just translated
 
+// Lightweight diagnostics for the whole bubble→translate path — the real focus/
+// clipboard behaviour can't be reproduced off-screen, so log it and read the
+// tail after a live repro. Truncates on startup so it never grows unbounded.
+const BUBBLE_LOG = path.join(app.getPath('temp'), 'shotik-bubble.log');
+try { fs.writeFileSync(BUBBLE_LOG, ''); } catch (_) {}
+function blog(msg) {
+  try { fs.appendFileSync(BUBBLE_LOG, new Date().toISOString().slice(11, 23) + ' ' + msg + '\n'); } catch (_) {}
+}
+
 function onSelectionDetected(ev) {
   const text = String(ev.text || '').trim();
   if (!text) return;
-  if (text === lastTranslated) return; // already translated this exact selection
+  if (text === lastTranslated) { blog(`detect: "${text.slice(0, 40)}" == lastTranslated, skip`); return; }
   pendingSelection = { text };
   let pt = { x: ev.x || 0, y: ev.y || 0 };
   try { pt = screen.screenToDipPoint({ x: ev.x, y: ev.y }); } catch (_) {} // physical px → DIP
+  blog(`detect: "${text.slice(0, 40)}" (${text.length} ch) → bubble @ ${Math.round(pt.x)},${Math.round(pt.y)}`);
   windows.showSelectionBubble({ x: pt.x, y: pt.y });
+}
+
+// Selection cleared: hide the bubble, but KEEP pendingSelection — a click that
+// races with this clear must still have text to translate. lastTranslated resets
+// so re-selecting the same text raises the bubble again.
+function clearSelectionBubble() {
+  blog('clear: hide bubble (pendingSelection kept)');
+  windows.hideSelectionBubble();
+  lastTranslated = null;
 }
 
 function startSelectionWatcher() {
@@ -287,8 +309,8 @@ function startSelectionWatcher() {
   rl.on('line', (line) => {
     line = line.trim();
     if (!line) return;
-    let ev; try { ev = JSON.parse(line); } catch (_) { return; }
-    if (ev.clear) { windows.hideSelectionBubble(); pendingSelection = null; lastTranslated = null; return; }
+    let ev; try { ev = JSON.parse(line); } catch (_) { blog('watcher line unparsed: ' + line.slice(0, 60)); return; }
+    if (ev.clear) { clearSelectionBubble(); return; }
     onSelectionDetected(ev);
   });
   if (selWatcher.stderr) selWatcher.stderr.on('data', () => {}); // drain, ignore
@@ -307,7 +329,13 @@ ipcMain.on('bubble:activate', () => {
   const sel = pendingSelection;
   pendingSelection = null;
   windows.hideSelectionBubble();
-  if (sel && sel.text) { lastTranslated = sel.text; translateTextToPopup(sel.text); }
+  if (sel && sel.text) {
+    blog(`activate: translating "${sel.text.slice(0, 40)}"`);
+    lastTranslated = sel.text;
+    translateTextToPopup(sel.text);
+  } else {
+    blog('activate: NO pendingSelection → nothing to translate');
+  }
 });
 
 // Record: if already recording, stop; otherwise select an area and start.
@@ -563,10 +591,23 @@ function setupTestHandler() {
       }
       case 'bubble-activate': {
         ipcMain.emit('bubble:activate');
-        await new Promise((r) => setTimeout(r, 500));
+        await new Promise((r) => setTimeout(r, body.wait != null ? body.wait : 500));
         return { popup: !!windows.getTranslatePopup() };
       }
       case 'bubble-clear': { windows.hideSelectionBubble(); return { bubble: !!(windows.getSelectionBubble() && windows.getSelectionBubble().isVisible()) }; }
+      case 'inject-clear': { clearSelectionBubble(); return { bubble: !!(windows.getSelectionBubble() && windows.getSelectionBubble().isVisible()) }; }
+      case 'show-tp-loading': { windows.showTranslatePopup({ loading: true, original: body.text || 'x', loadingText: '…' }); await new Promise((r) => setTimeout(r, 150)); return { popup: !!windows.getTranslatePopup() }; }
+      case 'resolve-tp': { windows.updateTranslatePopup({ original: body.text || 'x', translated: body.translated || 'ok', source: 'en', target: 'ru' }); await new Promise((r) => setTimeout(r, 60)); return { popup: !!windows.getTranslatePopup() }; }
+      case 'blur-tp': {
+        // Fire a real 'blur' on the popup window so the actual blur handler (with
+        // its grace check) runs — off-screen ghost windows don't get real focus,
+        // so emitting the event is the deterministic way to exercise the logic.
+        const tp = windows.getTranslatePopup();
+        if (tp) tp.emit('blur');
+        await new Promise((r) => setTimeout(r, body.wait != null ? body.wait : 120));
+        const tp2 = windows.getTranslatePopup();
+        return { popupVisible: !!(tp2 && tp2.isVisible()) };
+      }
       case 'state': {
         return {
           overlayOpen: capture.isOverlayOpen(),

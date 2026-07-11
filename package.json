@@ -1,7 +1,7 @@
 {
   "name": "shotik",
   "productName": "Shotik",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Beautiful open-source screenshot tool with built-in MCP server — let Claude see your screen",
   "main": "src/main/main.js",
   "license": "MIT",
@@ -15,7 +15,10 @@
     "start": "electron .",
     "dev": "electron . --dev",
     "dist": "electron-builder --win",
-    "dist:store": "electron-builder --win appx"
+    "dist:store": "electron-builder --win appx",
+    "test": "node test/run-tests.js",
+    "test:unit": "node test/run-tests.js unit",
+    "test:ghost": "node test/run-tests.js ghost"
   },
   "devDependencies": {
     "electron": "^33.0.0",

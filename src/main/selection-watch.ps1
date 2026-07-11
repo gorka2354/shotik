@@ -53,6 +53,8 @@ $wasDown = $false
 $lastEmitted = ''   # last selection text we told the app about ('' = none/cleared)
 $idle = 0
 $tick = 0
+$emptyStreak = 0    # consecutive empty reads — debounce so a transient empty read
+                    # doesn't yank the bubble out from under a click
 
 while ($true) {
   Start-Sleep -Milliseconds 90
@@ -76,9 +78,11 @@ while ($true) {
   if ($sel) { $sel = $sel.Trim() }
 
   if ([string]::IsNullOrEmpty($sel)) {
-    if ($lastEmitted -ne '') { Write-Event @{ clear = $true }; $lastEmitted = '' }
+    $emptyStreak++
+    if ($lastEmitted -ne '' -and $emptyStreak -ge 2) { Write-Event @{ clear = $true }; $lastEmitted = '' }
     continue
   }
+  $emptyStreak = 0
   if ($sel -ne $lastEmitted) {
     $p = New-Object NativeSel+POINT
     [void][NativeSel]::GetCursorPos([ref]$p)
