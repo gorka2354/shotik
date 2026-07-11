@@ -32,19 +32,22 @@ try {
 
 $TextPatternId = [System.Windows.Automation.TextPattern]::Pattern
 
-function Get-SelectionText {
+# Returns @{ Text; HasPattern }. HasPattern is true when the focused element
+# exposes a UIA TextPattern (a normal text control). When it's FALSE the app is
+# custom-drawn (Telegram posts, canvases) — that's when the OCR fallback applies.
+function Get-Selection {
   try {
     $fe = [System.Windows.Automation.AutomationElement]::FocusedElement
-    if ($null -eq $fe) { return '' }
+    if ($null -eq $fe) { return @{ Text = ''; HasPattern = $false } }
     $tpObj = $null
-    if (-not $fe.TryGetCurrentPattern($TextPatternId, [ref]$tpObj)) { return '' }
+    if (-not $fe.TryGetCurrentPattern($TextPatternId, [ref]$tpObj)) { return @{ Text = ''; HasPattern = $false } }
     $tp = [System.Windows.Automation.TextPattern]$tpObj
     $ranges = $tp.GetSelection()
-    if ($null -eq $ranges -or $ranges.Length -eq 0) { return '' }
+    if ($null -eq $ranges -or $ranges.Length -eq 0) { return @{ Text = ''; HasPattern = $true } }
     $s = ''
     foreach ($r in $ranges) { $s += $r.GetText(5000) }
-    return $s
-  } catch { return '' }
+    return @{ Text = $s; HasPattern = $true }
+  } catch { return @{ Text = ''; HasPattern = $false } }
 }
 
 function Write-Event($obj) {
@@ -54,7 +57,7 @@ function Write-Event($obj) {
 }
 
 # Prewarm UIA — the first FocusedElement call is ~100ms, the rest ~1-2ms.
-[void](Get-SelectionText)
+[void](Get-Selection)
 
 function Get-Cursor {
   $p = New-Object NativeSel+POINT
@@ -90,17 +93,20 @@ while ($true) {
   $idle++
   if (-not $justReleased -and ($idle % 6 -ne 0)) { continue }
 
-  $sel = Get-SelectionText
+  $info = Get-Selection
+  $sel = $info.Text
   if ($sel) { $sel = $sel.Trim() }
 
   if ([string]::IsNullOrEmpty($sel)) {
-    # No UIA selection. If the user just finished a real drag, this may be a
-    # custom-drawn app (Telegram posts, etc.) — report the drag so the app can
-    # OCR that region as a fallback. Otherwise debounce a clear.
-    if ($justReleased) {
+    # No UIA selection. If the focused element has NO TextPattern at all (a
+    # custom-drawn app like Telegram posts) and the user just finished a real
+    # horizontal-ish drag, report it so the app can OCR that region. In normal
+    # UIA apps (browsers/editors) HasPattern is true, so this never fires and the
+    # clean UIA path is used. Otherwise debounce a clear.
+    if ($justReleased -and (-not $info.HasPattern)) {
       $up = Get-Cursor
-      $dx = $up.X - $downX; $dy = $up.Y - $downY
-      if ([Math]::Sqrt($dx * $dx + $dy * $dy) -ge 25) {
+      $dx = [Math]::Abs($up.X - $downX); $dy = [Math]::Abs($up.Y - $downY)
+      if ($dx -ge 25 -and $dx -ge $dy) {   # selection drags run along a line, not vertical
         Write-Event @{ gesture = $true; x1 = $downX; y1 = $downY; x2 = $up.X; y2 = $up.Y }
         $emptyStreak = 0
         continue
