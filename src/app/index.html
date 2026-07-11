@@ -24,6 +24,10 @@
           <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="12" cy="12" r="3.5"/></svg>
           <span data-i18n="navShots">Shots</span>
         </button>
+        <button class="nav-item" data-page="text">
+          <svg viewBox="0 0 24 24"><path d="M4 5h7"/><path d="M7 5v.5C7 9 5.5 12 3 13"/><path d="M5 9c0 2 2 3.5 5 4.5"/><path d="M12 20l4-9 4 9"/><path d="M13.5 17h5"/></svg>
+          <span data-i18n="navText">Text</span>
+        </button>
         <button class="nav-item" data-page="claude">
           <svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15z"/></svg>
           <span data-i18n="navClaude">Claude</span>
@@ -120,6 +124,53 @@
         <div class="card">
           <div class="card-title" data-i18n="logTitle">Call log</div>
           <div id="mcpLog" class="log"><div class="log-empty" data-i18n="logEmpty">Claude hasn’t called Shotik yet</div></div>
+        </div>
+      </section>
+
+      <!-- ============ TEXT ============ -->
+      <section id="page-text" class="page">
+        <div class="page-head"><h1 data-i18n="textPageTitle">Text &amp; translation</h1></div>
+
+        <div class="card">
+          <div class="card-title" data-i18n="txtQuickTitle">Quick translate</div>
+          <textarea id="txtInput" class="txt-area" rows="3" data-i18n-ph="txtInputPh"></textarea>
+          <div class="txt-controls">
+            <span class="txt-arrow"><span data-i18n="txtAuto">auto</span>
+              <svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></span>
+            <select class="select" id="txtTarget">
+              <option value="en">English</option>
+              <option value="ru">Русский</option>
+              <option value="uk">Українська</option>
+              <option value="de">Deutsch</option>
+              <option value="es">Español</option>
+              <option value="fr">Français</option>
+              <option value="it">Italiano</option>
+              <option value="pt">Português</option>
+              <option value="pl">Polski</option>
+              <option value="tr">Türkçe</option>
+              <option value="zh">中文</option>
+              <option value="ja">日本語</option>
+              <option value="ko">한국어</option>
+            </select>
+            <button class="btn primary" id="txtRun" data-i18n="txtTranslateBtn">Translate</button>
+          </div>
+          <div id="txtResultWrap" hidden>
+            <div id="txtResult" class="txt-result"></div>
+            <div class="txt-result-foot">
+              <span id="txtMeta" class="txt-meta"></span>
+              <button class="btn small ghost" id="txtCopy" data-i18n="txtCopyBtn">Copy</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title" data-i18n="txtWaysTitle">Three ways to translate</div>
+          <ul class="tool-list">
+            <li><b data-i18n="txtWay1">Select text in any app</b> — <span data-i18n="txtWay1Sub">a translate bubble pops up next to it</span></li>
+            <li><kbd id="kbdTranslate2">Ctrl+Alt+T</kbd> — <span data-i18n="txtWay2">translate the current selection</span></li>
+            <li><kbd id="kbdText2">Ctrl+Shift+PrtSc</kbd> — <span data-i18n="txtWay3">grab text off the screen (Live Text)</span></li>
+          </ul>
+          <div class="card-sub" data-i18n="txtWaysNote">Clean in browsers, editors and PDFs — and via on-screen OCR in Telegram, Steam, images and video.</div>
         </div>
       </section>
 

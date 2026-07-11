@@ -935,6 +935,15 @@ function setupAppIpc() {
     return { ...res, target: (settings.get().translate || {}).target };
   });
 
+  // Manual translate box on the Text tab.
+  ipcMain.handle('translate:text', async (_e, { text, target } = {}) => {
+    if (!text || !text.trim()) return { text: '', source: 'auto', provider: 'none' };
+    const tl = target || (settings.get().translate || {}).target;
+    const res = await translate.translate(text, tl);
+    return { text: res.text, source: res.source, provider: res.provider, target: tl };
+  });
+  ipcMain.handle('app:copy-text', (_e, text) => { if (text) clipboard.writeText(String(text)); return true; });
+
   ipcMain.handle('capture:region', () => triggerRegion({ hideMain: true }));
   ipcMain.handle('capture:text', () => triggerText({ hideMain: true }));
   ipcMain.handle('capture:record', () => triggerRecord());

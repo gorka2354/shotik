@@ -27,6 +27,8 @@ contextBridge.exposeInMainWorld('shotik', {
   onRecState: (cb) => ipcRenderer.on('rec:state', (_e, s) => cb(s)),
   openExternal: invoke('app:open-external'),
   openSaveDir: invoke('app:open-save-dir'),
+  translateText: invoke('translate:text'),
+  copyText: invoke('app:copy-text'),
   onHistoryChanged: (cb) => ipcRenderer.on('history:changed', cb),
   onMcpLog: (cb) => ipcRenderer.on('mcp:log', (_e, entry) => cb(entry)),
   getTheme: invoke('theme:get'),

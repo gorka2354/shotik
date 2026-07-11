@@ -253,7 +253,10 @@ function renderSettings() {
   $('#kbdFull').textContent = short(s.hotkeys.fullscreen);
   $('#kbdRepeat').textContent = short(s.hotkeys.repeatLast);
   $('#kbdText').textContent = short(s.hotkeys.textGrab);
+  $('#kbdTranslate2').textContent = short(s.hotkeys.translateSelection);
+  $('#kbdText2').textContent = short(s.hotkeys.textGrab);
   const tr = s.translate || {};
+  if (!txtTargetTouched) $('#txtTarget').value = tr.target || 'en';
   $('#setAutoBubble').checked = tr.autoBubble !== false;
   $('#setOcrFallback').checked = tr.ocrFallback !== false;
   $('#setTarget').value = tr.target || 'en';
@@ -313,6 +316,39 @@ $('#setFps').addEventListener('change', (e) => applySettings({ recording: { fps:
 $('#setFormat').addEventListener('change', (e) => applySettings({ recording: { format: e.target.value } }));
 $('#setSysAudio').addEventListener('change', (e) => applySettings({ recording: { systemAudio: e.target.checked } }));
 $('#setCountdown').addEventListener('change', (e) => applySettings({ recording: { countdown: e.target.checked } }));
+
+/* ---------- Text tab: quick translate ---------- */
+let txtTargetTouched = false;
+let txtLastResult = '';
+$('#txtTarget').addEventListener('change', () => { txtTargetTouched = true; });
+
+async function runQuickTranslate() {
+  const text = $('#txtInput').value.trim();
+  const wrap = $('#txtResultWrap'), out = $('#txtResult'), meta = $('#txtMeta');
+  if (!text) { wrap.hidden = true; return; }
+  wrap.hidden = false;
+  out.classList.add('loading'); out.textContent = T('txtTranslating'); meta.textContent = '';
+  try {
+    const res = await window.shotik.translateText({ text, target: $('#txtTarget').value });
+    txtLastResult = res.text || '';
+    out.classList.remove('loading');
+    out.textContent = txtLastResult || '—';
+    meta.textContent = res.source && res.source !== 'auto' ? `${res.source} → ${res.target}` : '';
+  } catch (_) {
+    out.classList.remove('loading');
+    out.textContent = T('txtTranslateFail');
+  }
+}
+$('#txtRun').addEventListener('click', runQuickTranslate);
+$('#txtInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); runQuickTranslate(); }
+});
+$('#txtCopy').addEventListener('click', async () => {
+  if (!txtLastResult) return;
+  await window.shotik.copyText(txtLastResult);
+  const b = $('#txtCopy'); const old = b.textContent; b.textContent = T('copied') || '✓';
+  setTimeout(() => { b.textContent = old; }, 1200);
+});
 
 $('#btnChooseDir').addEventListener('click', async () => {
   const dir = await window.shotik.chooseDir();

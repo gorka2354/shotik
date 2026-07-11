@@ -27,6 +27,7 @@ function killStrayElectron() {
     killStrayElectron();
     require('./ghost/bubble.test.js');
     require('./ghost/ocr.test.js');
+    require('./ghost/texttab.test.js');
     const r = await runRegistered('ghost › ');
     passed += r.passed; failed += r.failed;
     killStrayElectron();
