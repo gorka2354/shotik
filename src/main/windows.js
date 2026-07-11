@@ -196,19 +196,27 @@ function closeAllPins() { for (const { win } of pins.values()) { try { win.close
 let tpWin = null;
 let tpData = null;   // latest payload (so did-finish-load sends the current state)
 let tpReady = false;
-let tpShownAt = 0;        // when the result was shown (blur-dismiss grace starts here)
-let tpReadyToClose = false; // false while loading — never dismiss before the result lands
+let tpHideTimer = null;
 const TP_W = 380;
-const TP_GRACE = Number(process.env.SHOTIK_TP_GRACE || 600); // ms to ignore blur after the result
+const TP_TTL = Number(process.env.SHOTIK_TP_TTL || 9000); // auto-hide after the result lands
 
 function sendTpData() {
   if (tpReady && tpWin && !tpWin.isDestroyed() && tpData) tpWin.webContents.send('tp:data', tpData);
 }
 
+// Auto-hide the popup a while after the result is shown; hovering it cancels the
+// countdown (restarted on mouse-leave). We deliberately do NOT dismiss on blur —
+// real window focus proved far too flaky (the popup was vanishing before the
+// translation even rendered). Esc / × / Copy still close it immediately.
+function armPopupHide() {
+  clearTimeout(tpHideTimer);
+  tpHideTimer = setTimeout(() => { if (tpWin && !tpWin.isDestroyed()) { wlog('popup auto-hide'); tpWin.hide(); } }, TP_TTL);
+}
+
 function showTranslatePopup(data) {
   tpData = data;
-  tpReadyToClose = !data.loading; // if shown already-resolved, it may dismiss; if loading, not yet
   wlog(`popup show (${data.loading ? 'loading' : (data.error ? 'error' : 'result')}) reuse=${!!(tpWin && !tpWin.isDestroyed())}`);
+  if (data.loading) clearTimeout(tpHideTimer); else armPopupHide(); // never time out mid-load
   const pt = screen.getCursorScreenPoint();
   const area = screen.getDisplayNearestPoint(pt).workArea;
   let x = pt.x + 12, y = pt.y + 16;
@@ -218,8 +226,8 @@ function showTranslatePopup(data) {
 
   if (tpWin && !tpWin.isDestroyed()) {
     tpWin.setBounds({ x: Math.round(x) + (GHOST ? GHOST_OFFSET : 0), y: Math.round(y), width: TP_W, height: 220 });
-    tpShownAt = Date.now();
     popupShow(tpWin);
+    tpWin.moveTop();
     sendTpData();
     return;
   }
@@ -240,28 +248,15 @@ function showTranslatePopup(data) {
   tpWin.webContents.once('did-finish-load', () => {
     if (!tpWin || tpWin.isDestroyed()) return;
     tpReady = true;
-    tpShownAt = Date.now();
     popupShow(tpWin);
     sendTpData();
   });
-  tpWin.on('closed', () => { tpWin = null; tpReady = false; });
-  // Dismiss on genuine click-away, but ignore blur within a grace window after
-  // showing: right after show() a transient blur can fire (focus settling, the
-  // source app repainting) and would otherwise hide the popup before the
-  // translation even lands. See the popup-dismiss test.
-  tpWin.on('blur', () => {
-    if (!tpWin || tpWin.isDestroyed()) return;
-    if (!tpReadyToClose) { wlog('popup blur while loading → kept'); return; } // never vanish before the result
-    const dt = Date.now() - tpShownAt;
-    if (dt > TP_GRACE) { wlog(`popup blur @${dt}ms → hide`); tpWin.hide(); }
-    else wlog(`popup blur @${dt}ms → kept (grace ${TP_GRACE})`);
-  });
+  tpWin.on('closed', () => { tpWin = null; tpReady = false; clearTimeout(tpHideTimer); });
 }
 
 function updateTranslatePopup(data) {
   tpData = data;
-  tpReadyToClose = true;   // result/error is on screen now — allow click-away dismiss…
-  tpShownAt = Date.now();  // …but only after the grace measured from this moment
+  armPopupHide(); // result/error is on screen now — start the auto-hide countdown
   sendTpData();
 }
 
@@ -270,15 +265,19 @@ function updateTranslatePopup(data) {
 // Clicking it (handled in main.js via 'bubble:activate') opens the translation.
 let sbWin = null;
 let sbTimer = null;
-const SB = 46; // window box; the visible button is 32px centered inside it
-const SB_TTL = 4200;
+const SB = 48; // window box; the whole window is clickable (see bubble.js)
+const SB_TTL = 6000;
 
 function ensureBubble() {
   if (sbWin && !sbWin.isDestroyed()) return sbWin;
   sbWin = new BrowserWindow({
     width: SB, height: SB, show: false,
     frame: false, transparent: true, resizable: false, movable: false,
-    alwaysOnTop: true, skipTaskbar: true, focusable: false, hasShadow: false,
+    // focusable:true so the click is delivered reliably (a non-focusable
+    // always-on-top window can silently swallow clicks after another window
+    // took focus). We already captured the text via UIA, so taking focus on
+    // click is harmless.
+    alwaysOnTop: true, skipTaskbar: true, focusable: true, hasShadow: false,
     minimizable: false, maximizable: false, fullscreenable: false,
     webPreferences: {
       preload: path.join(__dirname, '..', 'bubble', 'preload.js'),
@@ -293,7 +292,7 @@ function ensureBubble() {
 
 function armBubbleHide() {
   clearTimeout(sbTimer);
-  sbTimer = setTimeout(() => hideSelectionBubble(), SB_TTL);
+  sbTimer = setTimeout(() => { wlog('bubble auto-hide'); hideSelectionBubble(); }, SB_TTL);
 }
 
 // showSelectionBubble({x, y}) — DIP coords near the end of the selection.
@@ -306,7 +305,10 @@ function showSelectionBubble({ x, y }) {
   if (bx < area.x) bx = area.x + 4;
   if (by < area.y) by = area.y + 4;
   w.setBounds({ x: Math.round(bx) + (GHOST ? GHOST_OFFSET : 0), y: Math.round(by), width: SB, height: SB });
-  w.showInactive(); // never steal focus from the app the user is selecting in
+  w.showInactive(); // don't steal focus when it merely appears
+  w.setAlwaysOnTop(true, 'screen-saver');
+  w.moveTop();       // make sure it's above a just-hidden translate popup
+  wlog(`bubble show @ ${Math.round(bx)},${Math.round(by)}`);
   armBubbleHide();
 }
 
@@ -317,15 +319,11 @@ function hideSelectionBubble() {
 
 function getSelectionBubble() { return sbWin && !sbWin.isDestroyed() ? sbWin : null; }
 
-// Test helper: steal focus to the main window so the popup receives a blur.
-function focusMainForTest() {
-  if (mainWin && !mainWin.isDestroyed()) { mainWin.show(); mainWin.focus(); }
-}
-
 ipcMain.on('bubble:keepalive', () => armBubbleHide());
 
-ipcMain.on('tp:copy', (_e, text) => { if (text) clipboard.writeText(text); if (tpWin && !tpWin.isDestroyed()) tpWin.hide(); });
-ipcMain.on('tp:close', () => { if (tpWin && !tpWin.isDestroyed()) tpWin.hide(); });
+ipcMain.on('tp:copy', (_e, text) => { clearTimeout(tpHideTimer); if (text) clipboard.writeText(text); if (tpWin && !tpWin.isDestroyed()) tpWin.hide(); });
+ipcMain.on('tp:close', () => { clearTimeout(tpHideTimer); if (tpWin && !tpWin.isDestroyed()) tpWin.hide(); });
+ipcMain.on('tp:hover', (_e, over) => { if (over) clearTimeout(tpHideTimer); else armPopupHide(); }); // pause auto-hide while hovering
 ipcMain.on('tp:resize', (_e, h) => {
   if (tpWin && !tpWin.isDestroyed()) {
     const b = tpWin.getBounds();
@@ -358,5 +356,4 @@ module.exports = {
   getLastToast, getToastWindow, getPinWindows, applyTheme,
   showTranslatePopup, updateTranslatePopup, getTranslatePopup,
   showSelectionBubble, hideSelectionBubble, getSelectionBubble,
-  focusMainForTest,
 };

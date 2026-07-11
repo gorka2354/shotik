@@ -1,6 +1,5 @@
 'use strict';
-const b = document.getElementById('b');
-// Click the bubble → translate the selection that triggered it.
-b.addEventListener('click', () => window.bubble.activate());
-// Hovering keeps the bubble alive so it doesn't vanish while you aim for it.
-b.addEventListener('mouseenter', () => window.bubble.keepalive());
+// The whole window is the click target (not just the 32px circle) so a click
+// near the bubble still activates it. Hover anywhere keeps it alive.
+document.body.addEventListener('click', () => window.bubble.activate());
+document.body.addEventListener('mouseenter', () => window.bubble.keepalive());

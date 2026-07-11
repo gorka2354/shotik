@@ -598,16 +598,12 @@ function setupTestHandler() {
       case 'inject-clear': { clearSelectionBubble(); return { bubble: !!(windows.getSelectionBubble() && windows.getSelectionBubble().isVisible()) }; }
       case 'show-tp-loading': { windows.showTranslatePopup({ loading: true, original: body.text || 'x', loadingText: '…' }); await new Promise((r) => setTimeout(r, 150)); return { popup: !!windows.getTranslatePopup() }; }
       case 'resolve-tp': { windows.updateTranslatePopup({ original: body.text || 'x', translated: body.translated || 'ok', source: 'en', target: 'ru' }); await new Promise((r) => setTimeout(r, 60)); return { popup: !!windows.getTranslatePopup() }; }
-      case 'blur-tp': {
-        // Fire a real 'blur' on the popup window so the actual blur handler (with
-        // its grace check) runs — off-screen ghost windows don't get real focus,
-        // so emitting the event is the deterministic way to exercise the logic.
+      case 'tp-visible': {
+        if (body.wait) await new Promise((r) => setTimeout(r, body.wait));
         const tp = windows.getTranslatePopup();
-        if (tp) tp.emit('blur');
-        await new Promise((r) => setTimeout(r, body.wait != null ? body.wait : 120));
-        const tp2 = windows.getTranslatePopup();
-        return { popupVisible: !!(tp2 && tp2.isVisible()) };
+        return { popupVisible: !!(tp && tp.isVisible()) };
       }
+      case 'tp-hover': { ipcMain.emit('tp:hover', null, !!body.over); return 'ok'; }
       case 'state': {
         return {
           overlayOpen: capture.isOverlayOpen(),

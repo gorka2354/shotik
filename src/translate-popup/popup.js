@@ -33,3 +33,6 @@ window.tp.onData((d) => {
 el('close').addEventListener('click', () => window.tp.close());
 el('copy').addEventListener('click', () => window.tp.copy(currentTranslation));
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.tp.close(); });
+// keep the popup open while the pointer is on it; resume auto-hide on leave
+document.body.addEventListener('mouseenter', () => window.tp.hover(true));
+document.body.addEventListener('mouseleave', () => window.tp.hover(false));

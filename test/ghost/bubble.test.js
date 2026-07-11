@@ -57,38 +57,42 @@ test('clear before activate still translates (clear-race regression)', async () 
   });
 });
 
-// The translate popup must survive a transient blur right after showing (focus
-// settling) — otherwise it flashes and vanishes before the result lands. This is
-// the other half of the "translate then vanish" bug.
-test('popup survives a blur inside the grace window', async () => {
-  await withApp({ SHOTIK_TP_GRACE: '5000' }, async ({ post }) => {
-    await post('selection-bubble', { text: 'hello', x: 900, y: 500 });
-    await post('bubble-activate', { wait: 40 });
-    const r = await post('blur-tp', {}); // blur fires well inside the 5s grace
-    assert(r.popupVisible === true, 'popup kept despite an immediate blur');
-  });
-});
-
-// The real EN→RU bug: a slower translation meant the popup could blur+hide while
-// still "loading", so the result never showed. It must NOT dismiss while loading.
-test('popup ignores blur while still loading (slow-translation bug)', async () => {
-  await withApp({ SHOTIK_TP_GRACE: '0' }, async ({ post }) => {
+// The popup must NOT dismiss on window blur (that flaky focus behaviour was the
+// "translate then vanish" bug). While loading it stays; after the result it
+// auto-hides on a timer that hovering pauses.
+test('popup stays up while loading, does not vanish before the result', async () => {
+  await withApp({ SHOTIK_TP_TTL: '300' }, async ({ post, sleep }) => {
     await post('show-tp-loading', { text: 'hello' });
-    const mid = await post('blur-tp', {});         // blur arrives before the result
-    assert(mid.popupVisible === true, 'loading popup survives blur');
-    await post('resolve-tp', { text: 'hello', translated: 'привет' }); // result lands
-    const after = await post('blur-tp', {});        // now a click-away (grace 0) closes it
-    assert(after.popupVisible === false, 'after the result, blur dismisses normally');
+    await sleep(500); // longer than the TTL — loading must never auto-hide
+    const r = await post('tp-visible', {});
+    assert(r.popupVisible === true, 'loading popup did not vanish before the result');
   });
 });
 
-test('popup still dismisses on a genuine (post-grace) blur', async () => {
-  await withApp({ SHOTIK_TP_GRACE: '0' }, async ({ post, sleep }) => {
+test('popup auto-hides a while after the result (no blur needed)', async () => {
+  await withApp({ SHOTIK_TP_TTL: '1500' }, async ({ post, sleep }) => {
     await post('selection-bubble', { text: 'hello', x: 900, y: 500 });
-    await post('bubble-activate', { wait: 40 });
-    await sleep(450); // let the result render + its tp:resize settle first
-    const r = await post('blur-tp', {}); // grace 0 → any blur hides (click-away still works)
-    assert(r.popupVisible === false, 'popup dismissed when blur is past the grace');
+    await post('bubble-activate', { wait: 500 }); // let the fresh popup finish loading + show
+    const shown = await post('tp-visible', {});
+    assert(shown.popupVisible === true, 'result is shown');
+    await sleep(1300); // past the 1500ms TTL (which started at the result)
+    const later = await post('tp-visible', {});
+    assert(later.popupVisible === false, 'popup auto-hid after the TTL');
+  });
+});
+
+test('hovering the popup pauses its auto-hide', async () => {
+  await withApp({ SHOTIK_TP_TTL: '400' }, async ({ post, sleep }) => {
+    await post('selection-bubble', { text: 'hello', x: 900, y: 500 });
+    await post('bubble-activate', { wait: 20 });
+    await post('tp-hover', { over: true });   // pointer on the popup
+    await sleep(800);                         // well past the TTL
+    const hovered = await post('tp-visible', {});
+    assert(hovered.popupVisible === true, 'popup stays while hovered');
+    await post('tp-hover', { over: false });  // pointer leaves → countdown resumes
+    await sleep(800);
+    const left = await post('tp-visible', {});
+    assert(left.popupVisible === false, 'popup hides after the pointer leaves');
   });
 });
 
