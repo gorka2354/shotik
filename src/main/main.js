@@ -17,6 +17,7 @@ const windows = require('./windows');
 const theme = require('./theme');
 const i18n = require('./i18n');
 const translate = require('./translate');
+const highlight = require('./highlight');
 const recorder = require('./recorder');
 const gifexport = require('./gifexport');
 const { t } = i18n;
@@ -309,6 +310,37 @@ function onMouseDown(ev) {
   if (pop && pop.isVisible() && outside(pop)) windows.hideTranslatePopup();
 }
 
+// Capture a generous region, find the selection HIGHLIGHT inside it (the coloured
+// background the app painted behind the selected text), crop to it and OCR — so
+// we read exactly what's selected, not a whole band. `sample` (DIP) is a point
+// known to be on the selection. Falls back to OCR-ing the whole region when no
+// clear highlight is found (e.g. selection colour ≈ background).
+async function ocrSelectionRegion(disp, rect, sample) {
+  const clamp = (r) => ({
+    x: Math.max(0, Math.round(r.x)), y: Math.max(0, Math.round(r.y)),
+    width: Math.round(r.width), height: Math.round(r.height),
+  });
+  const cr = clamp(rect);
+  if (cr.width < 6 || cr.height < 6) return '';
+  const { png } = await capture.captureRegion(disp.id, cr);
+  const img = nativeImage.createFromBuffer(png);
+  const sz = img.getSize();
+  let ocrPng = png;
+  try {
+    const bmp = img.toBitmap(); // BGRA
+    const sx = Math.round((sample.x - disp.bounds.x - cr.x) * disp.scaleFactor);
+    const sy = Math.round((sample.y - disp.bounds.y - cr.y) * disp.scaleFactor);
+    const hl = highlight.findHighlightRect(bmp, sz.width, sz.height, sx, sy);
+    if (hl) {
+      const pad = 3;
+      const hx = Math.max(0, hl.x - pad), hy = Math.max(0, hl.y - pad);
+      ocrPng = img.crop({ x: hx, y: hy, width: Math.min(sz.width - hx, hl.width + pad * 2), height: Math.min(sz.height - hy, hl.height + pad * 2) }).toPNG();
+      blog(`highlight ${hl.width}x${hl.height} of ${sz.width}x${sz.height}`);
+    } else { blog('no highlight → OCR whole band ' + sz.width + 'x' + sz.height); }
+  } catch (e) { blog('highlight detect failed: ' + (e && e.message)); }
+  return (await ocr.recognizeForSelection(ocrPng) || '').trim();
+}
+
 let ocrBusy = false;
 async function onGesture(ev) {
   if (!(settings.get().translate || {}).ocrFallback) return;
@@ -318,21 +350,15 @@ async function onGesture(ev) {
   const gx1 = Math.min(p1.x, p2.x), gx2 = Math.max(p1.x, p2.x);
   const gy1 = Math.min(p1.y, p2.y), gy2 = Math.max(p1.y, p2.y);
   const disp = screen.getDisplayNearestPoint({ x: Math.round(gx1), y: Math.round(gy1) });
-  const padX = 8, padY = 6;
-  const height = Math.max(30, (gy2 - gy1) + padY * 2); // band around the drag; min ~1 line
-  const midY = (gy1 + gy2) / 2;
+  const padX = 30, padY = 22; // generous, so the whole highlight is inside the capture
   const rect = {
-    x: Math.max(0, Math.round(gx1 - padX - disp.bounds.x)),
-    y: Math.max(0, Math.round(midY - height / 2 - disp.bounds.y)),
-    width: Math.round((gx2 - gx1) + padX * 2),
-    height: Math.round(height),
+    x: gx1 - padX - disp.bounds.x, y: gy1 - padY - disp.bounds.y,
+    width: (gx2 - gx1) + padX * 2, height: (gy2 - gy1) + padY * 2,
   };
-  if (rect.width < 6) return;
   ocrBusy = true;
   try {
-    const { png } = await capture.captureRegion(disp.id, rect);
-    const text = (await ocr.recognizeForSelection(png) || '').trim();
-    blog(`gesture OCR @${rect.width}x${rect.height} → "${text.slice(0, 40)}"`);
+    const text = await ocrSelectionRegion(disp, rect, { x: (gx1 + gx2) / 2, y: (gy1 + gy2) / 2 });
+    blog(`gesture → "${text.slice(0, 40)}"`);
     if (!text || text === lastTranslated) return;
     pendingSelection = { text };
     windows.showSelectionBubble({ x: p2.x, y: p2.y });
@@ -341,26 +367,20 @@ async function onGesture(ev) {
   } finally { ocrBusy = false; }
 }
 
-// Double-click in a non-UIA app selects a word — OCR a band around the point and
-// return just the word under it (recognizeWordAt), so we translate exactly what
-// was double-clicked, not the whole line.
+// Double-click selects a word — the highlight is just that word, so the same
+// highlight-crop OCR returns exactly it.
 async function onGestureDbl(ev) {
   const p = toDip(ev.x1, ev.y1);
   const disp = screen.getDisplayNearestPoint({ x: Math.round(p.x), y: Math.round(p.y) });
-  const bandW = 260, bandH = 34; // DIP: enough for the word + neighbours to read boxes
+  const halfW = 160, halfH = 24; // DIP: enough to contain a word's highlight
   const rect = {
-    x: Math.max(0, Math.round(p.x - bandW / 2 - disp.bounds.x)),
-    y: Math.max(0, Math.round(p.y - bandH / 2 - disp.bounds.y)),
-    width: bandW, height: bandH,
+    x: p.x - halfW - disp.bounds.x, y: p.y - halfH - disp.bounds.y,
+    width: halfW * 2, height: halfH * 2,
   };
   ocrBusy = true;
   try {
-    const { png } = await capture.captureRegion(disp.id, rect);
-    // click position within the captured region, in that region's pixel coords
-    const relX = (p.x - disp.bounds.x - rect.x) * disp.scaleFactor;
-    const relY = (p.y - disp.bounds.y - rect.y) * disp.scaleFactor;
-    const text = (await ocr.recognizeWordAt(png, relX, relY) || '').trim();
-    blog(`dblclick OCR word → "${text}"`);
+    const text = await ocrSelectionRegion(disp, rect, p);
+    blog(`dblclick → "${text}"`);
     if (!text || text === lastTranslated) return;
     pendingSelection = { text };
     windows.showSelectionBubble({ x: p.x, y: p.y });
@@ -692,6 +712,17 @@ function setupTestHandler() {
       case 'tp-hover': { ipcMain.emit('tp:hover', null, !!body.over); return 'ok'; }
       case 'ocr-selection': { const text = await ocr.recognizeForSelection(fs.readFileSync(body.path)); return { text }; }
       case 'word-at': { const text = await ocr.recognizeWordAt(fs.readFileSync(body.path), body.x || 0, body.y || 0); return { text }; }
+      case 'ocr-highlight': {
+        // highlight-crop OCR on a provided image (deterministic, no display geometry)
+        const img = nativeImage.createFromBuffer(fs.readFileSync(body.path));
+        const sz = img.getSize();
+        const rect = highlight.findHighlightRect(img.toBitmap(), sz.width, sz.height, body.sx || 0, body.sy || 0);
+        let png = fs.readFileSync(body.path);
+        if (rect) { const pad = 3, hx = Math.max(0, rect.x - pad), hy = Math.max(0, rect.y - pad);
+          png = img.crop({ x: hx, y: hy, width: Math.min(sz.width - hx, rect.width + pad * 2), height: Math.min(sz.height - hy, rect.height + pad * 2) }).toPNG(); }
+        const text = (await ocr.recognizeForSelection(png) || '').trim();
+        return { text, cropped: !!rect, rect };
+      }
       case 'sim-down': {
         onMouseDown({ x: body.x, y: body.y });
         await new Promise((r) => setTimeout(r, 40));

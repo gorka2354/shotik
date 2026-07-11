@@ -88,4 +88,24 @@ test('recognizeWordAt returns the word near the click (double-click path)', asyn
   }
 });
 
+// Precision (the Steam/Telegram "bad selection" fix): when only a sub-span is
+// highlighted, highlight-crop OCR must return the highlighted word, not the
+// whole line.
+test('highlight-crop OCR reads only the highlighted span', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shotik-hl-'));
+  const img = path.join(dir, 'hl.png');
+  const meta = JSON.parse(execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass',
+    '-File', path.join(__dirname, 'ocr-hl-fixture.ps1'), '-OutFile', img], { encoding: 'utf8' }).trim());
+  const app = makeApp({ port: PORT });
+  try {
+    await app.waitReady();
+    const r = await app.post('ocr-highlight', { path: img, sx: meta.sx, sy: meta.sy });
+    assert(r.cropped === true, 'a highlight was detected and cropped');
+    assert(faithful(r.text, meta.word), `only the highlighted word, want "${meta.word}" got "${r.text}"`);
+  } finally {
+    await app.stop();
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
+  }
+});
+
 module.exports = {};

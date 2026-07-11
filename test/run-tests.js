@@ -17,7 +17,8 @@ function killStrayElectron() {
   if (which === 'all' || which === 'unit') {
     console.log('\n── unit ──');
     require('./unit/translate.test.js');
-    const r = await runRegistered('translate › ');
+    require('./unit/highlight.test.js');
+    const r = await runRegistered('unit › ');
     passed += r.passed; failed += r.failed;
   }
 

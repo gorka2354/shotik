@@ -53,6 +53,9 @@ async function recognize(pngBuffer, lang) {
 
 const cyr = (s) => (s.match(/[Ѐ-ӿ]/g) || []).length;
 const lat = (s) => (s.match(/[A-Za-z]/g) || []).length;
+// tokens that mix letters and digits (e.g. "a06poe", "3anpoc") — the tell-tale of
+// the Latin engine transliterating Cyrillic into garbage.
+const digitMix = (s) => s.split(/\s+/).filter((t) => /[A-Za-z]/.test(t) && /[0-9]/.test(t)).length;
 
 // OCR a small on-screen selection for translation. Two quality fixes proven by
 // test/ghost/ocr.test.js: (1) Windows OCR misses small UI text, so upscale ~2x
@@ -70,8 +73,15 @@ async function recognizeForSelection(pngBuffer) {
     }
   } catch (_) {}
   const ru = (await recognize(png, 'ru').catch(() => '')).trim();
-  if (cyr(ru) > 0 && cyr(ru) >= lat(ru)) return ru;         // the text really is Cyrillic
   const en = (await recognize(png, 'en-US').catch(() => '')).trim();
+  const rc = cyr(ru);
+  if (rc > 0 && rc >= lat(ru)) {
+    // ru reads as Cyrillic — but the ru engine also turns Latin (esp. UPPERCASE:
+    // STATION → ТАТЮ) into Cyrillic. If the en engine gives clean Latin of at
+    // least the same size, the source was really Latin — trust en.
+    if (en && lat(en) >= rc && digitMix(en) === 0) return en;
+    return ru;
+  }
   return en || ru;                                           // clean Latin (or fall back)
 }
 
