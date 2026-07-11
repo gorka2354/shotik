@@ -29,7 +29,7 @@ const DEFAULTS = () => ({
     translateSelection: 'Ctrl+Alt+T',
   },
   // default target = the user's own language (they read foreign text → their language)
-  translate: { target: String((() => { try { return app.getLocale(); } catch (_) { return 'en'; } })()).toLowerCase().startsWith('ru') ? 'ru' : 'en', provider: 'free', deeplKey: '', autoBubble: true },
+  translate: { target: String((() => { try { return app.getLocale(); } catch (_) { return 'en'; } })()).toLowerCase().startsWith('ru') ? 'ru' : 'en', provider: 'free', deeplKey: '', autoBubble: true, ocrFallback: true },
   recording: { fps: 30, format: 'auto', systemAudio: false, countdown: true },
   mcp: { enabled: true, port: 7464 },
   language: 'system', // 'system' | 'en' | 'ru'

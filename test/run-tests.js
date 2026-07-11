@@ -25,7 +25,8 @@ function killStrayElectron() {
     console.log('\n── ghost integration ──');
     killStrayElectron();
     require('./ghost/bubble.test.js');
-    const r = await runRegistered('bubble › ');
+    require('./ghost/ocr.test.js');
+    const r = await runRegistered('ghost › ');
     passed += r.passed; failed += r.failed;
     killStrayElectron();
   }

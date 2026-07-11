@@ -1,6 +1,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$Path,
-  [switch]$Boxes   # emit JSON with per-word bounding rects instead of plain text
+  [switch]$Boxes,  # emit JSON with per-word bounding rects instead of plain text
+  [string]$Lang    # force a specific OCR language (e.g. 'ru', 'en-US'); default = user profile
 )
 # Windows built-in OCR (Windows.Media.Ocr) - no external dependencies.
 $ErrorActionPreference = 'Stop'
@@ -11,6 +12,7 @@ $null = [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsR
 $null = [Windows.Graphics.Imaging.BitmapDecoder, Windows.Foundation, ContentType = WindowsRuntime]
 $null = [Windows.Storage.StorageFile, Windows.Foundation, ContentType = WindowsRuntime]
 $null = [Windows.Storage.FileAccessMode, Windows.Foundation, ContentType = WindowsRuntime]
+$null = [Windows.Globalization.Language, Windows.Foundation, ContentType = WindowsRuntime]
 
 $asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
   $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and
@@ -29,7 +31,11 @@ $stream = Await ($file.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Wind
 $decoder = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
 $bitmap = Await ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
 
-$engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
+if ($Lang) {
+  $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage((New-Object Windows.Globalization.Language($Lang)))
+} else {
+  $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
+}
 if ($null -eq $engine) { $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage((New-Object Windows.Globalization.Language('en-US'))) }
 if ($null -eq $engine) { Write-Error 'No OCR language available'; exit 2 }
 

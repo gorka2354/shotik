@@ -1,0 +1,8 @@
+[
+  { "n": "en_white",  "t": "Good morning, please review the pull request", "s": 11, "fg": "Black", "bg": "White" },
+  { "n": "ru_white",  "t": "Доброе утро, посмотрите пожалуйста запрос",     "s": 11, "fg": "Black", "bg": "White" },
+  { "n": "en_hl",     "t": "meet me at the station tomorrow",              "s": 11, "fg": "Black", "bg": "#CCE4F7" },
+  { "n": "ru_hl",     "t": "встретимся завтра на вокзале",                 "s": 11, "fg": "Black", "bg": "#CCE4F7" },
+  { "n": "en_dark",   "t": "the server returned an error today",           "s": 11, "fg": "White", "bg": "#17212B" },
+  { "n": "ru_dark",   "t": "сервер вернул ошибку сегодня",                 "s": 11, "fg": "White", "bg": "#17212B" }
+]

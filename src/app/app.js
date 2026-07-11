@@ -255,6 +255,7 @@ function renderSettings() {
   $('#kbdText').textContent = short(s.hotkeys.textGrab);
   const tr = s.translate || {};
   $('#setAutoBubble').checked = tr.autoBubble !== false;
+  $('#setOcrFallback').checked = tr.ocrFallback !== false;
   $('#setTarget').value = tr.target || 'en';
   $('#setProvider').value = tr.provider || 'free';
   $('#setDeeplKey').value = tr.deeplKey || '';
@@ -301,6 +302,7 @@ $('#setLanguage').addEventListener('change', async (e) => {
   location.reload(); // re-render everything in the new language
 });
 $('#setAutoBubble').addEventListener('change', (e) => applySettings({ translate: { autoBubble: e.target.checked } }));
+$('#setOcrFallback').addEventListener('change', (e) => applySettings({ translate: { ocrFallback: e.target.checked } }));
 $('#setTarget').addEventListener('change', (e) => applySettings({ translate: { target: e.target.value } }));
 $('#setProvider').addEventListener('change', (e) => {
   $('#deeplKeyRow').hidden = e.target.value !== 'deepl';

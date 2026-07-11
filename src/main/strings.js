@@ -136,6 +136,8 @@ const DICTS = {
     trKeyPh: 'paste your key',
     trAutoBubble: 'Translate bubble on selection',
     trAutoBubbleSub: 'select text anywhere → a small button pops up; click it to translate (no clipboard, no screenshot)',
+    trOcr: 'Read text from the screen (OCR) where needed',
+    trOcrSub: 'in apps that hide their text (Telegram posts, canvases) the highlighted area is read by OCR — works on images and video too',
   },
 
   ru: {
@@ -263,6 +265,8 @@ const DICTS = {
     trKeyPh: 'вставь свой ключ',
     trAutoBubble: 'Пузырь перевода при выделении',
     trAutoBubbleSub: 'выдели текст где угодно → рядом всплывёт кнопка; клик — перевод (без буфера обмена и скриншота)',
+    trOcr: 'Читать текст с экрана (OCR) где нужно',
+    trOcrSub: 'в приложениях, которые прячут текст (посты Telegram, canvas), подсвеченная область распознаётся через OCR — работает и на картинках, и на видео',
   },
 };
 

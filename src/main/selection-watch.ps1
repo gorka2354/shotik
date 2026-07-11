@@ -14,9 +14,16 @@ using System.Runtime.InteropServices;
 public static class NativeSel {
   [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int k);
   [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p);
+  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+  [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr c);
   [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
 }
 "@
+
+# Report true physical pixels from GetCursorPos (per-monitor v2, fall back to
+# system-DPI-aware) so the OCR-fallback region maps correctly on scaled displays.
+try { [void][NativeSel]::SetProcessDpiAwarenessContext([IntPtr](-4)) } catch {}
+try { [void][NativeSel]::SetProcessDPIAware() } catch {}
 
 try {
   Add-Type -AssemblyName UIAutomationClient
@@ -49,8 +56,15 @@ function Write-Event($obj) {
 # Prewarm UIA — the first FocusedElement call is ~100ms, the rest ~1-2ms.
 [void](Get-SelectionText)
 
+function Get-Cursor {
+  $p = New-Object NativeSel+POINT
+  [void][NativeSel]::GetCursorPos([ref]$p)
+  return $p
+}
+
 $wasDown = $false
-$lastEmitted = ''   # last selection text we told the app about ('' = none/cleared)
+$downX = 0; $downY = 0  # where the left button went down (for drag detection)
+$lastEmitted = ''   # last UIA selection text we told the app about ('' = none/cleared)
 $idle = 0
 $tick = 0
 $emptyStreak = 0    # consecutive empty reads — debounce so a transient empty read
@@ -65,8 +79,10 @@ while ($true) {
   }
   # High bit of GetAsyncKeyState (negative Int16) = button currently down.
   $down = ([NativeSel]::GetAsyncKeyState(0x01)) -lt 0
+  $justPressed = (-not $wasDown) -and $down
   $justReleased = $wasDown -and (-not $down)
   $wasDown = $down
+  if ($justPressed) { $d = Get-Cursor; $downX = $d.X; $downY = $d.Y }
   if ($down) { $idle = 0; continue }   # skip while the user is still dragging
 
   # Read right after a mouse release (snappy), or every ~540ms while idle
@@ -78,14 +94,25 @@ while ($true) {
   if ($sel) { $sel = $sel.Trim() }
 
   if ([string]::IsNullOrEmpty($sel)) {
+    # No UIA selection. If the user just finished a real drag, this may be a
+    # custom-drawn app (Telegram posts, etc.) — report the drag so the app can
+    # OCR that region as a fallback. Otherwise debounce a clear.
+    if ($justReleased) {
+      $up = Get-Cursor
+      $dx = $up.X - $downX; $dy = $up.Y - $downY
+      if ([Math]::Sqrt($dx * $dx + $dy * $dy) -ge 25) {
+        Write-Event @{ gesture = $true; x1 = $downX; y1 = $downY; x2 = $up.X; y2 = $up.Y }
+        $emptyStreak = 0
+        continue
+      }
+    }
     $emptyStreak++
     if ($lastEmitted -ne '' -and $emptyStreak -ge 2) { Write-Event @{ clear = $true }; $lastEmitted = '' }
     continue
   }
   $emptyStreak = 0
   if ($sel -ne $lastEmitted) {
-    $p = New-Object NativeSel+POINT
-    [void][NativeSel]::GetCursorPos([ref]$p)
+    $p = Get-Cursor
     $text = $sel
     if ($text.Length -gt 5000) { $text = $text.Substring(0, 5000) }
     Write-Event @{ x = $p.X; y = $p.Y; text = $text }

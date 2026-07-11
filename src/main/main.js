@@ -285,6 +285,43 @@ function onSelectionDetected(ev) {
   windows.showSelectionBubble({ x: pt.x, y: pt.y });
 }
 
+// Innovation fallback: apps that don't expose UIA text (Telegram posts, custom-
+// drawn Qt/Electron canvases, images) still HIGHLIGHT the selection on screen.
+// We capture that region and OCR it — reading the pixels the user selected, no
+// clipboard, no synthetic keys. Reuses the Live Text engine (recognizeForSelection
+// upscales + picks the right language; see test/ghost/ocr.test.js).
+let ocrBusy = false;
+async function onGesture(ev) {
+  if (!(settings.get().translate || {}).ocrFallback) return;
+  if (ocrBusy) return; // one OCR at a time — drags can arrive quickly
+  const toDip = (x, y) => { try { return screen.screenToDipPoint({ x, y }); } catch (_) { return { x, y }; } };
+  const p1 = toDip(ev.x1, ev.y1), p2 = toDip(ev.x2, ev.y2);
+  const gx1 = Math.min(p1.x, p2.x), gx2 = Math.max(p1.x, p2.x);
+  const gy1 = Math.min(p1.y, p2.y), gy2 = Math.max(p1.y, p2.y);
+  const disp = screen.getDisplayNearestPoint({ x: Math.round(gx1), y: Math.round(gy1) });
+  const padX = 8, padY = 6;
+  const height = Math.max(30, (gy2 - gy1) + padY * 2); // band around the drag; min ~1 line
+  const midY = (gy1 + gy2) / 2;
+  const rect = {
+    x: Math.max(0, Math.round(gx1 - padX - disp.bounds.x)),
+    y: Math.max(0, Math.round(midY - height / 2 - disp.bounds.y)),
+    width: Math.round((gx2 - gx1) + padX * 2),
+    height: Math.round(height),
+  };
+  if (rect.width < 6) return;
+  ocrBusy = true;
+  try {
+    const { png } = await capture.captureRegion(disp.id, rect);
+    const text = (await ocr.recognizeForSelection(png) || '').trim();
+    blog(`gesture OCR @${rect.width}x${rect.height} → "${text.slice(0, 40)}"`);
+    if (!text || text === lastTranslated) return;
+    pendingSelection = { text };
+    windows.showSelectionBubble({ x: p2.x, y: p2.y });
+  } catch (e) {
+    blog('gesture OCR failed: ' + (e && e.message));
+  } finally { ocrBusy = false; }
+}
+
 // Selection cleared: hide the bubble, but KEEP pendingSelection — a click that
 // races with this clear must still have text to translate. lastTranslated resets
 // so re-selecting the same text raises the bubble again.
@@ -311,6 +348,7 @@ function startSelectionWatcher() {
     if (!line) return;
     let ev; try { ev = JSON.parse(line); } catch (_) { blog('watcher line unparsed: ' + line.slice(0, 60)); return; }
     if (ev.clear) { clearSelectionBubble(); return; }
+    if (ev.gesture) { onGesture(ev); return; }
     onSelectionDetected(ev);
   });
   if (selWatcher.stderr) selWatcher.stderr.on('data', () => {}); // drain, ignore
@@ -604,6 +642,16 @@ function setupTestHandler() {
         return { popupVisible: !!(tp && tp.isVisible()) };
       }
       case 'tp-hover': { ipcMain.emit('tp:hover', null, !!body.over); return 'ok'; }
+      case 'ocr-selection': { const text = await ocr.recognizeForSelection(fs.readFileSync(body.path)); return { text }; }
+      case 'gesture-sim': {
+        // simulate onGesture's tail (post-OCR wiring) with a known fixture image,
+        // so the OCR→bubble→translate chain is testable without real display geometry
+        const text = (await ocr.recognizeForSelection(fs.readFileSync(body.path)) || '').trim();
+        if (text && text !== lastTranslated) { pendingSelection = { text }; windows.showSelectionBubble({ x: body.x != null ? body.x : 900, y: body.y != null ? body.y : 500 }); }
+        await new Promise((r) => setTimeout(r, 250));
+        const b = windows.getSelectionBubble();
+        return { text, bubble: !!(b && b.isVisible()) };
+      }
       case 'state': {
         return {
           overlayOpen: capture.isOverlayOpen(),
