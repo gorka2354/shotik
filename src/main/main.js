@@ -325,19 +325,21 @@ async function ocrSelectionRegion(disp, rect, sample) {
   const { png } = await capture.captureRegion(disp.id, cr);
   const img = nativeImage.createFromBuffer(png);
   const sz = img.getSize();
-  let ocrPng = png;
+  let hl = null;
   try {
     const bmp = img.toBitmap(); // BGRA
     const sx = Math.round((sample.x - disp.bounds.x - cr.x) * disp.scaleFactor);
     const sy = Math.round((sample.y - disp.bounds.y - cr.y) * disp.scaleFactor);
-    const hl = highlight.findHighlightRect(bmp, sz.width, sz.height, sx, sy);
-    if (hl) {
-      const pad = 3;
-      const hx = Math.max(0, hl.x - pad), hy = Math.max(0, hl.y - pad);
-      ocrPng = img.crop({ x: hx, y: hy, width: Math.min(sz.width - hx, hl.width + pad * 2), height: Math.min(sz.height - hy, hl.height + pad * 2) }).toPNG();
-      blog(`highlight ${hl.width}x${hl.height} of ${sz.width}x${sz.height}`);
-    } else { blog('no highlight → OCR whole band ' + sz.width + 'x' + sz.height); }
+    hl = highlight.findHighlightRect(bmp, sz.width, sz.height, sx, sy);
   } catch (e) { blog('highlight detect failed: ' + (e && e.message)); }
+  // REQUIRE a real selection highlight. No highlight = nothing was selected
+  // (a drag in a game, moving the mouse with the button held) → no popup. This
+  // is what stops false detections in non-UIA apps.
+  if (!hl) { blog('no highlight → nothing selected, skip'); return ''; }
+  const pad = 3;
+  const hx = Math.max(0, hl.x - pad), hy = Math.max(0, hl.y - pad);
+  const ocrPng = img.crop({ x: hx, y: hy, width: Math.min(sz.width - hx, hl.width + pad * 2), height: Math.min(sz.height - hy, hl.height + pad * 2) }).toPNG();
+  blog(`highlight ${hl.width}x${hl.height} of ${sz.width}x${sz.height}`);
   return (await ocr.recognizeForSelection(ocrPng) || '').trim();
 }
 

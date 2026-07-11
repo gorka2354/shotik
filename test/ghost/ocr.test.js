@@ -108,4 +108,22 @@ test('highlight-crop OCR reads only the highlighted span', async () => {
   }
 });
 
+// False-positive guard (games / dragging with the button held): plain text with
+// NO coloured selection highlight must NOT be detected as a selection — so the
+// gesture path shows nothing.
+test('plain text (no highlight) is not detected as a selection', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shotik-nohl-'));
+  execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass',
+    '-File', path.join(__dirname, 'ocr-fixtures.ps1'), '-OutDir', dir], { stdio: 'ignore' });
+  const app = makeApp({ port: PORT });
+  try {
+    await app.waitReady();
+    const r = await app.post('ocr-highlight', { path: path.join(dir, 'en_white.png'), sx: 60, sy: 12 });
+    assert(r.cropped === false, 'no highlight on plain text (would show no bubble)');
+  } finally {
+    await app.stop();
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
+  }
+});
+
 module.exports = {};
