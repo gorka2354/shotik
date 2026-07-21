@@ -143,7 +143,11 @@ window.shotik.onFrame(({ bitmap, width, height }) => {
   loaded = true;
   hintEl.hidden = false;
   if (FOR_CLAUDE) claudeBadge.hidden = false;
-  scheduleRender();
+  // Draw synchronously (no rAF — it may not tick while the window is still
+  // hidden) and ack: the canvas backing store now has the frame, so main can
+  // show the window without flashing the bare background for a frame.
+  render();
+  window.shotik.painted();
 });
 
 window.shotik.onWindows((list) => {

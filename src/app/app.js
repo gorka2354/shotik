@@ -364,17 +364,28 @@ const HK_FIELDS = [
   ['#hkRecord', 'record'],
   ['#hkTranslate', 'translateSelection'],
 ];
+const appPlatform = () =>
+  document.documentElement.dataset.platform || (/Mac/i.test(navigator.platform) ? 'darwin' : 'win32');
+
 for (const [selr, key] of HK_FIELDS) {
   const input = $(selr);
   input.addEventListener('focus', () => {
+    // While recording a combo the global shortcuts must be off — otherwise the
+    // OS intercepts any currently-bound combo and fires the action instead of
+    // letting us capture the keys.
+    window.shotik.hotkeysSuspend();
     input.classList.add('recording');
     input.value = '';
     input.placeholder = T('hkRecording');
   });
-  input.addEventListener('blur', () => {
+  input.addEventListener('blur', async () => {
     input.classList.remove('recording');
     input.value = state.settings.hotkeys[key] || '';
     input.placeholder = T('hkPlaceholder');
+    // resume performs the REAL registration of the recorded combo — surface
+    // its conflict warning (e.g. combo grabbed by another app) right away
+    const res = await window.shotik.hotkeysResume();
+    if (res && res.hotkeyErrors) { state.hotkeyErrors = res.hotkeyErrors; renderHotkeyWarn(); }
   });
   input.addEventListener('keydown', async (e) => {
     e.preventDefault();
@@ -385,37 +396,16 @@ for (const [selr, key] of HK_FIELDS) {
       input.blur();
       return;
     }
-    const acc = toAccelerator(e);
+    const acc = window.ShotikAccelerator.toAccelerator(e, appPlatform());
     if (!acc) return; // modifier-only press — wait for the real key
     await applySettings({ hotkeys: { [key]: acc } });
     input.blur();
   });
 }
 
-function toAccelerator(e) {
-  const mods = [];
-  if (e.ctrlKey) mods.push('Ctrl');
-  if (e.altKey) mods.push('Alt');
-  if (e.shiftKey) mods.push('Shift');
-  if (e.metaKey) mods.push('Super');
-  if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return null;
-
-  let key = null;
-  const code = e.code; // layout-independent
-  if (/^Key[A-Z]$/.test(code)) key = code.slice(3);
-  else if (/^Digit\d$/.test(code)) key = code.slice(5);
-  else if (/^F\d+$/.test(code)) key = code;
-  else {
-    const map = {
-      PrintScreen: 'PrintScreen', Space: 'Space', Home: 'Home', End: 'End',
-      PageUp: 'PageUp', PageDown: 'PageDown', Insert: 'Insert',
-      ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
-      Backquote: '`', Minus: '-', Equal: '=',
-    };
-    key = map[code] || null;
-  }
-  if (!key) return null;
-  // PrintScreen / F-keys can be used alone; other keys need a modifier
-  if (!mods.length && key !== 'PrintScreen' && !/^F\d+$/.test(key)) return null;
-  return [...mods, key].join('+');
-}
+// Deactivating the window does NOT blur its focused element, so alt-tabbing
+// away mid-recording would leave the global shortcuts suspended. Force it.
+window.addEventListener('blur', () => {
+  const el = document.activeElement;
+  if (el && el.classList && el.classList.contains('recording')) el.blur();
+});

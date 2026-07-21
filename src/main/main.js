@@ -20,6 +20,8 @@ const translate = require('./translate');
 const highlight = require('./highlight');
 const recorder = require('./recorder');
 const gifexport = require('./gifexport');
+const regionMap = require('./region-map');
+const windowCapture = require('./window-capture');
 const { t } = i18n;
 
 const TEST_MODE = process.env.SHOTIK_TEST === '1' || process.argv.includes('--test');
@@ -493,10 +495,26 @@ async function triggerRepeat() {
 }
 
 // ---------- hotkeys ----------
+// The settings page suspends global shortcuts while it records a new combo —
+// otherwise the OS delivers the pressed combo to an existing binding (e.g.
+// Cmd+Shift+4 fires "grab text") instead of the recorder input.
+let hotkeysSuspended = false;
+
+function suspendHotkeys() {
+  hotkeysSuspended = true;
+  globalShortcut.unregisterAll();
+}
+
+function resumeHotkeys() {
+  hotkeysSuspended = false;
+  registerHotkeys();
+}
+
 function registerHotkeys() {
   globalShortcut.unregisterAll();
   hotkeyErrors = [];
   if (GHOST) return; // never grab the user's keys during invisible testing
+  if (hotkeysSuspended) return; // recorder input is capturing keys right now
   const hk = settings.get().hotkeys;
   const map = [
     ['region', hk.region, () => triggerRegion()],
@@ -559,7 +577,10 @@ function refreshTray() {
 
 // ---------- MCP tools ----------
 function imageContent(pngBuffer, { fullRes = false } = {}) {
+  // never hand the client a 0-byte "image" — surface it as an error instead
+  if (!pngBuffer || !pngBuffer.length) throw new Error('Capture produced an empty image');
   let img = nativeImage.createFromBuffer(pngBuffer);
+  if (img.isEmpty()) throw new Error('Capture produced an unreadable image');
   const st = settings.get();
   if (st.downscaleForAI && !fullRes) {
     const { width, height } = img.getSize();
@@ -575,37 +596,81 @@ function imageContent(pngBuffer, { fullRes = false } = {}) {
 function registerMcpTools() {
   mcp.setTools({
     take_screenshot: {
-      description: 'Take a screenshot of the user\'s screen right now and return it as an image. Use display_id from list_displays for a specific monitor (defaults to the primary one). Set full_resolution=true only when you need to read small text.',
+      description: 'Take a screenshot of one display right now and return it as an image. IMPORTANT: without display_id it captures the display currently under the mouse cursor (which moves between calls) — pass display_id from list_displays whenever you care which monitor you get. Set full_resolution=true only when you need to read small text. To capture one window (even if covered by others), use capture_window instead.',
       inputSchema: {
         type: 'object',
         properties: {
-          display_id: { type: 'number', description: 'Display id from list_displays (optional)' },
+          display_id: { type: 'number', description: 'Display id from list_displays (optional; default = display under the mouse cursor)' },
           full_resolution: { type: 'boolean', description: 'Return native resolution instead of the downscaled version' },
         },
       },
       handler: async (args) => {
-        const { png } = await capture.captureFullscreen(args.display_id || null);
+        const { png, display } = await capture.captureFullscreen(args.display_id || null);
         const entry = history.savePng(png, { source: 'mcp' });
         windows.sendToMain('history:changed');
+        const primary = display.id === screen.getPrimaryDisplay().id;
         return [imageContent(png, { fullRes: !!args.full_resolution }),
-          { type: 'text', text: `Saved to ${entry.file} (${entry.width}x${entry.height}px)` }];
+          { type: 'text', text: `Captured display ${display.id} (${primary ? 'primary' : 'secondary'}, bounds ${display.bounds.width}x${display.bounds.height} at ${display.bounds.x},${display.bounds.y}). Saved to ${entry.file} (${entry.width}x${entry.height}px)` }];
       },
     },
     take_screenshot_region: {
-      description: 'Screenshot a specific rectangle of the screen (coordinates in device-independent pixels, as reported by list_displays).',
+      description: 'Screenshot a rectangle of the screen. Coordinates are GLOBAL virtual-desktop DIP — exactly the space list_displays bounds use, so any monitor (including negative origins) works directly. A region spanning several monitors is clipped to the one holding its largest part (the reply says what was actually captured).',
       inputSchema: {
         type: 'object',
         properties: {
-          x: { type: 'number' }, y: { type: 'number' },
+          x: { type: 'number', description: 'Global virtual-desktop X (DIP, may be negative)' },
+          y: { type: 'number', description: 'Global virtual-desktop Y (DIP, may be negative)' },
           width: { type: 'number' }, height: { type: 'number' },
-          display_id: { type: 'number', description: 'Display id (optional, defaults to primary)' },
+          display_id: { type: 'number', description: 'Optional: force this display (coordinates stay global)' },
           full_resolution: { type: 'boolean' },
         },
         required: ['x', 'y', 'width', 'height'],
       },
       handler: async (args) => {
-        const { png } = await capture.captureRegion(args.display_id || null, args);
-        return [imageContent(png, { fullRes: !!args.full_resolution })];
+        const rect = regionMap.validateRegion(args);
+        const displayId = args.display_id != null ? Number(args.display_id) : null;
+        const m = regionMap.mapGlobalRegion(screen.getAllDisplays(), rect, displayId);
+        const { png } = await capture.captureRegion(m.displayId, m.relRect);
+        const g = m.globalRect;
+        const note = m.clipped
+          ? ` (clipped to display ${m.displayId}: requested region crossed its edge)`
+          : ` (display ${m.displayId})`;
+        return [imageContent(png, { fullRes: !!args.full_resolution }),
+          { type: 'text', text: `Captured ${g.width}x${g.height} DIP at global (${g.x}, ${g.y})${note}` }];
+      },
+    },
+    list_windows: {
+      description: 'List the user\'s open top-level windows: id, title, app, bounds (global DIP), display_id, minimized. Use the id or title with capture_window. On macOS only id and title are available (bounds/display_id are null).',
+      inputSchema: { type: 'object', properties: {} },
+      handler: async () => {
+        const items = await windowCapture.listWindows();
+        return [{ type: 'text', text: JSON.stringify(items, null, 2) }];
+      },
+    },
+    capture_window: {
+      description: 'Capture ONE window\'s own surface by id (from list_windows) or title substring. Works even when the window is covered by other windows, off-screen or on any monitor — unlike take_screenshot, which grabs the visible framebuffer. Minimized windows cannot be captured (ask the user to restore them). Window ids are ephemeral (the OS recycles them): take them from a FRESH list_windows call, and pass title together with window_id as a staleness guard.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          window_id: { type: ['number', 'string'], description: 'Window id from list_windows (preferred — unambiguous; a number on Windows, a string on macOS)' },
+          title: { type: 'string', description: 'Case-insensitive window title substring (used when window_id is absent)' },
+          full_resolution: { type: 'boolean', description: 'Return native resolution instead of the downscaled version' },
+        },
+      },
+      handler: async (args) => {
+        const res = await windowCapture.captureWindow({
+          windowId: args.window_id != null ? args.window_id : null,
+          title: args.title || null,
+        });
+        const entry = history.savePng(res.png, { source: 'mcp' });
+        windows.sendToMain('history:changed');
+        const extra = (res.otherMatches && res.otherMatches.length
+          ? ` Other windows matching the title: ${res.otherMatches.map((s) => `"${s}"`).join(', ')} — pass window_id to disambiguate.`
+          : '') + (res.uniform
+          ? ' Note: the image is one flat color — the window may be genuinely blank, or it renders on a GPU-only surface this method cannot read.'
+          : '');
+        return [imageContent(res.png, { fullRes: !!args.full_resolution }),
+          { type: 'text', text: `Captured window "${res.title}"${res.app ? ` (${res.app})` : ''} via ${res.method}. Saved to ${entry.file} (${entry.width}x${entry.height}px).${extra}` }];
       },
     },
     ask_user_to_select_region: {
@@ -749,8 +814,33 @@ function setupTestHandler() {
           mainVisible: !!(windows.getMainWindow() && windows.getMainWindow().isVisible()),
           lastProcessed,
           hotkeyErrors,
+          hotkeysSuspended,
           mcp: mcp.status(),
         };
+      }
+      case 'show-toast': {
+        windows.showToast({ kind: body.kind || 'text', title: body.title || 'T', body: body.body || 'B' });
+        await new Promise((r) => setTimeout(r, 250));
+        const w = windows.getToastWindow();
+        return { visible: !!(w && w.isVisible()) };
+      }
+      case 'toast-visible': {
+        const w = windows.getToastWindow();
+        return { visible: !!(w && w.isVisible()) };
+      }
+      case 'toast-hover': { ipcMain.emit('toast:hover', null, !!body.over); return 'ok'; }
+      case 'win-sources': {
+        // diagnostic: what Electron's window capturer can see right now
+        const { desktopCapturer } = require('electron');
+        const s = await desktopCapturer.getSources({
+          types: ['window'], thumbnailSize: { width: body.w || 0, height: body.h || 0 }, fetchWindowIcons: false,
+        });
+        return s.map((x) => ({ id: x.id, name: x.name, empty: x.thumbnail.isEmpty(), size: x.thumbnail.getSize() }));
+      }
+      case 'hotkeys': {
+        if (body.op === 'suspend') suspendHotkeys();
+        else if (body.op === 'resume') resumeHotkeys();
+        return { suspended: hotkeysSuspended };
       }
       case 'input': {
         const wins = capture.overlayWindows();
@@ -944,6 +1034,13 @@ function setupAppIpc() {
   });
   ipcMain.handle('app:copy-text', (_e, text) => { if (text) clipboard.writeText(String(text)); return true; });
 
+  ipcMain.on('hotkeys:suspend', () => suspendHotkeys());
+  // handle (not on): the REAL registration of a just-recorded combo happens
+  // here — the renderer needs the resulting hotkeyErrors to show the conflict
+  // warning (during recording registerHotkeys() is a suspended no-op, so the
+  // settings:set reply always carried an empty list).
+  ipcMain.handle('hotkeys:resume', () => { resumeHotkeys(); return { hotkeyErrors }; });
+
   ipcMain.handle('capture:region', () => triggerRegion({ hideMain: true }));
   ipcMain.handle('capture:text', () => triggerText({ hideMain: true }));
   ipcMain.handle('capture:record', () => triggerRecord());
@@ -969,6 +1066,11 @@ function setupAppIpc() {
 }
 
 // ---------- lifecycle ----------
+// Safety net: if the settings window loses focus (or dies) while the hotkey
+// recorder had shortcuts suspended, bring them back — the renderer's own
+// blur handler can't be trusted to survive a crash.
+app.on('browser-window-blur', () => { if (hotkeysSuspended) resumeHotkeys(); });
+
 app.on('before-quit', () => { global.__shotikQuitting = true; stopSelectionWatcher(); });
 app.on('will-quit', () => { globalShortcut.unregisterAll(); stopSelectionWatcher(); });
 app.on('window-all-closed', () => { /* tray app — keep running */ });

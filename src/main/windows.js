@@ -89,6 +89,25 @@ function ensureToast() {
   return toastWin;
 }
 
+// A finished recording deserves more than a blink — the file toast is the only
+// way to reach the result without opening the app, so give it time (and pause
+// the countdown entirely while the cursor is over it).
+const TOAST_TTL = { video: 10000, gif: 10000 };
+const TOAST_TTL_DEFAULT = 4200;
+const TOAST_TTL_AFTER_HOVER = 2500;
+let toastTtl = TOAST_TTL_DEFAULT; // TTL of the currently shown toast (for hover re-arm)
+let toastHovering = false;        // cursor is over the toast -> countdown paused
+
+function hideToastNow() {
+  toastHovering = false; // hiding under the cursor won't fire mouseleave
+  if (toastWin && !toastWin.isDestroyed()) toastWin.hide();
+}
+
+function armToastHide(ms) {
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToastNow, ms);
+}
+
 // showToast({title, body, thumb (file path), file (target to open), kind})
 function showToast(data) {
   lastToast = { ...data, ts: Date.now() };
@@ -102,16 +121,27 @@ function showToast(data) {
   const show = () => {
     w.webContents.send('toast:data', data);
     w.showInactive();
+    toastTtl = TOAST_TTL[data.kind] || TOAST_TTL_DEFAULT;
+    // a re-triggered toast while the cursor is parked on it must stay paused —
+    // mouseenter won't refire, so an unconditional re-arm would hide it under
+    // the cursor. mouseleave re-arms.
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { if (toastWin && !toastWin.isDestroyed()) toastWin.hide(); }, 4200);
+    if (!toastHovering) armToastHide(toastTtl);
   };
   if (w.webContents.isLoading()) w.webContents.once('did-finish-load', show);
   else show();
 }
 
-ipcMain.on('toast:close', () => { if (toastWin && !toastWin.isDestroyed()) toastWin.hide(); });
+ipcMain.on('toast:hover', (_e, over) => {
+  if (!toastWin || toastWin.isDestroyed() || !toastWin.isVisible()) return;
+  toastHovering = !!over;
+  if (over) clearTimeout(toastTimer);
+  else armToastHide(Math.min(toastTtl, TOAST_TTL_AFTER_HOVER));
+});
+
+ipcMain.on('toast:close', () => hideToastNow());
 ipcMain.on('toast:open-file', (_e, file) => {
-  if (toastWin && !toastWin.isDestroyed()) toastWin.hide();
+  hideToastNow();
   if (file && fs.existsSync(file)) shell.showItemInFolder(file);
 });
 
@@ -197,6 +227,7 @@ let tpWin = null;
 let tpData = null;   // latest payload (so did-finish-load sends the current state)
 let tpReady = false;
 let tpHideTimer = null;
+let tpHovering = false; // cursor over the popup -> auto-hide paused
 const TP_W = 380;
 const TP_TTL = Number(process.env.SHOTIK_TP_TTL || 9000); // auto-hide after the result lands
 
@@ -210,7 +241,10 @@ function sendTpData() {
 // translation even rendered). Esc / × / Copy still close it immediately.
 function armPopupHide() {
   clearTimeout(tpHideTimer);
-  tpHideTimer = setTimeout(() => { if (tpWin && !tpWin.isDestroyed()) { wlog('popup auto-hide'); tpWin.hide(); } }, TP_TTL);
+  tpHideTimer = setTimeout(() => {
+    tpHovering = false; // hiding under the cursor won't fire a mouse-leave
+    if (tpWin && !tpWin.isDestroyed()) { wlog('popup auto-hide'); tpWin.hide(); }
+  }, TP_TTL);
 }
 
 function showTranslatePopup(data) {
@@ -256,12 +290,15 @@ function showTranslatePopup(data) {
 
 function hideTranslatePopup() {
   clearTimeout(tpHideTimer);
+  tpHovering = false;
   if (tpWin && !tpWin.isDestroyed()) tpWin.hide();
 }
 
 function updateTranslatePopup(data) {
   tpData = data;
-  armPopupHide(); // result/error is on screen now — start the auto-hide countdown
+  // result/error is on screen now — start the auto-hide countdown, unless the
+  // cursor is parked on the popup (its mouse-leave re-arms)
+  if (!tpHovering) armPopupHide();
   sendTpData();
 }
 
@@ -327,9 +364,9 @@ function getSelectionBubble() { return sbWin && !sbWin.isDestroyed() ? sbWin : n
 
 ipcMain.on('bubble:keepalive', () => armBubbleHide());
 
-ipcMain.on('tp:copy', (_e, text) => { clearTimeout(tpHideTimer); if (text) clipboard.writeText(text); if (tpWin && !tpWin.isDestroyed()) tpWin.hide(); });
-ipcMain.on('tp:close', () => { clearTimeout(tpHideTimer); if (tpWin && !tpWin.isDestroyed()) tpWin.hide(); });
-ipcMain.on('tp:hover', (_e, over) => { if (over) clearTimeout(tpHideTimer); else armPopupHide(); }); // pause auto-hide while hovering
+ipcMain.on('tp:copy', (_e, text) => { if (text) clipboard.writeText(text); hideTranslatePopup(); });
+ipcMain.on('tp:close', () => hideTranslatePopup());
+ipcMain.on('tp:hover', (_e, over) => { tpHovering = !!over; if (over) clearTimeout(tpHideTimer); else armPopupHide(); }); // pause auto-hide while hovering
 ipcMain.on('tp:resize', (_e, h) => {
   if (tpWin && !tpWin.isDestroyed()) {
     const b = tpWin.getBounds();

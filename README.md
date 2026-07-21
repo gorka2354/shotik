@@ -85,13 +85,16 @@ and Claude gets these tools:
 
 | Tool | What it does |
 |---|---|
-| `take_screenshot` | look at the screen right now |
+| `take_screenshot` | look at the screen right now (pass `display_id` to pick a monitor) |
+| `capture_window` *(1.1)* | shoot **one window** by title or id — works even when it's covered by other windows or on another monitor |
+| `list_windows` *(1.1)* | enumerate open windows: titles, apps, bounds, which display |
 | `ask_user_to_select_region` | open the overlay so **you** point at the area |
 | `get_last_screenshot` | grab your latest shot |
-| `take_screenshot_region` | capture a specific rectangle |
+| `take_screenshot_region` | capture a rectangle anywhere on the **virtual desktop** — global coordinates, any monitor |
 | `list_screenshots`, `list_displays` | history and monitors |
 
 Say "look at my screen" — and Claude sees it. Say "look here" — and just draw a box with your mouse.
+Say "show me the Zarya window" — and Claude reads that window's own surface, no matter what's on top of it.
 
 ### ✦ Translate selected text — no screenshot *(1.0)*
 Select text in **any** app and a translate bubble appears; click it for the translation. Reads the selection through Windows UI Automation (no clipboard) — and via on-screen OCR with **highlight detection** in Telegram, Steam, images and video. Toggle in **Settings → Text & translation**; `Ctrl+Alt+T` and the **Text** tab work too.

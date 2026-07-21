@@ -31,3 +31,6 @@ document.getElementById('toast').addEventListener('click', () => {
   if (currentFile) window.shotik.openFile(currentFile);
   else window.shotik.close();
 });
+// hovering pauses the auto-hide countdown (main re-arms it on leave)
+document.getElementById('toast').addEventListener('mouseenter', () => window.shotik.hover(true));
+document.getElementById('toast').addEventListener('mouseleave', () => window.shotik.hover(false));

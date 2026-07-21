@@ -18,6 +18,8 @@ function killStrayElectron() {
     console.log('\n── unit ──');
     require('./unit/translate.test.js');
     require('./unit/highlight.test.js');
+    require('./unit/region-map.test.js');
+    require('./unit/accelerator.test.js');
     const r = await runRegistered('unit › ');
     passed += r.passed; failed += r.failed;
   }
@@ -28,6 +30,7 @@ function killStrayElectron() {
     require('./ghost/bubble.test.js');
     require('./ghost/ocr.test.js');
     require('./ghost/texttab.test.js');
+    require('./ghost/mcp-tools.test.js');
     const r = await runRegistered('ghost › ');
     passed += r.passed; failed += r.failed;
     killStrayElectron();

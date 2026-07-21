@@ -25,6 +25,8 @@ contextBridge.exposeInMainWorld('shotik', {
   recStatus: invoke('rec:status'),
   historyExportGif: invoke('history:export-gif'),
   onRecState: (cb) => ipcRenderer.on('rec:state', (_e, s) => cb(s)),
+  hotkeysSuspend: () => ipcRenderer.send('hotkeys:suspend'),
+  hotkeysResume: invoke('hotkeys:resume'),
   openExternal: invoke('app:open-external'),
   openSaveDir: invoke('app:open-save-dir'),
   translateText: invoke('translate:text'),

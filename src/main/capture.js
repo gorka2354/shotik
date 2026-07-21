@@ -180,7 +180,7 @@ function startOverlaySession(opts = {}) {
     const wins = [];
     const files = [];
     const winInfos = []; // { win, display } — keyed pairs (wins[] order is nondeterministic under parallel capture)
-    session = { resolve, wins, files, settled: false };
+    session = { resolve, wins, files, settled: false, winInfos };
 
     // Window rects for hover-snap arrive async; deliver to each overlay once
     // BOTH the rects and that window exist (order-independent — see PERF.md).
@@ -215,11 +215,13 @@ function startOverlaySession(opts = {}) {
       };
       const win = new BrowserWindow({
         ...bounds,
-        // resizable MUST be true: on Windows a non-resizable window is clamped
+        // resizable MUST be true on Windows: a non-resizable window is clamped
         // to the display work area and can't cover the taskbar. thickFrame:false
-        // removes the resize border, so the user still can't resize it.
+        // removes the resize border there, so the user still can't resize it.
+        // On macOS thickFrame does nothing and a resizable frameless window CAN
+        // be dragged at the edges — the frozen screenshot would stretch.
         frame: false, show: false, transparent: false, backgroundColor: '#0b0d11',
-        skipTaskbar: true, resizable: true, thickFrame: false, movable: false,
+        skipTaskbar: true, resizable: process.platform === 'win32', thickFrame: false, movable: false,
         minimizable: false, maximizable: false, fullscreenable: false,
         enableLargerThanScreen: true, hasShadow: false, roundedCorners: false,
         webPreferences: {
@@ -229,6 +231,9 @@ function startOverlaySession(opts = {}) {
         },
       });
       win.removeMenu();
+      // belt & braces on every platform: the overlay must never be resized by
+      // the user (its canvas would stretch the frozen frame)
+      win.on('will-resize', (e) => e.preventDefault());
       win.setBounds(bounds); // force exact size — creation may have clamped it
       win.loadFile(path.join(__dirname, '..', 'overlay', 'overlay.html'), {
         query: {
@@ -243,12 +248,15 @@ function startOverlaySession(opts = {}) {
         },
       });
       if (isCursor) mark('winCreate');
-      win.webContents.once('did-finish-load', () => {
-        if (win.isDestroyed()) return;
-        if (isCursor) mark('load');
-        win.setBounds(bounds);
-        win.webContents.send('overlay:frame', { bitmap, width: physSize.width, height: physSize.height });
-        if (isCursor) mark('frameSent');
+      // Show ONLY after the renderer confirms the frame is painted — showing
+      // right after the IPC send flashes the bare background for a frame
+      // (the visible "blink" on capture). A watchdog still shows the window if
+      // the renderer never reports (crash), so the session can't hang unseen.
+      const showNow = (label) => {
+        if (info.shown || win.isDestroyed()) return;
+        info.shown = true;
+        clearTimeout(info.showTimer);
+        if (isCursor && label) mark(label);
         if (GHOST) {
           win.showInactive(); // painted but off-screen, never steals focus
           if (isCursor) { mark('show'); flushTiming(timing); }
@@ -260,14 +268,20 @@ function startOverlaySession(opts = {}) {
         if (b.width !== bounds.width || b.height !== bounds.height || b.x !== bounds.x || b.y !== bounds.y) {
           win.setBounds(bounds);
         }
-        // 'ready-to-show'/first paint is when pixels actually land — mark it too
-        win.once('show', () => { if (isCursor) { mark('painted'); flushTiming(timing); } });
         if (isCursor) { win.focus(); mark('show'); flushTiming(timing); }
+      };
+      win.webContents.once('did-finish-load', () => {
+        if (win.isDestroyed()) return;
+        if (isCursor) mark('load');
+        win.setBounds(bounds);
+        win.webContents.send('overlay:frame', { bitmap, width: physSize.width, height: physSize.height });
+        if (isCursor) mark('frameSent');
+        info.showTimer = setTimeout(() => showNow('paintTimeout'), 800); // watchdog
       });
       win.on('closed', () => {
         if (session && !session.settled) settle(null);
       });
-      const info = { win, display: d, delivered: false };
+      const info = { win, display: d, delivered: false, shown: false, showTimer: null, showNow, isCursor };
       wins.push(win);
       winInfos.push(info);
       deliver(info); // in case window rects are already in
@@ -302,6 +316,14 @@ function isOverlayOpen() { return !!session; }
 function overlayWindows() { return session ? session.wins : []; }
 
 // ---- IPC from overlay renderers ----
+// The renderer reports "frame is on screen" — only then is its window shown
+// (kills the one-frame background flash on capture).
+ipcMain.on('overlay:painted', (e) => {
+  if (!session || !session.winInfos) return;
+  const info = session.winInfos.find((i) => i.win && !i.win.isDestroyed() && i.win.webContents === e.sender);
+  if (info) info.showNow('painted');
+});
+
 ipcMain.handle('overlay:action', (_e, payload) => {
   const png = payload.png ? Buffer.from(payload.png) : null;
   settle({ ...payload, png });
