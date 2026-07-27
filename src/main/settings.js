@@ -10,7 +10,6 @@ const DEFAULTS = () => ({
   saveDir: process.env.SHOTIK_SAVE_DIR || path.join(app.getPath('pictures'), 'Shotik'),
   fileNamePattern: 'Shot_{date}_{time}',
   autoSave: true,
-  smartClipboard: true, // clipboard gets BOTH image and file path text
   showToast: true,
   // macOS has no PrintScreen key and ⌘⇧3/4/5 are taken by the system
   hotkeys: process.platform === 'darwin' ? {

@@ -66,15 +66,13 @@ function cliCaptureMode(argv) {
 }
 
 // ---------- core action processing ----------
-function copyToClipboard(pngBuffer, filePath) {
-  const img = nativeImage.createFromBuffer(pngBuffer);
-  const st = settings.get();
-  if (st.smartClipboard && filePath) {
-    // Both formats at once: terminals paste the path, image apps paste the picture.
-    clipboard.write({ image: img, text: filePath });
-  } else {
-    clipboard.writeImage(img);
-  }
+// Plain copy puts ONLY the image in the clipboard — adding the file path as
+// text made apps that prefer text (messengers, chat inputs) paste the path
+// instead of the picture, and made this indistinguishable from the dedicated
+// "copy for Claude" action (which is image+path on purpose: terminals paste
+// the path, image apps paste the picture).
+function copyToClipboard(pngBuffer) {
+  clipboard.writeImage(nativeImage.createFromBuffer(pngBuffer));
 }
 
 async function handleOverlayResult(res) {
@@ -93,7 +91,7 @@ async function handleOverlayResult(res) {
   switch (res.action) {
     case 'copy': {
       if (st.autoSave) entry = history.savePng(res.png, { source: 'region' });
-      copyToClipboard(res.png, entry ? entry.file : null);
+      copyToClipboard(res.png);
       if (st.showToast) windows.showToast({
         kind: 'image', title: t('copiedTitle'),
         body: entry ? path.basename(entry.file) : t('noSave'),
@@ -118,7 +116,7 @@ async function handleOverlayResult(res) {
       });
       if (!r.canceled && r.filePath) {
         fs.writeFileSync(r.filePath, res.png);
-        copyToClipboard(res.png, r.filePath);
+        copyToClipboard(res.png);
         if (st.showToast) windows.showToast({ kind: 'image', title: t('savedTitle'), body: r.filePath, file: r.filePath });
         entry = { file: r.filePath };
       }
@@ -464,7 +462,7 @@ async function triggerFull() {
   const st = settings.get();
   const { png } = await capture.captureFullscreen();
   const entry = st.autoSave ? history.savePng(png, { source: 'fullscreen' }) : null;
-  copyToClipboard(png, entry ? entry.file : null);
+  copyToClipboard(png);
   if (st.showToast) windows.showToast({
     kind: 'image', title: t('screenCopied'),
     body: entry ? path.basename(entry.file) : t('noSave'),
@@ -483,7 +481,7 @@ async function triggerRepeat() {
     return null;
   }
   const entry = st.autoSave ? history.savePng(r.png, { source: 'repeat' }) : null;
-  copyToClipboard(r.png, entry ? entry.file : null);
+  copyToClipboard(r.png);
   if (st.showToast) windows.showToast({
     kind: 'repeat', title: t('repeatTitle'),
     body: entry ? path.basename(entry.file) : t('copiedTitle'),
@@ -865,6 +863,20 @@ function setupTestHandler() {
           formats: clipboard.availableFormats(),
         };
       }
+      case 'sim-action': {
+        // run an overlay action end-to-end and report what landed in the
+        // clipboard; the user's clipboard is saved and restored around it
+        const savedText = clipboard.readText();
+        const savedImg = clipboard.readImage();
+        const png = Buffer.from(body.pngBase64 || '', 'base64');
+        await handleOverlayResult({ action: body.action || 'copy', png });
+        const img = clipboard.readImage();
+        const out = { text: clipboard.readText(), hasImage: !img.isEmpty(), formats: clipboard.availableFormats() };
+        if (!savedImg.isEmpty()) clipboard.writeImage(savedImg);
+        else if (savedText) clipboard.writeText(savedText);
+        else clipboard.clear();
+        return out;
+      }
       case 'screenshot': {
         const { png } = await capture.captureFullscreen(body.displayId || null);
         const out = body.path || path.join(app.getPath('temp'), 'shotik-test-shot.png');
@@ -968,7 +980,7 @@ function setupAppIpc() {
   ipcMain.handle('history:copy', (_e, id) => {
     const it = history.get(id);
     if (!it) return false;
-    copyToClipboard(fs.readFileSync(it.file), it.file);
+    copyToClipboard(fs.readFileSync(it.file));
     windows.showToast({ kind: 'image', title: 'Скопировано в буфер', body: path.basename(it.file), thumb: it.thumb, file: it.file });
     return true;
   });

@@ -238,7 +238,6 @@ function renderSettings() {
   const s = state.settings;
   $('#saveDirLabel').textContent = s.saveDir;
   $('#setAutoSave').checked = s.autoSave;
-  $('#setSmartClip').checked = s.smartClipboard;
   $('#setToast').checked = s.showToast;
   $('#setDownscale').checked = s.downscaleForAI;
   $('#setAutostart').checked = s.launchAtStartup;
@@ -292,7 +291,6 @@ async function applySettings(patch) {
 }
 
 $('#setAutoSave').addEventListener('change', (e) => applySettings({ autoSave: e.target.checked }));
-$('#setSmartClip').addEventListener('change', (e) => applySettings({ smartClipboard: e.target.checked }));
 $('#setToast').addEventListener('change', (e) => applySettings({ showToast: e.target.checked }));
 $('#setDownscale').addEventListener('change', (e) => applySettings({ downscaleForAI: e.target.checked }));
 $('#setAutostart').addEventListener('change', (e) => applySettings({ launchAtStartup: e.target.checked }));

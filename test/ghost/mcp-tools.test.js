@@ -177,6 +177,25 @@ test('hotkeys: suspend flag toggles and resume re-registers', async () => {
   } finally { await app.stop(); }
 });
 
+test('clipboard: plain Copy is image-only, "copy for Claude" is image+path', async () => {
+  const port = nextPort++;
+  const app = makeApp({ port });
+  try {
+    await app.waitReady();
+    const tmp = path.join(require('os').tmpdir(), 'shotik-ghost-shots').replace(/\\/g, '\\\\');
+    await app.post('exec-js', { target: 'main', code: `window.shotik.setSettings({ saveDir: '${tmp}' })` });
+    const pngBase64 = require('fs').readFileSync(path.join(__dirname, '..', 'fake-screen.png')).toString('base64');
+
+    const plain = await app.post('sim-action', { action: 'copy', pngBase64 });
+    eq(plain.hasImage, true, 'copy puts the image');
+    eq(plain.text, '', 'copy does NOT put the file path: got "' + plain.text + '"');
+
+    const claude = await app.post('sim-action', { action: 'claude', pngBase64 });
+    eq(claude.hasImage, true, 'claude puts the image');
+    assert(/\.png$/i.test(claude.text), 'claude also puts the path: got "' + claude.text + '"');
+  } finally { await app.stop(); }
+});
+
 test('toast: a finished recording toast outlives the old 4.2s timeout', async () => {
   const port = nextPort++;
   const app = makeApp({ port });

@@ -70,9 +70,8 @@ Translation is **free out of the box** (no key) or via your own **DeepL** key. A
 
 ## Features
 
-### ✦ Smart Clipboard
-After every capture the clipboard holds **both formats at once**: the PNG image and the file path as text.
-`Ctrl+V` into Claude Code pastes the image; `Ctrl+V` into a terminal pastes the path. No switching.
+### ✦ A clipboard that does what you expect
+**Copy** puts the **picture** in the clipboard — paste into a messenger or an editor and you get the image, never a file path. The **Claude** action (`A` in the overlay) copies image **and** path together: `Ctrl+V` into Claude Code or a terminal pastes the path, into an image app — the picture.
 
 ### ✦ Built-in MCP server
 Connect once:
