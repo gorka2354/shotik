@@ -319,6 +319,7 @@ h1 { font-family: var(--font-display); font-size: 22px; font-weight: 600; }
   font-family: inherit; font-size: 13px; padding: 7px 10px; width: 150px; outline: none;
 }
 .select:focus { border-color: var(--accent); }
+#setMicrophoneDevice { width: 260px; max-width: 48%; }
 .hotkey:focus, .port:focus { border-bottom-color: var(--accent); }
 .hotkey.recording { border-bottom-color: #b58900; }
 #hotkeyWarn { color: #b58900; padding-top: 10px; font-size: 12px; }

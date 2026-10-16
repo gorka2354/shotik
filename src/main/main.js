@@ -751,6 +751,38 @@ function setupTestHandler() {
       }
       case 'record-stop': { recorder.stopRecording(); await new Promise((r) => setTimeout(r, 800)); return recorder.status(); }
       case 'record-status': return recorder.status();
+      case 'media-probe': {
+        // What Chromium's player sees: a bare page with a muted <video>
+        // (off-screen) loads the file and tries to seek to `seekTo` (or the middle).
+        const page = path.join(app.getPath('temp'), 'shotik-media-probe.html');
+        fs.writeFileSync(page, '<!doctype html><video muted preload="metadata"></video>');
+        const w = new BrowserWindow({ show: false, x: 20000, y: 0, width: 320, height: 240, webPreferences: { backgroundThrottling: false } });
+        try {
+          await w.loadFile(page);
+          return await w.webContents.executeJavaScript(`(async () => {
+            const v = document.querySelector('video');
+            const loaded = new Promise((r, j) => { v.addEventListener('loadedmetadata', r, { once: true }); v.addEventListener('error', () => j(new Error('video error ' + (v.error && v.error.code))), { once: true }); });
+            v.src = ${JSON.stringify(require('url').pathToFileURL(body.file).href)};
+            await loaded;
+            const duration = v.duration;
+            const res = { duration: isFinite(duration) ? duration : String(duration), seekableEnd: v.seekable.length ? v.seekable.end(0) : 0 };
+            if (isFinite(duration)) {
+              const target = ${Number(body.seekTo) || 0} || duration / 2;
+              v.currentTime = target;
+              res.seekTo = target;
+              res.seeked = await Promise.race([new Promise((r) => v.addEventListener('seeked', () => r(true), { once: true })), new Promise((r) => setTimeout(() => r(false), 5000))]);
+              res.position = v.currentTime;
+            }
+            return res;
+          })()`);
+        } finally { if (!w.isDestroyed()) w.destroy(); }
+      }
+      case 'record-start': {
+        const display = screen.getPrimaryDisplay();
+        const rectDip = { x: 20, y: 20, w: 320, h: 180 };
+        const rectPhys = Object.fromEntries(Object.entries(rectDip).map(([k, v]) => [k, Math.round(v * display.scaleFactor)]));
+        return recorder.startRecording({ displayId: display.id, rectDip, rectPhys });
+      }
       case 'overlay-timing': return capture.getOverlayTiming();
       case 'translate-selection': { await triggerTranslateSelection(); await new Promise((r) => setTimeout(r, 500)); return { popup: !!windows.getTranslatePopup() }; }
       case 'selection-bubble': {
@@ -889,6 +921,7 @@ function setupTestHandler() {
         else if (body.target === 'toast') target = windows.getToastWindow();
         else if (body.target === 'pin') target = windows.getPinWindows()[body.index || 0];
         else if (body.target === 'rec-controls') target = recorder.getControlsWindow();
+        else if (body.target === 'recorder') target = recorder.getRecorderWindow();
         else if (body.target === 'tp') target = windows.getTranslatePopup();
         else if (body.target === 'bubble') target = windows.getSelectionBubble();
         else target = capture.overlayWindows()[body.index || 0];
@@ -1117,7 +1150,12 @@ if (gotLock) app.whenReady().then(async () => {
     lastProcessed = { action: 'record-done', file: entry.file, ts: Date.now() };
   });
   recorder.events.on('error', (msg) => {
-    windows.showToast({ kind: 'text', title: t('recFailTitle'), body: String(msg).slice(0, 120) });
+    const detail = String(msg);
+    const microphoneError = detail.startsWith('microphone:')
+      ? (/NotAllowedError|SecurityError/.test(detail) ? 'recMicrophoneDenied'
+        : /NotFoundError|OverconstrainedError/.test(detail) ? 'recMicrophoneMissing' : 'recMicrophoneFailed')
+      : null;
+    windows.showToast({ kind: 'text', title: t('recFailTitle'), body: microphoneError ? t(microphoneError) : detail.slice(0, 120) });
   });
 
   capture.keepWarm(); // warm the capture engine so the first hotkey press is snappy

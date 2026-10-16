@@ -2,7 +2,7 @@
 // Spins up the app in ghost mode (off-screen, no hotkeys, HTTP-driven) and
 // exposes post()/waitReady()/stop(). Every window lives at +20000 so nothing
 // touches the real desktop.
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
 const http = require('http');
 const path = require('path');
 
@@ -47,7 +47,10 @@ function makeApp({ port, env = {} } = {}) {
   async function stop() {
     try { await post('quit', {}); } catch (_) {}
     await sleep(400);
-    try { child.kill(); } catch (_) {}
+    if (child.exitCode === null && child.signalCode === null) {
+      // Only our own test process tree; never kill other Electron applications.
+      try { execFileSync('taskkill', ['/F', '/T', '/PID', String(child.pid)], { stdio: 'ignore' }); } catch (_) {}
+    }
   }
 
   return { post, waitReady, stop, sleep, child };
