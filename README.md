@@ -122,6 +122,9 @@ audio into a single video audio track. The microphone is released when recording
 stops; unavailable devices and permission failures produce a visible error.
 GIF exports contain images only, without audio.
 
+Recordings are saved with their length and a seek index, so the timeline works in any player —
+Windows Media Player, VLC, a browser — even for hour-long files, without re-encoding.
+
 ### ✦ PowerToys Command Palette / Win+S
 The installer adds Start Menu commands that show up in PowerToys Command Palette and Windows search:
 **Area Screenshot**, **Full Screen**, **Repeat Last Area**, **Translate Selection**.

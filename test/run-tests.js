@@ -15,6 +15,8 @@ const which = process.argv[2] || 'all';
     require('./unit/region-map.test.js');
     require('./unit/accelerator.test.js');
     require('./unit/recorder.test.js');
+    require('./unit/webm-index.test.js');
+    require('./unit/mp4-index.test.js');
     const r = await runRegistered('unit › ');
     passed += r.passed; failed += r.failed;
   }
@@ -26,6 +28,7 @@ const which = process.argv[2] || 'all';
     require('./ghost/texttab.test.js');
     require('./ghost/mcp-tools.test.js');
     require('./ghost/recorder.test.js');
+    require('./ghost/recording-seek.test.js');
     const r = await runRegistered('ghost › ');
     passed += r.passed; failed += r.failed;
   }

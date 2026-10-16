@@ -8,6 +8,7 @@ const { EventEmitter } = require('events');
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
+const { createMediaIndexer, writeIndex } = require('./media-index');
 
 const GHOST = process.env.SHOTIK_GHOST === '1';
 // SHOTIK_REAL_CAPTURE lets a test instance capture the real screen (instead of
@@ -106,7 +107,7 @@ async function startRecording({ displayId, rectPhys, rectDip }, opts = {}) {
 
   const stream = fs.createWriteStream(partFile);
   session = {
-    recWin, borderWin: null, controlsWin: null, stream, file: null, ext: 'webm',
+    recWin, borderWin: null, controlsWin: null, stream, indexer: createMediaIndexer(), file: null, ext: 'webm',
     partFile, firstFrame: null, startTs: Date.now(), paused: false, settled: false,
     displayId: Number(displayId), rectDip, saveBase: path.join(saveDir, tsName()),
   };
@@ -200,20 +201,36 @@ function finalize(info) {
   const s = session;
   trace.push('finalize chunks=' + (s.chunks || 0) + ' bytes=' + (s.bytes || 0) + ' canceled=' + !!s.canceled + ' partExists=' + fs.existsSync(s.partFile));
   session = null;
-  try { s.stream.end(); } catch (_) {}
+  // Cues + Duration go to the end of the file, the rest is patched in place
+  // once the stream is closed (MediaRecorder WebM is otherwise unseekable).
+  const index = s.canceled ? null : s.indexer.finish();
+  try {
+    if (index && index.flush.length) s.stream.write(index.flush);
+    if (index && index.append && index.append.length) s.stream.write(index.append);
+    s.stream.end();
+  } catch (_) {}
+  const closed = new Promise((resolve) => {
+    if (s.stream.closed) return resolve();
+    s.stream.once('close', resolve);
+    setTimeout(resolve, 5000); // a stuck stream must not lose the recording
+  });
 
   const cleanup = () => {
     for (const w of [s.recWin, s.borderWin, s.controlsWin]) { try { if (w && !w.isDestroyed()) w.destroy(); } catch (_) {} }
     if (!TEST) { try { electronSession.defaultSession.setDisplayMediaRequestHandler(null); } catch (_) {} }
   };
 
-  setTimeout(() => {
+  closed.then(() => {
     if (s.canceled) {
       try { fs.unlinkSync(s.partFile); } catch (_) {}
       cleanup();
       events.emit('state', { recording: false });
       return;
     }
+    try {
+      const problem = writeIndex(s.partFile, index);
+      trace.push(problem ? 'index skipped: ' + problem : `index ok cues=${index.cues} duration=${index.duration}`);
+    } catch (e) { trace.push('index failed: ' + e.message); }
     const finalFile = `${s.saveBase}.${s.ext}`;
     let out = finalFile;
     try {
@@ -230,12 +247,12 @@ function finalize(info) {
     cleanup();
     events.emit('done', entry);
     events.emit('state', { recording: false });
-  }, 150);
+  });
 }
 
 // ---- IPC from the recorder window ----
 ipcMain.on('rec:ready', (_e, info) => { if (session) { session.ext = (info && info.ext) || 'webm'; session.audio = info && info.audio; events.emit('ready'); } });
-ipcMain.on('rec:chunk', (_e, chunk) => { if (session && session.stream.writable) { try { session.stream.write(Buffer.from(chunk)); session.chunks = (session.chunks || 0) + 1; session.bytes = (session.bytes || 0) + chunk.length; } catch (_) {} } });
+ipcMain.on('rec:chunk', (_e, chunk) => { if (session && session.stream.writable) { try { const out = session.indexer.push(Buffer.from(chunk)); if (out.length) session.stream.write(out); session.chunks = (session.chunks || 0) + 1; session.bytes = (session.bytes || 0) + chunk.length; } catch (_) {} } });
 ipcMain.on('rec:first-frame', (_e, buf) => { if (session) session.firstFrame = Buffer.from(buf); });
 ipcMain.on('rec:done', (_e, info) => finalize(info || {}));
 ipcMain.on('rec:error', (_e, msg) => { events.emit('error', msg); if (session) { session.canceled = true; finalize({ duration: 0 }); } });

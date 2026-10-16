@@ -751,6 +751,32 @@ function setupTestHandler() {
       }
       case 'record-stop': { recorder.stopRecording(); await new Promise((r) => setTimeout(r, 800)); return recorder.status(); }
       case 'record-status': return recorder.status();
+      case 'media-probe': {
+        // What Chromium's player sees: a bare page with a muted <video>
+        // (off-screen) loads the file and tries to seek to `seekTo` (or the middle).
+        const page = path.join(app.getPath('temp'), 'shotik-media-probe.html');
+        fs.writeFileSync(page, '<!doctype html><video muted preload="metadata"></video>');
+        const w = new BrowserWindow({ show: false, x: 20000, y: 0, width: 320, height: 240, webPreferences: { backgroundThrottling: false } });
+        try {
+          await w.loadFile(page);
+          return await w.webContents.executeJavaScript(`(async () => {
+            const v = document.querySelector('video');
+            const loaded = new Promise((r, j) => { v.addEventListener('loadedmetadata', r, { once: true }); v.addEventListener('error', () => j(new Error('video error ' + (v.error && v.error.code))), { once: true }); });
+            v.src = ${JSON.stringify(require('url').pathToFileURL(body.file).href)};
+            await loaded;
+            const duration = v.duration;
+            const res = { duration: isFinite(duration) ? duration : String(duration), seekableEnd: v.seekable.length ? v.seekable.end(0) : 0 };
+            if (isFinite(duration)) {
+              const target = ${Number(body.seekTo) || 0} || duration / 2;
+              v.currentTime = target;
+              res.seekTo = target;
+              res.seeked = await Promise.race([new Promise((r) => v.addEventListener('seeked', () => r(true), { once: true })), new Promise((r) => setTimeout(() => r(false), 5000))]);
+              res.position = v.currentTime;
+            }
+            return res;
+          })()`);
+        } finally { if (!w.isDestroyed()) w.destroy(); }
+      }
       case 'record-start': {
         const display = screen.getPrimaryDisplay();
         const rectDip = { x: 20, y: 20, w: 320, h: 180 };
