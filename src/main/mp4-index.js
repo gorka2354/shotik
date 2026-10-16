@@ -29,6 +29,13 @@ function find(b, box, path) {
   return level;
 }
 
+// Index of a field inside a box's payload; throws if the box is too short, so a
+// malformed box can never steer a read — or the duration patch — into its neighbour.
+function field(box, offset, len) {
+  if (box.data + offset + len > box.end) throw new Error(box.type + ' too short');
+  return box.data + offset;
+}
+
 function createMp4Indexer() {
   let pend = EMPTY;   // bytes of the box currently being collected (moov/moof)
   let skip = 0;       // payload bytes to pass over (mdat, ...)
@@ -40,17 +47,19 @@ function createMp4Indexer() {
   function onMoov(b, box, at) {
     const mv = find(b, box, ['mvhd'])[0];
     if (!mv) throw new Error('moov without mvhd');
-    const v1 = b[mv.data] === 1;
-    mvhd = { durationAt: at + (mv.data - box.start) + (v1 ? 24 : 16), durationLen: v1 ? 8 : 4, timescale: b.readUInt32BE(mv.data + (v1 ? 20 : 12)) };
+    const v1 = b[field(mv, 0, 1)] === 1;
+    const durationLen = v1 ? 8 : 4;
+    const durationAt = field(mv, v1 ? 24 : 16, durationLen);
+    mvhd = { durationAt: at + (durationAt - box.start), durationLen, timescale: b.readUInt32BE(field(mv, v1 ? 20 : 12, 4)) };
     for (const trak of find(b, box, ['trak'])) {
       const tk = find(b, trak, ['tkhd'])[0], md = find(b, trak, ['mdia', 'mdhd'])[0];
       if (!tk || !md) continue;
-      const id = b.readUInt32BE(tk.data + (b[tk.data] === 1 ? 20 : 12));
-      tracks.set(id, { timescale: b.readUInt32BE(md.data + (b[md.data] === 1 ? 20 : 12)), defaultDuration: 0, end: 0 });
+      const id = b.readUInt32BE(field(tk, b[field(tk, 0, 1)] === 1 ? 20 : 12, 4));
+      tracks.set(id, { timescale: b.readUInt32BE(field(md, b[field(md, 0, 1)] === 1 ? 20 : 12, 4)), defaultDuration: 0, end: 0 });
     }
     for (const trex of find(b, box, ['mvex', 'trex'])) {
-      const t = tracks.get(b.readUInt32BE(trex.data + 4));
-      if (t) t.defaultDuration = b.readUInt32BE(trex.data + 12);
+      const t = tracks.get(b.readUInt32BE(field(trex, 4, 4)));
+      if (t) t.defaultDuration = b.readUInt32BE(field(trex, 12, 4));
     }
   }
 
@@ -58,19 +67,18 @@ function createMp4Indexer() {
     for (const traf of find(b, box, ['traf'])) {
       const tf = find(b, traf, ['tfhd'])[0];
       if (!tf) continue;
-      const flags = b.readUInt32BE(tf.data) & 0xFFFFFF;
-      const t = tracks.get(b.readUInt32BE(tf.data + 4));
+      const flags = b.readUInt32BE(field(tf, 0, 4)) & 0xFFFFFF;
+      const t = tracks.get(b.readUInt32BE(field(tf, 4, 4)));
       if (!t) continue;
-      let q = tf.data + 8 + (flags & 0x01 ? 8 : 0) + (flags & 0x02 ? 4 : 0);
-      const defaultDuration = flags & 0x08 ? b.readUInt32BE(q) : t.defaultDuration;
+      const defaultDuration = flags & 0x08 ? b.readUInt32BE(field(tf, 8 + (flags & 0x01 ? 8 : 0) + (flags & 0x02 ? 4 : 0), 4)) : t.defaultDuration;
       const dt = find(b, traf, ['tfdt'])[0];
-      let time = dt ? (b[dt.data] === 1 ? Number(b.readBigUInt64BE(dt.data + 4)) : b.readUInt32BE(dt.data + 4)) : t.end;
+      let time = t.end;
+      if (dt) time = b[field(dt, 0, 1)] === 1 ? Number(b.readBigUInt64BE(field(dt, 4, 8))) : b.readUInt32BE(field(dt, 4, 4));
       for (const run of find(b, traf, ['trun'])) {
-        const rf = b.readUInt32BE(run.data) & 0xFFFFFF;
-        const count = b.readUInt32BE(run.data + 4);
-        q = run.data + 8 + (rf & 0x01 ? 4 : 0) + (rf & 0x04 ? 4 : 0);
+        const rf = b.readUInt32BE(field(run, 0, 4)) & 0xFFFFFF;
+        const count = b.readUInt32BE(field(run, 4, 4));
         const per = [0x100, 0x200, 0x400, 0x800].filter((f) => rf & f).length * 4;
-        if (q + count * per > run.end) throw new Error('trun overruns its box');
+        let q = field(run, 8 + (rf & 0x01 ? 4 : 0) + (rf & 0x04 ? 4 : 0), count * per);
         for (let i = 0; i < count; i++, q += per) time += rf & 0x100 ? b.readUInt32BE(q) : defaultDuration;
       }
       t.end = Math.max(t.end, time);

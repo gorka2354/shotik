@@ -30,9 +30,12 @@ function createMediaIndexer() {
       return head.length >= 8 ? pick() : EMPTY;
     },
     finish() {
-      if (!impl && head.length) pick();
+      // a stream shorter than the sniff window is still handed over, and
+      // whatever the indexer passes back must reach the file
+      const early = !impl && head.length ? pick() : EMPTY;
       if (!impl) return { flush: EMPTY, append: null, patches: [], size: 0, duration: 0, cues: 0, error: 'empty stream' };
-      return impl.finish();
+      const fin = impl.finish();
+      return early.length ? { ...fin, flush: Buffer.concat([early, fin.flush]) } : fin;
     },
   };
 }

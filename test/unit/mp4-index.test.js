@@ -109,6 +109,35 @@ test('mp4-index: garbage box sizes stop indexing, never alter bytes', () => {
   assert(fin.error, 'error reported');
 });
 
+test('mp4-index: a truncated mvhd is never patched into the next box', () => {
+  const src = fmp4({ mvhdVersion: 0 });
+  const at = src.bytes.indexOf('mvhd') - 4;
+  // mvhd cut to 24 bytes (no duration field); the parent moov shrinks by the same amount
+  const cut = 24, old = src.bytes.readUInt32BE(at);
+  const moovAt = src.bytes.indexOf('moov') - 4;
+  const bad = Buffer.concat([src.bytes.subarray(0, at), src.bytes.subarray(at, at + cut), src.bytes.subarray(at + old)]);
+  bad.writeUInt32BE(cut, at);
+  bad.writeUInt32BE(src.bytes.readUInt32BE(moovAt) - (old - cut), moovAt);
+  for (const sizes of [[bad.length], [1]]) {
+    const { file, fin } = run(bad, sizes);
+    eq(file.equals(bad), true, 'bytes untouched, chunks ' + sizes);
+    eq(fin.patches.length, 0);
+    assert(/mvhd too short/.test(fin.error), String(fin.error));
+  }
+});
+
+test('media-index: streams shorter than the sniff window reach the file unchanged', () => {
+  for (const hex of ['deadbeef', '1a45dfa300', '1a45dfa380', '00']) {
+    const input = Buffer.from(hex, 'hex');
+    for (const sizes of [[input.length], [1]]) {
+      const { file, fin } = run(input, sizes, createMediaIndexer);
+      eq(file.toString('hex'), hex, 'output for ' + hex + ' chunks ' + sizes);
+      eq(fin.size, input.length);
+      eq(fin.append, null);
+    }
+  }
+});
+
 test('media-index: picks MP4 or WebM by magic, even from 1-byte chunks', () => {
   const mp4 = fmp4().bytes;
   const r = run(mp4, [1], createMediaIndexer);
