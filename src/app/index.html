@@ -266,6 +266,14 @@
             <label class="switch"><input type="checkbox" id="setSysAudio"><span></span></label>
           </div>
           <div class="set-row">
+            <div><label class="set-name" for="setMicrophone" data-i18n="recMicrophone">Microphone</label><div class="set-sub" data-i18n="recMicrophoneSub">record your voice, with or without system audio</div></div>
+            <label class="switch"><input type="checkbox" id="setMicrophone"><span></span></label>
+          </div>
+          <div class="set-row" id="microphoneDeviceRow" hidden>
+            <div><label class="set-name" for="setMicrophoneDevice" data-i18n="recMicrophoneDevice">Input device</label><div class="set-sub" data-i18n="recMicrophoneDeviceSub">the microphone used for screen recordings</div></div>
+            <select class="select" id="setMicrophoneDevice"><option value="default" data-i18n="recMicrophoneDefault">System default</option></select>
+          </div>
+          <div class="set-row">
             <div><div class="set-name" data-i18n="recCountdown">3-2-1 countdown</div><div class="set-sub" data-i18n="recCountdownSub">brief count before recording starts</div></div>
             <label class="switch"><input type="checkbox" id="setCountdown"><span></span></label>
           </div>

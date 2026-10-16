@@ -114,7 +114,13 @@ fix the CSS → `Shift+PrtSc` → `Ctrl+V` to Claude → "see it now?". Survives
 ### ✦ Screen recording → video or GIF (`Ctrl+Alt+PrtSc`)
 Select a region (or a window, or the whole screen) and record it to **WebM**, with a floating
 controls bar (timer, pause, stop) and a live red border. Then **export any recording to GIF** in one
-click. Optional system-audio capture, 15–60 fps and a 3-2-1 countdown.
+click. Optional system-audio and microphone capture, 15–60 fps and a 3-2-1 countdown.
+
+Enable **Microphone** in **Settings → Screen recording** and select an input device
+(system default unless changed). Record your voice alone or mix it with system
+audio into a single video audio track. The microphone is released when recording
+stops; unavailable devices and permission failures produce a visible error.
+GIF exports contain images only, without audio.
 
 ### ✦ PowerToys Command Palette / Win+S
 The installer adds Start Menu commands that show up in PowerToys Command Palette and Windows search:

@@ -751,6 +751,12 @@ function setupTestHandler() {
       }
       case 'record-stop': { recorder.stopRecording(); await new Promise((r) => setTimeout(r, 800)); return recorder.status(); }
       case 'record-status': return recorder.status();
+      case 'record-start': {
+        const display = screen.getPrimaryDisplay();
+        const rectDip = { x: 20, y: 20, w: 320, h: 180 };
+        const rectPhys = Object.fromEntries(Object.entries(rectDip).map(([k, v]) => [k, Math.round(v * display.scaleFactor)]));
+        return recorder.startRecording({ displayId: display.id, rectDip, rectPhys });
+      }
       case 'overlay-timing': return capture.getOverlayTiming();
       case 'translate-selection': { await triggerTranslateSelection(); await new Promise((r) => setTimeout(r, 500)); return { popup: !!windows.getTranslatePopup() }; }
       case 'selection-bubble': {
@@ -889,6 +895,7 @@ function setupTestHandler() {
         else if (body.target === 'toast') target = windows.getToastWindow();
         else if (body.target === 'pin') target = windows.getPinWindows()[body.index || 0];
         else if (body.target === 'rec-controls') target = recorder.getControlsWindow();
+        else if (body.target === 'recorder') target = recorder.getRecorderWindow();
         else if (body.target === 'tp') target = windows.getTranslatePopup();
         else if (body.target === 'bubble') target = windows.getSelectionBubble();
         else target = capture.overlayWindows()[body.index || 0];
@@ -1117,7 +1124,12 @@ if (gotLock) app.whenReady().then(async () => {
     lastProcessed = { action: 'record-done', file: entry.file, ts: Date.now() };
   });
   recorder.events.on('error', (msg) => {
-    windows.showToast({ kind: 'text', title: t('recFailTitle'), body: String(msg).slice(0, 120) });
+    const detail = String(msg);
+    const microphoneError = detail.startsWith('microphone:')
+      ? (/NotAllowedError|SecurityError/.test(detail) ? 'recMicrophoneDenied'
+        : /NotFoundError|OverconstrainedError/.test(detail) ? 'recMicrophoneMissing' : 'recMicrophoneFailed')
+      : null;
+    windows.showToast({ kind: 'text', title: t('recFailTitle'), body: microphoneError ? t(microphoneError) : detail.slice(0, 120) });
   });
 
   capture.keepWarm(); // warm the capture engine so the first hotkey press is snappy

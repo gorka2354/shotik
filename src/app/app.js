@@ -266,12 +266,35 @@ function renderSettings() {
   $('#setFps').value = String(rec.fps || 30);
   $('#setFormat').value = rec.format || 'auto';
   $('#setSysAudio').checked = !!rec.systemAudio;
+  $('#setMicrophone').checked = !!rec.microphone;
+  $('#microphoneDeviceRow').hidden = !rec.microphone;
+  refreshMicrophones();
   $('#setCountdown').checked = rec.countdown !== false;
   $('#emptyBody').innerHTML = T('emptyBody', `<kbd>${esc(short(s.hotkeys.region))}</kbd>`);
   renderHotkeyWarn();
 }
 
 function short(acc) { return (acc || '—').replace('PrintScreen', 'PrtSc'); }
+
+let microphoneRefresh = 0;
+async function refreshMicrophones() {
+  const request = ++microphoneRefresh;
+  if (!state || !state.settings.recording.microphone) return;
+  let devices;
+  try { devices = await navigator.mediaDevices.enumerateDevices(); }
+  catch (_) { devices = []; }
+  if (request !== microphoneRefresh) return;
+  const selected = state.settings.recording.microphoneDeviceId || 'default';
+  const select = $('#setMicrophoneDevice');
+  select.replaceChildren(new Option(T('recMicrophoneDefault'), 'default'));
+  devices.filter((d) => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default')
+    .forEach((d, i) => select.add(new Option(d.label || T('recMicrophoneNumber', i + 1), d.deviceId)));
+  if (![...select.options].some((o) => o.value === selected)) {
+    select.add(new Option(T('recMicrophoneUnavailable'), selected));
+  }
+  select.value = selected;
+}
+if (navigator.mediaDevices) navigator.mediaDevices.addEventListener('devicechange', refreshMicrophones);
 
 function renderHotkeyWarn() {
   const warn = $('#hotkeyWarn');
@@ -313,6 +336,8 @@ $('#setDeeplKey').addEventListener('change', (e) => applySettings({ translate: {
 $('#setFps').addEventListener('change', (e) => applySettings({ recording: { fps: Number(e.target.value) } }));
 $('#setFormat').addEventListener('change', (e) => applySettings({ recording: { format: e.target.value } }));
 $('#setSysAudio').addEventListener('change', (e) => applySettings({ recording: { systemAudio: e.target.checked } }));
+$('#setMicrophone').addEventListener('change', (e) => applySettings({ recording: { microphone: e.target.checked } }));
+$('#setMicrophoneDevice').addEventListener('change', (e) => applySettings({ recording: { microphoneDeviceId: e.target.value } }));
 $('#setCountdown').addEventListener('change', (e) => applySettings({ recording: { countdown: e.target.checked } }));
 
 /* ---------- Text tab: quick translate ---------- */

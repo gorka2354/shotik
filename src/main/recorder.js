@@ -27,7 +27,7 @@ let trace = [];
 function isRecording() { return !!session; }
 function status() {
   if (!session) return { recording: false, trace };
-  return { recording: true, paused: session.paused, file: session.file, startTs: session.startTs, trace, chunks: session.chunks || 0, bytes: session.bytes || 0 };
+  return { recording: true, paused: session.paused, audio: session.audio || null, file: session.file, startTs: session.startTs, trace, chunks: session.chunks || 0, bytes: session.bytes || 0 };
 }
 
 function tsName() {
@@ -117,6 +117,7 @@ async function startRecording({ displayId, rectPhys, rectDip }, opts = {}) {
       pw: String(physW), ph: String(physH),
       x: String(rectPhys.x), y: String(rectPhys.y), w: String(rectPhys.w), h: String(rectPhys.h),
       fps: String(rec.fps || 30), audio: rec.systemAudio ? '1' : '0', format: rec.format || 'auto',
+      microphone: rec.microphone ? '1' : '0', microphoneDeviceId: rec.microphoneDeviceId || 'default',
     },
   });
 
@@ -194,6 +195,7 @@ function updateControls() {
 
 function finalize(info) {
   if (!session || session.settled) return;
+  if (info.canceled) session.canceled = true;
   session.settled = true;
   const s = session;
   trace.push('finalize chunks=' + (s.chunks || 0) + ' bytes=' + (s.bytes || 0) + ' canceled=' + !!s.canceled + ' partExists=' + fs.existsSync(s.partFile));
@@ -232,7 +234,7 @@ function finalize(info) {
 }
 
 // ---- IPC from the recorder window ----
-ipcMain.on('rec:ready', (_e, info) => { if (session) { session.ext = (info && info.ext) || 'webm'; events.emit('ready'); } });
+ipcMain.on('rec:ready', (_e, info) => { if (session) { session.ext = (info && info.ext) || 'webm'; session.audio = info && info.audio; events.emit('ready'); } });
 ipcMain.on('rec:chunk', (_e, chunk) => { if (session && session.stream.writable) { try { session.stream.write(Buffer.from(chunk)); session.chunks = (session.chunks || 0) + 1; session.bytes = (session.bytes || 0) + chunk.length; } catch (_) {} } });
 ipcMain.on('rec:first-frame', (_e, buf) => { if (session) session.firstFrame = Buffer.from(buf); });
 ipcMain.on('rec:done', (_e, info) => finalize(info || {}));
@@ -244,5 +246,6 @@ ipcMain.on('rec:controls-cancel', () => cancelRecording());
 
 function getControlsWindow() { return session && session.controlsWin && !session.controlsWin.isDestroyed() ? session.controlsWin : null; }
 function getBorderWindow() { return session && session.borderWin && !session.borderWin.isDestroyed() ? session.borderWin : null; }
+function getRecorderWindow() { return session && session.recWin && !session.recWin.isDestroyed() ? session.recWin : null; }
 
-module.exports = { init, events, startRecording, stopRecording, pauseRecording, resumeRecording, cancelRecording, isRecording, status, getControlsWindow, getBorderWindow };
+module.exports = { init, events, startRecording, stopRecording, pauseRecording, resumeRecording, cancelRecording, isRecording, status, getControlsWindow, getBorderWindow, getRecorderWindow };
