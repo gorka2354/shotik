@@ -71,6 +71,13 @@ test('mcp: recordings are listed by kind, the last call is one call away, screen
 
     const bad = await mcpCall(port, 'list_recordings', { kind: 'mp3' });
     assert(bad.isError && /"kind" must be "audio" or "video"/.test(textOf(bad)), textOf(bad));
+    const junkLimit = json(await mcpCall(port, 'list_recordings', { limit: -3 }));
+    eq(junkLimit.length, Math.min(10, json(await mcpCall(port, 'list_recordings', { limit: 50 })).length), 'a negative limit means the default, not 1');
+
+    // empty history: a list is still JSON ([]), the "last" tool explains
+    await app.post('exec-js', { target: 'main', code: 'window.shotik.historyClear({ deleteFiles: false })' });
+    eq(json(await mcpCall(port, 'list_recordings', { kind: 'audio' })), []);
+    eq(textOf(await mcpCall(port, 'get_last_recording', { kind: 'audio' })), 'No audio recordings in history yet.');
   } finally {
     await app.stop();
     fs.rmSync(saveDir, { recursive: true, force: true });

@@ -618,7 +618,8 @@ function findRecordings(args, defaultLimit) {
   if (args.kind !== undefined && args.kind !== 'audio' && args.kind !== 'video') {
     throw new Error(`"kind" must be "audio" or "video", got ${JSON.stringify(args.kind)}`);
   }
-  const limit = Math.max(1, Math.min(50, Math.floor(Number(args.limit)) || defaultLimit));
+  const n = Math.floor(Number(args.limit));
+  const limit = n > 0 ? Math.min(50, n) : defaultLimit; // missing, 0, negative or junk → default
   return history.list(limit, (it) => history.isRecording(it) && (!args.kind || it.kind === args.kind)).map((it) => {
     let size = 0;
     try { size = fs.statSync(it.file).size; } catch (_) {}
@@ -767,9 +768,8 @@ function registerMcpTools() {
         kind: { type: 'string', enum: ['audio', 'video'], description: 'Only audio recordings or only screen videos' },
       } },
       handler: async (args) => {
-        const items = findRecordings(args, 10);
-        const out = [{ type: 'text', text: items.length ? JSON.stringify(items, null, 2) : noRecordings(args.kind) }];
-        return withRecordingNote(out);
+        // always a JSON array, like list_screenshots — an empty history is [] not prose
+        return withRecordingNote([{ type: 'text', text: JSON.stringify(findRecordings(args, 10), null, 2) }]);
       },
     },
     get_last_recording: {
