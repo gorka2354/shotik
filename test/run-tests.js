@@ -15,6 +15,7 @@ const which = process.argv[2] || 'all';
     require('./unit/region-map.test.js');
     require('./unit/accelerator.test.js');
     require('./unit/recorder.test.js');
+    require('./unit/recorder-session.test.js');
     require('./unit/webm-index.test.js');
     require('./unit/mp4-index.test.js');
     const r = await runRegistered('unit › ');

@@ -24,9 +24,13 @@ const GHOST_OFFSET = 20000;
 const events = new EventEmitter();
 
 let session = null; // { recWin, borderWin, controlsWin, stream, file, ext, firstFrame, startTs, paused, settled }
+// Set from the first line of startRecording until the session exists (the
+// countdown takes 2 s): a second start in that window must not open a second
+// file, and stop/cancel during it calls the start off.
+let starting = null; // { canceled }
 let trace = [];
 
-function isRecording() { return !!session; }
+function isRecording() { return !!session || !!starting; }
 function status() {
   if (!session) return { recording: false, trace };
   return { recording: true, audioOnly: session.audioOnly, paused: session.paused, audio: session.audio || null, levels: session.levels || null, file: session.file, startTs: session.startTs, trace, chunks: session.chunks || 0, bytes: session.bytes || 0 };
@@ -51,8 +55,13 @@ function init(d) { deps = { ...deps, ...d }; }
 
 // startRecording({ displayId, rectPhys:{x,y,w,h}, rectDip:{x,y,w,h} }, opts) — region → video
 // startRecording({ audioOnly: true }) — system audio and/or microphone → audio file
-async function startRecording({ displayId, rectPhys, rectDip, audioOnly = false }, opts = {}) {
-  if (session) return null;
+async function startRecording(target, opts = {}) {
+  if (session || starting) return null;
+  const pending = starting = { canceled: false };
+  try { return await begin(target, pending); } finally { if (starting === pending) starting = null; }
+}
+
+async function begin({ displayId, rectPhys, rectDip, audioOnly = false }, pending) {
   trace = [];
   const display = screen.getAllDisplays().find((d) => d.id === Number(displayId)) || screen.getPrimaryDisplay();
   const physW = Math.round(display.size.width * display.scaleFactor);
@@ -96,6 +105,9 @@ async function startRecording({ displayId, rectPhys, rectDip, audioOnly = false 
       } catch (_) { cb({}); }
     }, { useSystemPicker: false });
   }
+
+  if (pending.canceled) return null; // stopped or canceled during the countdown
+  starting = null;
 
   const recWin = new BrowserWindow({
     width: 200, height: 200, x: GHOST_OFFSET, y: 200, show: false,
@@ -199,6 +211,7 @@ function sendControl(cmd) {
 }
 
 function stopRecording() {
+  if (!session && starting) { starting.canceled = true; return; }
   if (!session || session.settled) return;
   session.stopping = true;
   sendControl('stop');
@@ -208,6 +221,7 @@ function stopRecording() {
 function pauseRecording() { if (session && !session.paused) { session.paused = true; sendControl('pause'); updateControls(); events.emit('state', status()); } }
 function resumeRecording() { if (session && session.paused) { session.paused = false; sendControl('resume'); updateControls(); events.emit('state', status()); } }
 function cancelRecording() {
+  if (!session && starting) { starting.canceled = true; return; }
   if (!session) return;
   session.canceled = true;
   sendControl('stop');
