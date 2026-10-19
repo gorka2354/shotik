@@ -119,11 +119,11 @@ nav { display: flex; flex-direction: column; gap: 2px; }
 
 .page-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; flex-wrap: wrap; gap: 12px; }
 h1 { font-family: var(--font-display); font-size: 22px; font-weight: 600; }
-.head-actions { display: flex; gap: 8px; }
+.head-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* ---------- buttons ---------- */
 .btn {
-  display: inline-flex; align-items: center; gap: 8px;
+  display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
   height: 32px; padding: 0 13px;
   border: 1px solid var(--stroke-strong); border-radius: var(--radius-control);
   background: var(--layer); color: var(--text);
