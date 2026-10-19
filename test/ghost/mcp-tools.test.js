@@ -5,30 +5,13 @@
 // hotkey suspend flag and the longer video toast. No real desktop involved.
 // Every test gets its OWN port — a dying previous instance must never race a
 // fresh one for the listener (that shows up as socket hang up / ghost toasts).
-const http = require('http');
 const path = require('path');
 const { spawn } = require('child_process');
 const { test, assert, eq } = require('../tiny');
 const { makeApp } = require('./harness');
+const { mcpCall, imgOf, textOf } = require('./mcp-client');
 
 let nextPort = 7520;
-
-// raw MCP JSON-RPC call to the ghost instance
-function mcpCall(port, name, args) {
-  return new Promise((resolve, reject) => {
-    const data = Buffer.from(JSON.stringify({
-      jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args || {} },
-    }));
-    const req = http.request({ host: '127.0.0.1', port, path: '/mcp', method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': data.length } },
-      (res) => { let b = ''; res.on('data', (c) => (b += c)); res.on('end', () => {
-        try { resolve(JSON.parse(b).result); } catch (e) { reject(new Error('bad rpc reply: ' + b.slice(0, 200))); } }); });
-    req.on('error', reject); req.write(data); req.end();
-  });
-}
-
-const imgOf = (res) => (res.content || []).find((c) => c.type === 'image');
-const textOf = (res) => ((res.content || []).find((c) => c.type === 'text') || {}).text || '';
 
 test('mcp: region tool takes GLOBAL virtual-desktop coords on any display', async () => {
   const port = nextPort++;

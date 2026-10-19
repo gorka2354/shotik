@@ -82,9 +82,11 @@ claude mcp add shotik --transport http http://127.0.0.1:7464/mcp
 ```
 
 и Claude получает инструменты: `take_screenshot` (посмотреть на экран), `ask_user_to_select_region`
-(ты показываешь область мышкой), `get_last_screenshot`, `take_screenshot_region`, `list_screenshots`, `list_displays`.
+(ты показываешь область мышкой), `get_last_screenshot`, `take_screenshot_region`, `list_screenshots`, `list_displays`,
+а с 1.3 — `list_recordings` и `get_last_recording`: путь к созвонам и записям экрана (тип, длительность, размер), чтобы их расшифровать или разобрать.
 
 Скажи «посмотри на экран» — и Claude видит его. «Посмотри сюда» — просто нарисуй рамку мышкой.
+«Разбери последний созвон» — и Claude получит путь к только что записанному .m4a.
 
 ### ✦ Перевод выделенного текста — без скриншота *(1.0)*
 Выдели текст в **любом** приложении — рядом появится кнопка перевода; клик — перевод. Читает выделение

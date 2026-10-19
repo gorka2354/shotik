@@ -28,6 +28,7 @@ const which = process.argv[2] || 'all';
     require('./ghost/ocr.test.js');
     require('./ghost/texttab.test.js');
     require('./ghost/mcp-tools.test.js');
+    require('./ghost/mcp-recordings.test.js');
     require('./ghost/recorder.test.js');
     require('./ghost/recording-seek.test.js');
     require('./ghost/audio-recording.test.js');
