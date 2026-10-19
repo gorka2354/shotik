@@ -87,12 +87,16 @@ function addVideo({ file, thumbBuf, width, height, duration, kind = 'video' }) {
   return entry;
 }
 
-function list(limit = 100) {
+// Screen and audio recordings vs image shots (old image entries have no kind).
+const isRecording = (it) => it.kind === 'video' || it.kind === 'audio';
+
+// Newest first; `filter` narrows before the limit applies.
+function list(limit = 100, filter = null) {
   load();
   // drop entries whose files were deleted externally
   const alive = items.filter((it) => fs.existsSync(it.file));
   if (alive.length !== items.length) { items = alive; persist(); }
-  return items.slice(0, limit);
+  return (filter ? items.filter(filter) : items).slice(0, limit);
 }
 
 function remove(id) {
@@ -128,4 +132,4 @@ function update(id, patch) {
   return it;
 }
 
-module.exports = { savePng, addVideo, list, remove, clearAll, last, get, update };
+module.exports = { savePng, addVideo, list, remove, clearAll, last, get, update, isRecording };

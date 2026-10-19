@@ -613,6 +613,33 @@ function imageContent(pngBuffer, { fullRes = false } = {}) {
   return { type: 'image', data: img.toPNG().toString('base64'), mimeType: 'image/png' };
 }
 
+// Recordings for MCP: { file, kind, duration_sec, size_mb, recorded, width?, height? }
+function findRecordings(args, defaultLimit) {
+  if (args.kind !== undefined && args.kind !== 'audio' && args.kind !== 'video') {
+    throw new Error(`"kind" must be "audio" or "video", got ${JSON.stringify(args.kind)}`);
+  }
+  const limit = Math.max(1, Math.min(50, Math.floor(Number(args.limit)) || defaultLimit));
+  return history.list(limit, (it) => history.isRecording(it) && (!args.kind || it.kind === args.kind)).map((it) => {
+    let size = 0;
+    try { size = fs.statSync(it.file).size; } catch (_) {}
+    return {
+      file: it.file, kind: it.kind, duration_sec: it.duration || 0,
+      size_mb: Math.round(size / 1048576 * 10) / 10, recorded: new Date(it.ts).toISOString(),
+      ...(it.kind === 'video' ? { width: it.width, height: it.height } : {}),
+    };
+  });
+}
+
+const noRecordings = (kind) => `No ${kind ? kind + ' ' : ''}recordings in history yet.`;
+
+// A recording still running is not in history yet — say so instead of handing over the previous one silently.
+function withRecordingNote(content) {
+  if (!recorder.isRecording()) return content;
+  const s = recorder.status();
+  const what = s.audioOnly ? 'An audio recording' : 'A screen recording';
+  return [...content, { type: 'text', text: `${what} is in progress right now; it appears here once stopped.` }];
+}
+
 function registerMcpTools() {
   mcp.setTools({
     take_screenshot: {
@@ -712,7 +739,8 @@ function registerMcpTools() {
       description: 'Return the most recent screenshot the user took with Shotik.',
       inputSchema: { type: 'object', properties: { full_resolution: { type: 'boolean' } } },
       handler: async (args) => {
-        const last = history.last();
+        // recordings live in the same history; a .webm/.m4a is not an image
+        const [last] = history.list(1, (it) => !history.isRecording(it));
         if (!last) return [{ type: 'text', text: 'No screenshots in history yet.' }];
         const png = fs.readFileSync(last.file);
         return [imageContent(png, { fullRes: !!args.full_resolution }),
@@ -720,14 +748,40 @@ function registerMcpTools() {
       },
     },
     list_screenshots: {
-      description: 'List recent screenshots from Shotik history (paths, sizes, timestamps).',
+      description: 'List recent screenshots from Shotik history (paths, sizes, timestamps). Recordings: list_recordings.',
       inputSchema: { type: 'object', properties: { limit: { type: 'number', description: 'Max entries, default 10' } } },
       handler: async (args) => {
-        const items = history.list(Math.min(50, args.limit || 10)).map((it) => ({
+        const items = history.list(Math.min(50, args.limit || 10), (it) => !history.isRecording(it)).map((it) => ({
           file: it.file, width: it.width, height: it.height,
           taken: new Date(it.ts).toISOString(), source: it.source,
         }));
         return [{ type: 'text', text: JSON.stringify(items, null, 2) }];
+      },
+    },
+    list_recordings: {
+      description: 'List recent recordings made with Shotik, newest first: audio (calls, voice notes; .m4a) and screen video. '
+        + 'Returns file paths with kind, duration and size, so you can transcribe or analyze them. Shotik itself does not '
+        + 'transcribe; for speech-to-text extract mono 16 kHz audio, e.g. `ffmpeg -i <file> -ac 1 -ar 16000 out.wav`.',
+      inputSchema: { type: 'object', properties: {
+        limit: { type: 'number', description: 'Max entries, default 10, at most 50' },
+        kind: { type: 'string', enum: ['audio', 'video'], description: 'Only audio recordings or only screen videos' },
+      } },
+      handler: async (args) => {
+        const items = findRecordings(args, 10);
+        const out = [{ type: 'text', text: items.length ? JSON.stringify(items, null, 2) : noRecordings(args.kind) }];
+        return withRecordingNote(out);
+      },
+    },
+    get_last_recording: {
+      description: 'Return the most recent Shotik recording (file path, kind, duration, size, time). '
+        + 'Use kind "audio" for the last recorded call. The file is not inlined — read or transcribe it from the path.',
+      inputSchema: { type: 'object', properties: {
+        kind: { type: 'string', enum: ['audio', 'video'], description: 'Only the last audio recording or only the last screen video' },
+      } },
+      handler: async (args) => {
+        const [last] = findRecordings({ kind: args.kind, limit: 1 }, 1);
+        const out = [{ type: 'text', text: last ? JSON.stringify(last, null, 2) : noRecordings(args.kind) }];
+        return withRecordingNote(out);
       },
     },
     list_displays: {

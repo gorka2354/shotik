@@ -91,9 +91,11 @@ and Claude gets these tools:
 | `get_last_screenshot` | grab your latest shot |
 | `take_screenshot_region` | capture a rectangle anywhere on the **virtual desktop** — global coordinates, any monitor |
 | `list_screenshots`, `list_displays` | history and monitors |
+| `list_recordings`, `get_last_recording` *(1.3)* | find your **calls and screen recordings** by path (kind, duration, size) — to transcribe or analyze |
 
 Say "look at my screen" — and Claude sees it. Say "look here" — and just draw a box with your mouse.
 Say "show me the Zarya window" — and Claude reads that window's own surface, no matter what's on top of it.
+Say "go through my last call" — and Claude gets the path to the .m4a you just recorded.
 
 ### ✦ Translate selected text — no screenshot *(1.0)*
 Select text in **any** app and a translate bubble appears; click it for the translation. Reads the selection through Windows UI Automation (no clipboard) — and via on-screen OCR with **highlight detection** in Telegram, Steam, images and video. Toggle in **Settings → Text & translation**; `Ctrl+Alt+T` and the **Text** tab work too.
