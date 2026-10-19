@@ -8,5 +8,6 @@ contextBridge.exposeInMainWorld('rec', {
   firstFrame: (buf) => ipcRenderer.send('rec:first-frame', buf),
   error: (msg) => ipcRenderer.send('rec:error', msg),
   trace: (msg) => ipcRenderer.send('rec:trace', msg),
+  level: (levels) => ipcRenderer.send('rec:level', levels),
   onControl: (cb) => ipcRenderer.on('rec:control', (_e, cmd) => cb(cmd)),
 });

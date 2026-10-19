@@ -7,9 +7,9 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
 const { test, assert, near } = require('../tiny');
 const { makeApp } = require('./harness');
+const { mediaFoundation } = require('./media');
 
 let port = 7600;
 const RECORD_MS = 4500; // > one keyframe interval (100 frames @30fps) → two clusters
@@ -26,12 +26,6 @@ async function recordFile(app, format) {
     await app.sleep(100);
   }
   throw new Error('recording did not finish: ' + JSON.stringify(await app.post('record-status')));
-}
-
-function mediaFoundation(file, seekTo) {
-  const out = execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
-    path.join(__dirname, 'mf-probe.ps1'), '-Path', file, '-SeekTo', String(seekTo)], { encoding: 'utf8', timeout: 60000 });
-  return JSON.parse(out.trim().split(/\r?\n/).pop());
 }
 
 for (const [format, ext] of [['auto', 'webm'], ['mp4', 'mp4']]) {

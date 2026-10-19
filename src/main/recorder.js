@@ -1,7 +1,8 @@
 'use strict';
 // Screen/region recording session. A hidden recorder window captures + encodes;
 // this module wires its chunks to a file, manages the border/controls windows,
-// and registers the result in history.
+// and registers the result in history. Audio-only sessions (calls) skip the
+// region and the border: system audio and/or microphone → .m4a.
 const { BrowserWindow, desktopCapturer, screen, app, ipcMain } = require('electron');
 const electronSession = require('electron').session;
 const { EventEmitter } = require('events');
@@ -28,7 +29,7 @@ let trace = [];
 function isRecording() { return !!session; }
 function status() {
   if (!session) return { recording: false, trace };
-  return { recording: true, paused: session.paused, audio: session.audio || null, file: session.file, startTs: session.startTs, trace, chunks: session.chunks || 0, bytes: session.bytes || 0 };
+  return { recording: true, audioOnly: session.audioOnly, paused: session.paused, audio: session.audio || null, levels: session.levels || null, file: session.file, startTs: session.startTs, trace, chunks: session.chunks || 0, bytes: session.bytes || 0 };
 }
 
 function tsName() {
@@ -48,8 +49,9 @@ async function sourceIdFor(displayId) {
 let deps = { history: null, windows: null, settings: null, t: (k) => k };
 function init(d) { deps = { ...deps, ...d }; }
 
-// startRecording({ displayId, rectPhys:{x,y,w,h}, rectDip:{x,y,w,h} }, opts)
-async function startRecording({ displayId, rectPhys, rectDip }, opts = {}) {
+// startRecording({ displayId, rectPhys:{x,y,w,h}, rectDip:{x,y,w,h} }, opts) — region → video
+// startRecording({ audioOnly: true }) — system audio and/or microphone → audio file
+async function startRecording({ displayId, rectPhys, rectDip, audioOnly = false }, opts = {}) {
   if (session) return null;
   trace = [];
   const display = screen.getAllDisplays().find((d) => d.id === Number(displayId)) || screen.getPrimaryDisplay();
@@ -61,10 +63,13 @@ async function startRecording({ displayId, rectPhys, rectDip }, opts = {}) {
 
   const st = deps.settings.get();
   const rec = st.recording || {};
-  const sourceId = await sourceIdFor(displayId);
+  // inputs: video uses recording.*, audio mode its own toggles; the microphone device is shared
+  const inputs = audioOnly ? (st.audioRecording || {}) : rec;
+  const systemAudio = !!inputs.systemAudio, microphone = !!inputs.microphone;
+  const sourceId = audioOnly ? '' : await sourceIdFor(displayId);
 
-  // optional 3-2-1 countdown before capture actually begins
-  if (rec.countdown && !GHOST && !TEST) {
+  // optional 3-2-1 countdown before capture actually begins (nothing to frame in audio mode)
+  if (rec.countdown && !audioOnly && !GHOST && !TEST) {
     const cd = new BrowserWindow({
       x: Math.round(display.bounds.x + rectDip.x + rectDip.w / 2 - 90),
       y: Math.round(display.bounds.y + rectDip.y + rectDip.h / 2 - 90),
@@ -81,12 +86,13 @@ async function startRecording({ displayId, rectPhys, rectDip }, opts = {}) {
   }
 
   // Route the recorder window's getDisplayMedia() to the chosen screen (real capture).
-  if (!TEST) {
+  // Audio mode asks for the screen only as the carrier of system audio.
+  if (!TEST && (!audioOnly || systemAudio)) {
     electronSession.defaultSession.setDisplayMediaRequestHandler(async (req, cb) => {
       try {
         const srcs = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } });
         const src = srcs.find((s) => s.display_id === String(displayId)) || srcs[0];
-        cb({ video: src, audio: rec.systemAudio ? 'loopback' : undefined });
+        cb({ video: src, audio: systemAudio ? 'loopback' : undefined });
       } catch (_) { cb({}); }
     }, { useSystemPicker: false });
   }
@@ -107,22 +113,28 @@ async function startRecording({ displayId, rectPhys, rectDip }, opts = {}) {
 
   const stream = fs.createWriteStream(partFile);
   session = {
-    recWin, borderWin: null, controlsWin: null, stream, indexer: createMediaIndexer(), file: null, ext: 'webm',
+    recWin, borderWin: null, controlsWin: null, stream, indexer: createMediaIndexer(), file: null,
+    ext: audioOnly ? 'm4a' : 'webm', audioOnly, inputs: { system: systemAudio, microphone }, levels: null,
     partFile, firstFrame: null, startTs: Date.now(), paused: false, settled: false,
-    displayId: Number(displayId), rectDip, saveBase: path.join(saveDir, tsName()),
+    displayId: Number(displayId), rectDip: audioOnly ? null : rectDip, saveBase: path.join(saveDir, tsName()),
   };
 
+  const common = {
+    test: TEST ? '1' : '0', audio: systemAudio ? '1' : '0',
+    microphone: microphone ? '1' : '0', microphoneDeviceId: rec.microphoneDeviceId || 'default',
+  };
   recWin.loadFile(path.join(__dirname, '..', 'recorder', 'recorder.html'), {
-    query: {
-      test: TEST ? '1' : '0', sourceId,
+    query: audioOnly ? { ...common, audioOnly: '1' } : {
+      ...common, sourceId,
       pw: String(physW), ph: String(physH),
       x: String(rectPhys.x), y: String(rectPhys.y), w: String(rectPhys.w), h: String(rectPhys.h),
-      fps: String(rec.fps || 30), audio: rec.systemAudio ? '1' : '0', format: rec.format || 'auto',
-      microphone: rec.microphone ? '1' : '0', microphoneDeviceId: rec.microphoneDeviceId || 'default',
+      fps: String(rec.fps || 30), format: rec.format || 'auto',
     },
   });
 
-  if (!GHOST || FORCE_CONTROLS) buildOverlayWindows(display, rectDip);
+  if (!GHOST || FORCE_CONTROLS) {
+    if (audioOnly) buildControls(display, null); else buildOverlayWindows(display, rectDip);
+  }
   events.emit('state', status());
   return status();
 }
@@ -143,14 +155,28 @@ function buildOverlayWindows(display, rectDip) {
   borderWin.setAlwaysOnTop(true, 'screen-saver');
   borderWin.loadFile(path.join(__dirname, '..', 'record', 'border.html'));
   session.borderWin = borderWin;
+  buildControls(display, rectDip);
+}
 
-  // controls bar, docked just below the region (outside the crop), always on-screen
-  const cw = 240, ch = 48;
+// Controls bar (timer, level meters, pause/stop/cancel): docked just below the
+// region (outside the crop) or, with no region (audio), above the taskbar.
+function buildControls(display, rectDip) {
+  const off = GHOST ? GHOST_OFFSET : 0; // keep test windows off-screen
+  const meters = ['system', 'microphone'].filter((k) => session.inputs[k]);
+  const cw = 240 + meters.length * 44, ch = 48;
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
   const dx = display.bounds.x + off, dy = display.bounds.y;
-  let cx = gx + rectDip.x + rectDip.w / 2 - cw / 2;
-  let cy = gy + rectDip.y + rectDip.h + 10;
-  if (cy + ch > dy + display.bounds.height - 4) cy = gy + rectDip.y - ch - 10; // flip above
+  let cx, cy;
+  if (rectDip) {
+    const gx = display.bounds.x + off, gy = display.bounds.y;
+    cx = gx + rectDip.x + rectDip.w / 2 - cw / 2;
+    cy = gy + rectDip.y + rectDip.h + 10;
+    if (cy + ch > dy + display.bounds.height - 4) cy = gy + rectDip.y - ch - 10; // flip above
+  } else {
+    const wa = display.workArea;
+    cx = wa.x + off + wa.width / 2 - cw / 2;
+    cy = wa.y + wa.height - ch - 12;
+  }
   cx = clamp(cx, dx + 4, dx + display.bounds.width - cw - 4);
   cy = clamp(cy, dy + 4, dy + display.bounds.height - ch - 4);
   const controlsWin = new BrowserWindow({
@@ -164,7 +190,7 @@ function buildOverlayWindows(display, rectDip) {
   });
   controlsWin.removeMenu();
   controlsWin.setAlwaysOnTop(true, 'screen-saver');
-  controlsWin.loadFile(path.join(__dirname, '..', 'record', 'controls.html'));
+  controlsWin.loadFile(path.join(__dirname, '..', 'record', 'controls.html'), { query: { meters: meters.join(',') } });
   session.controlsWin = controlsWin;
 }
 
@@ -240,7 +266,7 @@ function finalize(info) {
       try { fs.copyFileSync(s.partFile, out); fs.unlinkSync(s.partFile); } catch (_) {}
     }
     const entry = deps.history.addVideo({
-      file: out, thumbBuf: s.firstFrame,
+      file: out, thumbBuf: s.firstFrame, kind: s.audioOnly ? 'audio' : 'video',
       width: s.rectDip ? Math.round(s.rectDip.w) : 0, height: s.rectDip ? Math.round(s.rectDip.h) : 0,
       duration: info.duration || 0,
     });
@@ -257,6 +283,12 @@ ipcMain.on('rec:first-frame', (_e, buf) => { if (session) session.firstFrame = B
 ipcMain.on('rec:done', (_e, info) => finalize(info || {}));
 ipcMain.on('rec:error', (_e, msg) => { events.emit('error', msg); if (session) { session.canceled = true; finalize({ duration: 0 }); } });
 ipcMain.on('rec:trace', (_e, msg) => { trace.push(msg); if (trace.length > 30) trace.shift(); });
+ipcMain.on('rec:level', (_e, levels) => {
+  if (!session) return;
+  session.levels = levels;
+  const w = getControlsWindow();
+  if (w) w.webContents.send('rec:level', levels);
+});
 ipcMain.on('rec:controls-stop', () => stopRecording());
 ipcMain.on('rec:controls-pause', () => (session && session.paused ? resumeRecording() : pauseRecording()));
 ipcMain.on('rec:controls-cancel', () => cancelRecording());

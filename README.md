@@ -125,10 +125,18 @@ GIF exports contain images only, without audio.
 Recordings are saved with their length and a seek index, so the timeline works in any player —
 Windows Media Player, VLC, a browser — even for hour-long files, without re-encoding.
 
+### ✦ Audio recording — calls and voice notes (`Ctrl+Alt+Shift+R`)
+Record **sound only**: the other side of a call (system audio) and your voice (microphone), mixed
+into one **.m4a** (AAC) that plays on any phone or messenger — about 1 MB per minute instead of
+gigabytes of video. No region to select: a small bar with a timer and a **live level meter per
+input** sits above the taskbar, so an hour of silence is caught in the first seconds. Inputs are in
+**Settings → Audio recording**. Ready for transcription as is: `ffmpeg -i call.m4a -ac 1 -ar 16000 call.wav`.
+Ask the other participants before recording a call.
+
 ### ✦ PowerToys Command Palette / Win+S
 The installer adds Start Menu commands that show up in PowerToys Command Palette and Windows search:
-**Area Screenshot**, **Full Screen**, **Repeat Last Area**, **Translate Selection**.
-CLI too: `Shotik.exe --capture region|full|repeat|text|record|translate`.
+**Area Screenshot**, **Full Screen**, **Repeat Last Area**, **Translate Selection**, **Record Audio**.
+CLI too: `Shotik.exe --capture region|full|repeat|text|record|audio|translate`.
 
 ### ✦ And the rest
 - **Pin** a shot on top of every window exactly where you cut it (wheel = zoom, right-click = menu)
@@ -146,6 +154,7 @@ CLI too: `Shotik.exe --capture region|full|repeat|text|record|translate`.
 | Repeat last area | `Shift+PrtSc` | `⌘⇧7` |
 | Extract text (Live Text) | `Ctrl+Shift+PrtSc` | `⌘⇧4` |
 | Record region → video / GIF | `Ctrl+Alt+PrtSc` | `⌘⇧6` |
+| Record audio (call, voice note) | `Ctrl+Alt+Shift+R` | `⌘⇧8` |
 | Translate selected text | `Ctrl+Alt+T` | `⌘⌥T` |
 
 In the overlay: `Enter`/double-click — copy · `Ctrl+S` — save as · `P` — pin · `T` — OCR ·

@@ -29,6 +29,7 @@ const which = process.argv[2] || 'all';
     require('./ghost/mcp-tools.test.js');
     require('./ghost/recorder.test.js');
     require('./ghost/recording-seek.test.js');
+    require('./ghost/audio-recording.test.js');
     const r = await runRegistered('ghost › ');
     passed += r.passed; failed += r.failed;
   }

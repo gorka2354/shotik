@@ -48,6 +48,7 @@ if (!gotLock) {
     else if (mode === 'repeat') triggerRepeat();
     else if (mode === 'text') triggerText();
     else if (mode === 'record') triggerRecord();
+    else if (mode === 'audio') triggerRecordAudio();
     else if (mode === 'translate') triggerTranslateSelection();
     else windows.createMainWindow({ show: true });
   });
@@ -457,6 +458,23 @@ async function triggerRecord(opts = {}) {
   return lastProcessed;
 }
 
+// Record sound only (calls, voice notes): no region, just the controls bar.
+// If anything is recording, the same key stops it.
+async function triggerRecordAudio() {
+  if (recorder.isRecording()) { recorder.stopRecording(); return null; }
+  const a = settings.get().audioRecording || {};
+  if (!a.systemAudio && !a.microphone) {
+    windows.showToast({ kind: 'text', title: t('recFailTitle'), body: t('recAudioNone') });
+    return null;
+  }
+  if (a.systemAudio && !ensureScreenPermission()) return null;
+  const main = windows.getMainWindow();
+  if (main && main.isVisible()) main.hide();
+  await recorder.startRecording({ audioOnly: true, displayId: screen.getPrimaryDisplay().id });
+  lastProcessed = { action: 'record-audio', file: null, ts: Date.now() };
+  return lastProcessed;
+}
+
 async function triggerFull() {
   if (!ensureScreenPermission()) return null;
   const st = settings.get();
@@ -520,6 +538,7 @@ function registerHotkeys() {
     ['repeatLast', hk.repeatLast, () => triggerRepeat()],
     ['textGrab', hk.textGrab, () => triggerText()],
     ['record', hk.record, () => triggerRecord()],
+    ['recordAudio', hk.recordAudio, () => triggerRecordAudio()],
     ['translateSelection', hk.translateSelection, () => triggerTranslateSelection()],
   ];
   for (const [name, acc, fn] of map) {
@@ -541,7 +560,10 @@ function buildTrayMenu() {
     { label: t('trayRepeat'), sublabel: hk.repeatLast, click: () => triggerRepeat() },
     { label: t('trayText'), sublabel: hk.textGrab, click: () => triggerText() },
     { label: t('trayTranslate'), sublabel: hk.translateSelection, click: () => triggerTranslateSelection() },
-    { label: recorder.isRecording() ? t('trayStopRec') : t('trayRecord'), sublabel: hk.record, click: () => triggerRecord() },
+    ...(recorder.isRecording()
+      ? [{ label: t('trayStopRec'), click: () => recorder.stopRecording() }]
+      : [{ label: t('trayRecord'), sublabel: hk.record, click: () => triggerRecord() },
+        { label: t('trayRecordAudio'), sublabel: hk.recordAudio, click: () => triggerRecordAudio() }]),
     { type: 'separator' },
     { label: t('trayOpen'), click: () => windows.createMainWindow({ show: true }) },
     { type: 'separator' },
@@ -745,6 +767,7 @@ function setupTestHandler() {
         if (body.mode === 'repeat') return await triggerRepeat();
         if (body.mode === 'text') triggerText(); // don't await — overlay stays open
         else if (body.mode === 'record') triggerRecord();
+        else if (body.mode === 'audio') { await triggerRecordAudio(); return recorder.status(); }
         else triggerRegion();
         await new Promise((r) => setTimeout(r, 1200));
         return { overlayOpen: capture.isOverlayOpen() };
@@ -1089,6 +1112,7 @@ function setupAppIpc() {
   ipcMain.handle('capture:region', () => triggerRegion({ hideMain: true }));
   ipcMain.handle('capture:text', () => triggerText({ hideMain: true }));
   ipcMain.handle('capture:record', () => triggerRecord());
+  ipcMain.handle('capture:record-audio', () => triggerRecordAudio());
   ipcMain.handle('rec:stop', () => { recorder.stopRecording(); });
   ipcMain.handle('rec:status', () => recorder.status());
   ipcMain.handle('capture:full', async () => {
@@ -1142,20 +1166,21 @@ if (gotLock) app.whenReady().then(async () => {
   recorder.events.on('state', () => { refreshTray(); windows.sendToMain('rec:state', recorder.status()); });
   recorder.events.on('done', (entry) => {
     windows.sendToMain('history:changed');
+    const audio = entry.kind === 'audio';
     if (settings.get().showToast) windows.showToast({
-      kind: 'video', title: t('recSavedTitle'),
-      body: entry.duration ? t('recSavedBody', formatDur(entry.duration)) : path.basename(entry.file),
+      kind: audio ? 'audio' : 'video', title: t('recSavedTitle'),
+      body: entry.duration ? t(audio ? 'recSavedAudioBody' : 'recSavedBody', formatDur(entry.duration)) : path.basename(entry.file),
       thumb: entry.thumb, file: entry.file,
     });
     lastProcessed = { action: 'record-done', file: entry.file, ts: Date.now() };
   });
   recorder.events.on('error', (msg) => {
     const detail = String(msg);
-    const microphoneError = detail.startsWith('microphone:')
+    const known = detail.startsWith('microphone:')
       ? (/NotAllowedError|SecurityError/.test(detail) ? 'recMicrophoneDenied'
         : /NotFoundError|OverconstrainedError/.test(detail) ? 'recMicrophoneMissing' : 'recMicrophoneFailed')
-      : null;
-    windows.showToast({ kind: 'text', title: t('recFailTitle'), body: microphoneError ? t(microphoneError) : detail.slice(0, 120) });
+      : { 'audio:none': 'recAudioNone', 'audio:system-unavailable': 'recSystemAudioUnavailable' }[detail] || null;
+    windows.showToast({ kind: 'text', title: t('recFailTitle'), body: known ? t(known) : detail.slice(0, 120) });
   });
 
   capture.keepWarm(); // warm the capture engine so the first hotkey press is snappy
@@ -1170,5 +1195,6 @@ if (gotLock) app.whenReady().then(async () => {
   else if (mode === 'repeat') setTimeout(() => triggerRepeat(), 400);
   else if (mode === 'text') setTimeout(() => triggerText(), 400);
   else if (mode === 'record') setTimeout(() => triggerRecord(), 400);
+  else if (mode === 'audio') setTimeout(() => triggerRecordAudio(), 400);
   else if (mode === 'translate') setTimeout(() => triggerTranslateSelection(), 400);
 });

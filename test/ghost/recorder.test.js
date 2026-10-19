@@ -4,6 +4,7 @@ const os = require('os');
 const path = require('path');
 const { test, assert, eq } = require('../tiny');
 const { makeApp } = require('./harness');
+const { decodeAudio } = require('./media');
 
 let port = 7560;
 async function waitFor(app, check) {
@@ -13,29 +14,6 @@ async function waitFor(app, check) {
     await app.sleep(100);
   }
   throw new Error('Recorder did not reach expected state: ' + JSON.stringify(await app.post('record-status')));
-}
-
-async function decodeAudio(app, file) {
-  const data = fs.readFileSync(file).toString('base64');
-  return app.post('exec-js', { target: 'main', code: `(async () => {
-    const ctx = new AudioContext();
-    try {
-      const bytes = Uint8Array.from(atob(${JSON.stringify(data)}), c => c.charCodeAt(0));
-      const audio = await ctx.decodeAudioData(bytes.buffer);
-      const samples = audio.getChannelData(0);
-      const start = Math.floor(audio.sampleRate * 0.2);
-      const end = Math.min(samples.length, start + audio.sampleRate);
-      const amplitude = frequency => {
-        let real = 0, imaginary = 0;
-        for (let i = start; i < end; i++) {
-          const angle = 2 * Math.PI * frequency * i / audio.sampleRate;
-          real += samples[i] * Math.cos(angle); imaginary += samples[i] * Math.sin(angle);
-        }
-        return 2 * Math.hypot(real, imaginary) / (end - start);
-      };
-      return { duration: audio.duration, system: amplitude(440), microphone: amplitude(880) };
-    } finally { await ctx.close(); }
-  })()` });
 }
 
 for (const config of [

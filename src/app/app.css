@@ -197,6 +197,14 @@ h1 { font-family: var(--font-display); font-size: 22px; font-weight: 600; }
 .sa-btn.danger:hover { background: #c42b1c; }
 .sa-btn.danger:hover svg { stroke: #fff; }
 .sa-btn svg { width: 14px; height: 14px; fill: none; stroke: #e3e3e3; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.shot-thumb.is-audio { cursor: pointer; }
+.audio-art {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+}
+.audio-art svg { width: 30%; height: 30%; fill: none; stroke: var(--stroke-strong); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.shot-thumb.is-audio .play-badge { top: auto; bottom: 8px; left: 8px; transform: none; width: 32px; height: 32px; }
+.shot-thumb.is-audio:hover .play-badge { transform: scale(1.08); }
+.shot-thumb.is-audio .play-badge svg { width: 13px; height: 13px; }
 .shot-thumb.is-video::after {
   content: ''; position: absolute; inset: 0;
   background: linear-gradient(180deg, rgba(0,0,0,0.15), transparent 40%, rgba(0,0,0,0.3));

@@ -65,7 +65,8 @@ function savePng(buffer, { source = 'region', dir = null } = {}) {
 
 // Registers an already-written video file in history. thumbBuf is a JPEG of
 // the first frame (optional). Returns the entry.
-function addVideo({ file, thumbBuf, width, height, duration }) {
+// kind: 'video' (screen recording) or 'audio' (sound only, no thumbnail)
+function addVideo({ file, thumbBuf, width, height, duration, kind = 'video' }) {
   load();
   let thumb = null;
   if (thumbBuf) {
@@ -77,7 +78,7 @@ function addVideo({ file, thumbBuf, width, height, duration }) {
   }
   const entry = {
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    file, thumb, width, height, ts: Date.now(), source: 'record', kind: 'video',
+    file, thumb, width, height, ts: Date.now(), source: 'record', kind,
     duration: Math.round((duration || 0) * 10) / 10,
   };
   items.unshift(entry);

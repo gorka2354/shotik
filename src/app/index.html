@@ -70,6 +70,10 @@
               <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
               <span id="btnRecordLabel" data-i18n="btnRecord">Record</span>
             </button>
+            <button class="btn" id="btnRecordAudio" data-i18n-tip="tipRecordAudioBtn">
+              <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg>
+              <span id="btnRecordAudioLabel" data-i18n="btnRecordAudio">Audio</span>
+            </button>
             <button class="btn ghost" id="btnOpenDir" data-i18n-tip="tipOpenDir">
               <svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2.5h8a2 2 0 012 2V17a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
             </button>
@@ -201,6 +205,10 @@
             <input class="hotkey" id="hkRecord" readonly data-i18n-ph="hkPlaceholder">
           </div>
           <div class="set-row">
+            <div><div class="set-name" data-i18n="hkRecordAudio">Record audio</div><div class="set-sub" data-i18n="hkRecordAudioSub">sound only — system audio and/or microphone to .m4a (press again to stop)</div></div>
+            <input class="hotkey" id="hkRecordAudio" readonly data-i18n-ph="hkPlaceholder">
+          </div>
+          <div class="set-row">
             <div><div class="set-name" data-i18n="hkTranslate">Translate selection</div><div class="set-sub" data-i18n="hkTranslateSub">select text in any app → instant translation, no screenshot</div></div>
             <input class="hotkey" id="hkTranslate" readonly data-i18n-ph="hkPlaceholder">
           </div>
@@ -276,6 +284,18 @@
           <div class="set-row">
             <div><div class="set-name" data-i18n="recCountdown">3-2-1 countdown</div><div class="set-sub" data-i18n="recCountdownSub">brief count before recording starts</div></div>
             <label class="switch"><input type="checkbox" id="setCountdown"><span></span></label>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title" data-i18n="audioSecTitle">Audio recording</div>
+          <div class="set-row">
+            <div><label class="set-name" for="setAudioSystem" data-i18n="audioSystem">System audio</label><div class="set-sub" data-i18n="audioSystemSub">the other side of a call and anything playing on the PC</div></div>
+            <label class="switch"><input type="checkbox" id="setAudioSystem"><span></span></label>
+          </div>
+          <div class="set-row">
+            <div><label class="set-name" for="setAudioMicrophone" data-i18n="audioMicrophone">Microphone</label><div class="set-sub" data-i18n="audioMicrophoneSub">your voice; input device is chosen above</div></div>
+            <label class="switch"><input type="checkbox" id="setAudioMicrophone"><span></span></label>
           </div>
         </div>
 

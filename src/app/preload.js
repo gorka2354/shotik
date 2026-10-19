@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('shotik', {
   captureRepeat: invoke('capture:repeat'),
   captureText: invoke('capture:text'),
   captureRecord: invoke('capture:record'),
+  captureRecordAudio: invoke('capture:record-audio'),
   recStop: invoke('rec:stop'),
   recStatus: invoke('rec:status'),
   historyExportGif: invoke('history:export-gif'),
