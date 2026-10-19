@@ -7,6 +7,7 @@
   CreateShortcut "$SMPROGRAMS\Shotik Repeat Last Area.lnk" "$INSTDIR\Shotik.exe" "--capture repeat" "$INSTDIR\Shotik.exe" 0
   CreateShortcut "$SMPROGRAMS\Shotik Extract Text.lnk" "$INSTDIR\Shotik.exe" "--capture text" "$INSTDIR\Shotik.exe" 0
   CreateShortcut "$SMPROGRAMS\Shotik Translate Selection.lnk" "$INSTDIR\Shotik.exe" "--capture translate" "$INSTDIR\Shotik.exe" 0
+  CreateShortcut "$SMPROGRAMS\Shotik Record Audio.lnk" "$INSTDIR\Shotik.exe" "--capture audio" "$INSTDIR\Shotik.exe" 0
 !macroend
 
 !macro customUnInstall
@@ -15,4 +16,5 @@
   Delete "$SMPROGRAMS\Shotik Repeat Last Area.lnk"
   Delete "$SMPROGRAMS\Shotik Extract Text.lnk"
   Delete "$SMPROGRAMS\Shotik Translate Selection.lnk"
+  Delete "$SMPROGRAMS\Shotik Record Audio.lnk"
 !macroend

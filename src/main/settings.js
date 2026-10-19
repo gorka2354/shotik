@@ -18,6 +18,7 @@ const DEFAULTS = () => ({
     repeatLast: 'Cmd+Shift+7',
     textGrab: 'Cmd+Shift+4',
     record: 'Cmd+Shift+6',
+    recordAudio: 'Cmd+Shift+8',
     translateSelection: 'Cmd+Alt+T',
   } : {
     region: 'PrintScreen',
@@ -25,11 +26,15 @@ const DEFAULTS = () => ({
     repeatLast: 'Shift+PrintScreen',
     textGrab: 'Ctrl+Shift+PrintScreen',
     record: 'Ctrl+Alt+PrintScreen',
+    recordAudio: 'Ctrl+Alt+Shift+R', // not …+PrtSc: Alt+Shift+PrtSc toggles Windows High Contrast
     translateSelection: 'Ctrl+Alt+T',
   },
   // default target = the user's own language (they read foreign text → their language)
   translate: { target: String((() => { try { return app.getLocale(); } catch (_) { return 'en'; } })()).toLowerCase().startsWith('ru') ? 'ru' : 'en', provider: 'free', deeplKey: '', autoBubble: true, ocrFallback: true },
   recording: { fps: 30, format: 'auto', systemAudio: false, microphone: false, microphoneDeviceId: 'default', countdown: true },
+  // sound-only recording (calls): both sides by default — the other party via
+  // system audio, you via the microphone (device: recording.microphoneDeviceId)
+  audioRecording: { systemAudio: true, microphone: true },
   mcp: { enabled: true, port: 7464 },
   language: 'system', // 'system' | 'en' | 'ru'
   launchAtStartup: false,

@@ -73,3 +73,86 @@ test('recorder: stopping during microphone startup releases a late stream', asyn
   eq(f.errors.length, 0);
   eq(f.done, [{ duration: 0, canceled: true }]);
 });
+
+// ---- audio-only (calls): the real capture path, which ghost mode does not take ----
+class FakeStream {
+  constructor(tracks = []) { this.tracks = [...tracks]; }
+  getTracks() { return [...this.tracks]; }
+  getAudioTracks() { return this.tracks.filter((t) => t.kind === 'audio'); }
+  getVideoTracks() { return this.tracks.filter((t) => t.kind === 'video'); }
+  addTrack(t) { this.tracks.push(t); }
+  removeTrack(t) { this.tracks = this.tracks.filter((x) => x !== t); }
+}
+const track = (kind) => ({ kind, readyState: 'live', stop() { this.readyState = 'ended'; } });
+
+function audioFixture({ system, microphone, displayAudio = true, supported = (m) => m.startsWith('audio/mp4') }) {
+  const display = { video: track('video'), audio: track('audio') };
+  const mic = track('audio');
+  const calls = { display: [], user: [] };
+  const errors = [], ready = [];
+  let control, recorder;
+  class FakeRecorder {
+    constructor(stream, opts) { this.stream = stream; this.opts = opts; this.state = 'inactive'; recorder = this; }
+    static isTypeSupported(m) { return supported(m); }
+    start() { this.state = 'recording'; }
+    stop() { this.state = 'inactive'; if (this.onstop) this.onstop(); }
+  }
+  class FakeAudioContext {
+    constructor() { this.state = 'running'; }
+    createAnalyser() { return { fftSize: 1024, getFloatTimeDomainData() {} }; }
+    createMediaStreamSource() { return { connect: (n) => n }; }
+    createMediaStreamDestination() { return { stream: new FakeStream([track('audio')]) }; }
+    async resume() {}
+    async close() { this.state = 'closed'; }
+  }
+  const query = `?test=0&audioOnly=1&audio=${system ? 1 : 0}&microphone=${microphone ? 1 : 0}`;
+  const context = vm.createContext({
+    URLSearchParams, location: { search: query }, MediaStream: FakeStream, MediaRecorder: FakeRecorder, AudioContext: FakeAudioContext,
+    navigator: { mediaDevices: {
+      getDisplayMedia: async (c) => { calls.display.push(c); return new FakeStream(displayAudio ? [display.video, display.audio] : [display.video]); },
+      getUserMedia: async (c) => { calls.user.push(c); return new FakeStream([mic]); },
+    } },
+    window: { MediaRecorder: FakeRecorder, rec: { trace() {}, level() {}, chunk() {}, firstFrame() {}, error: (e) => errors.push(e), ready: (r) => ready.push(r), done() {}, onControl: (cb) => { control = cb; } } },
+    setInterval, clearInterval, setTimeout, clearTimeout, cancelAnimationFrame() {}, performance,
+  });
+  vm.runInContext(source, context);
+  return { context, display, mic, calls, errors, ready, recorder: () => recorder, stop: () => control('stop') };
+}
+
+test('recorder: audio-only drops the screen track at once and records AAC .m4a', async () => {
+  const f = audioFixture({ system: true, microphone: true });
+  await vm.runInContext('window.__shotikStart()', f.context);
+  eq(f.errors, []);
+  eq(f.display.video.readyState, 'ended', 'screen video stopped right away');
+  eq(f.display.audio.readyState, 'live', 'system audio kept');
+  eq(f.calls.display[0].video.frameRate, 1, 'smallest possible screen request');
+  eq(f.ready[0].ext, 'm4a');
+  eq(f.ready[0].audioOnly, true);
+  eq(f.recorder().opts, { mimeType: 'audio/mp4;codecs=mp4a.40.2', audioBitsPerSecond: 128000 });
+  eq([f.recorder().stream.getVideoTracks().length, f.recorder().stream.getAudioTracks().length], [0, 1], 'one mixed audio track, no video');
+  f.stop();
+});
+
+test('recorder: microphone-only audio never asks for the screen', async () => {
+  const f = audioFixture({ system: false, microphone: true });
+  await vm.runInContext('window.__shotikStart()', f.context);
+  eq(f.errors, []);
+  eq(f.calls.display.length, 0);
+  eq(f.ready[0].audio, { system: false, microphone: true, tracks: 1 });
+  f.stop();
+});
+
+test('recorder: no system audio in the screen stream is an explicit error, not a silent file', async () => {
+  const f = audioFixture({ system: true, microphone: false, displayAudio: false });
+  await vm.runInContext('window.__shotikStart()', f.context);
+  eq(f.errors, ['audio:system-unavailable']);
+  eq(f.display.video.readyState, 'ended');
+  eq(f.ready.length, 0);
+});
+
+test('recorder: without an AAC encoder audio falls back to Opus WebM', async () => {
+  const f = audioFixture({ system: false, microphone: true, supported: (m) => m === 'audio/webm;codecs=opus' });
+  await vm.runInContext('window.__shotikStart()', f.context);
+  eq([f.ready[0].mime, f.ready[0].ext], ['audio/webm;codecs=opus', 'webm']);
+  f.stop();
+});

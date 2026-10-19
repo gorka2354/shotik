@@ -51,7 +51,7 @@ async function boot() {
   renderSettings();
   renderMcp();
   renderMcpLog(state.mcpLog || []);
-  try { setRecUi(!!(await window.shotik.recStatus()).recording); } catch (_) {}
+  try { setRecUi(await window.shotik.recStatus()); } catch (_) {}
   await renderHistory();
 }
 boot();
@@ -68,15 +68,23 @@ $('#btnRecord').addEventListener('click', async () => {
   if (recActive) await window.shotik.recStop();
   else await window.shotik.captureRecord();
 });
+$('#btnRecordAudio').addEventListener('click', async () => {
+  if (recActive) await window.shotik.recStop();
+  else await window.shotik.captureRecordAudio();
+});
 $('#btnOpenDir').addEventListener('click', () => window.shotik.openSaveDir());
 
 let recActive = false;
-function setRecUi(active) {
-  recActive = active;
-  $('#btnRecord').classList.toggle('recording', active);
-  $('#btnRecordLabel').textContent = active ? T('btnStopRec') : T('btnRecord');
+// While recording, the button of the running kind turns into Stop.
+function setRecUi(s) {
+  recActive = !!(s && s.recording);
+  const audio = recActive && !!s.audioOnly;
+  $('#btnRecord').classList.toggle('recording', recActive && !audio);
+  $('#btnRecordLabel').textContent = recActive && !audio ? T('btnStopRec') : T('btnRecord');
+  $('#btnRecordAudio').classList.toggle('recording', audio);
+  $('#btnRecordAudioLabel').textContent = audio ? T('btnStopRec') : T('btnRecordAudio');
 }
-window.shotik.onRecState((s) => setRecUi(!!s.recording));
+window.shotik.onRecState((s) => setRecUi(s));
 
 /* ---------- history ---------- */
 const sourceLabel = (s) => T({ region: 'srcRegion', fullscreen: 'srcFullscreen', repeat: 'srcRepeat', mcp: 'srcMcp', pin: 'srcPin', record: 'srcRecord' }[s] || s);
@@ -87,6 +95,7 @@ const ICONS = {
   pin: '<svg viewBox="0 0 24 24"><path d="M12 17v5"/><path d="M9 4h6l.8 6.2L18 13H6l2.2-2.8L9 4z"/></svg>',
   ocr: '<svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 012-2h2"/><path d="M17 3h2a2 2 0 012 2v2"/><path d="M21 17v2a2 2 0 01-2 2h-2"/><path d="M7 21H5a2 2 0 01-2-2v-2"/><path d="M7 8h10"/><path d="M7 12h6"/><path d="M7 16h8"/></svg>',
   play: '<svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z" fill="currentColor" stroke="none"/></svg>',
+  mic: '<svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg>',
   gif: '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M8 10.5a2 2 0 100 3h1.5V12"/><path d="M12.5 9.5v5"/><path d="M15.5 14.5v-5h2.5M15.5 12h2"/></svg>',
   folder: '<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2.5h8a2 2 0 012 2V17a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>',
   trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M6 7l1 13a1 1 0 001 1h8a1 1 0 001-1l1-13"/><path d="M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3"/></svg>',
@@ -116,7 +125,13 @@ async function renderHistory() {
     const card = document.createElement('div');
     card.className = 'shot';
     const isVideo = it.kind === 'video';
-    const actions = isVideo
+    const isAudio = it.kind === 'audio';
+    const actions = isAudio
+      ? `<button class="sa-btn" data-act="open" data-tip="${esc(T('actPlay'))}">${ICONS.play}</button>
+         <button class="sa-btn" data-act="path" data-tip="${esc(T('actPath'))}">${ICONS.path}</button>
+         <button class="sa-btn" data-act="folder" data-tip="${esc(T('actFolder'))}">${ICONS.folder}</button>
+         <button class="sa-btn danger" data-act="del" data-tip="${esc(T('actDelete'))}">${ICONS.trash}</button>`
+      : isVideo
       ? `<button class="sa-btn" data-act="open" data-tip="${esc(T('actPlay'))}">${ICONS.play}</button>
          <button class="sa-btn" data-act="gif" data-tip="${esc(T('actGif'))}">${ICONS.gif}</button>
          <button class="sa-btn" data-act="path" data-tip="${esc(T('actPath'))}">${ICONS.path}</button>
@@ -128,20 +143,21 @@ async function renderHistory() {
          <button class="sa-btn" data-act="ocr" data-tip="${esc(T('actOcr'))}">${ICONS.ocr}</button>
          <button class="sa-btn" data-act="folder" data-tip="${esc(T('actFolder'))}">${ICONS.folder}</button>
          <button class="sa-btn danger" data-act="del" data-tip="${esc(T('actDelete'))}">${ICONS.trash}</button>`;
-    const playBadge = isVideo
+    const playBadge = isVideo || isAudio
       ? `<div class="play-badge">${ICONS.play}</div>${it.duration ? `<span class="dur-badge">${esc(fmtDur(it.duration))}</span>` : ''}` : '';
     card.innerHTML = `
-      <div class="shot-thumb ${isVideo ? 'is-video' : ''}">
-        <span class="badge">${esc(sourceLabel(it.source))}</span>
+      <div class="shot-thumb ${isVideo ? 'is-video' : ''} ${isAudio ? 'is-audio' : ''}">
+        ${isAudio ? `<div class="audio-art">${ICONS.mic}</div>` : ''}
+        <span class="badge">${esc(isAudio ? T('srcAudio') : sourceLabel(it.source))}</span>
         ${playBadge}
         <div class="shot-actions">${actions}</div>
       </div>
       <div class="shot-meta">
         <span class="shot-name">${esc(timeAgo(it.ts))}</span>
-        <span class="shot-size">${Number(it.width)}×${Number(it.height)}</span>
+        <span class="shot-size">${isAudio ? esc(it.file.split('.').pop()) : `${Number(it.width)}×${Number(it.height)}`}</span>
       </div>`;
     const thumbUrl = encodeURI('file:///' + String(it.thumb || it.file).replace(/\\/g, '/')).replace(/['()]/g, (c) => '%' + c.charCodeAt(0).toString(16));
-    card.querySelector('.shot-thumb').style.backgroundImage = `url("${thumbUrl}")`;
+    if (!isAudio) card.querySelector('.shot-thumb').style.backgroundImage = `url("${thumbUrl}")`;
     card.querySelector('.shot-thumb').addEventListener('click', (e) => {
       if (e.target.closest('.sa-btn')) return;
       window.shotik.historyOpen(it.id);
@@ -247,6 +263,7 @@ function renderSettings() {
   $('#hkRepeat').value = s.hotkeys.repeatLast || '';
   $('#hkText').value = s.hotkeys.textGrab || '';
   $('#hkRecord').value = s.hotkeys.record || '';
+  $('#hkRecordAudio').value = s.hotkeys.recordAudio || '';
   $('#hkTranslate').value = s.hotkeys.translateSelection || '';
   $('#kbdRegion').textContent = short(s.hotkeys.region);
   $('#kbdFull').textContent = short(s.hotkeys.fullscreen);
@@ -267,7 +284,11 @@ function renderSettings() {
   $('#setFormat').value = rec.format || 'auto';
   $('#setSysAudio').checked = !!rec.systemAudio;
   $('#setMicrophone').checked = !!rec.microphone;
-  $('#microphoneDeviceRow').hidden = !rec.microphone;
+  const ar = s.audioRecording || {};
+  $('#setAudioSystem').checked = !!ar.systemAudio;
+  $('#setAudioMicrophone').checked = !!ar.microphone;
+  // one input device for both screen and audio recordings
+  $('#microphoneDeviceRow').hidden = !rec.microphone && !ar.microphone;
   refreshMicrophones();
   $('#setCountdown').checked = rec.countdown !== false;
   $('#emptyBody').innerHTML = T('emptyBody', `<kbd>${esc(short(s.hotkeys.region))}</kbd>`);
@@ -279,7 +300,7 @@ function short(acc) { return (acc || '—').replace('PrintScreen', 'PrtSc'); }
 let microphoneRefresh = 0;
 async function refreshMicrophones() {
   const request = ++microphoneRefresh;
-  if (!state || !state.settings.recording.microphone) return;
+  if (!state || !(state.settings.recording.microphone || (state.settings.audioRecording || {}).microphone)) return;
   let devices;
   try { devices = await navigator.mediaDevices.enumerateDevices(); }
   catch (_) { devices = []; }
@@ -339,6 +360,8 @@ $('#setSysAudio').addEventListener('change', (e) => applySettings({ recording: {
 $('#setMicrophone').addEventListener('change', (e) => applySettings({ recording: { microphone: e.target.checked } }));
 $('#setMicrophoneDevice').addEventListener('change', (e) => applySettings({ recording: { microphoneDeviceId: e.target.value } }));
 $('#setCountdown').addEventListener('change', (e) => applySettings({ recording: { countdown: e.target.checked } }));
+$('#setAudioSystem').addEventListener('change', (e) => applySettings({ audioRecording: { systemAudio: e.target.checked } }));
+$('#setAudioMicrophone').addEventListener('change', (e) => applySettings({ audioRecording: { microphone: e.target.checked } }));
 
 /* ---------- Text tab: quick translate ---------- */
 let txtTargetTouched = false;
@@ -385,6 +408,7 @@ const HK_FIELDS = [
   ['#hkRepeat', 'repeatLast'],
   ['#hkText', 'textGrab'],
   ['#hkRecord', 'record'],
+  ['#hkRecordAudio', 'recordAudio'],
   ['#hkTranslate', 'translateSelection'],
 ];
 const appPlatform = () =>
