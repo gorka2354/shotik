@@ -13,7 +13,20 @@ fn only_loopback_hosts_pass() {
     for host in ["127.0.0.1:7464", "localhost:7464", "LOCALHOST:7464", "[::1]:7464", "127.0.0.1", "localhost"] {
         assert!(is_local_request(Some(host), None), "{host}");
     }
-    for host in ["evil.example:7464", "evil.example", "127.0.0.1.evil.example", "localhost.evil.example:7464", "", "[::2]:7464"] {
+    for host in [
+        "evil.example:7464",
+        "evil.example",
+        "127.0.0.1.evil.example",
+        "localhost.evil.example:7464",
+        "",
+        "[::2]:7464",
+        "127.0.0.1:80@evil.example",
+        "localhost@evil.example",
+        "localhost:x",
+        "localhost:80:80",
+        "localhost.",
+        "127.0.0.1, evil.example",
+    ] {
         assert!(!is_local_request(Some(host), None), "{host}");
     }
     assert!(!is_local_request(None, None), "HTTP/1.1 requires Host");
@@ -34,6 +47,11 @@ fn an_origin_must_be_loopback_too() {
         "file://",
         "chrome-extension://abc",
         "",
+        "http://localhost:1@evil.example",
+        "http://localhost@evil.example",
+        "http://localhost/evil",
+        "http://localhost:6274, http://evil.example",
+        "http://localhost.",
     ] {
         assert!(!is_local_request(host, Some(origin)), "{origin}");
     }
@@ -67,6 +85,15 @@ async fn the_server_refuses_a_page_and_serves_a_local_client() {
 
     let cross_site = status_of(port, &format!("Host: 127.0.0.1:{port}\r\nOrigin: https://evil.example\r\n")).await;
     assert!(cross_site.contains("403"), "cross-site POST: {cross_site}");
+
+    let userinfo = status_of(port, &format!("Host: 127.0.0.1:{port}\r\nOrigin: http://localhost:1@evil.example\r\n")).await;
+    assert!(userinfo.contains("403"), "userinfo in Origin: {userinfo}");
+
+    let repeated = status_of(port, &format!("Host: 127.0.0.1:{port}\r\nOrigin: http://localhost:6274\r\nOrigin: http://evil.example\r\n")).await;
+    assert!(repeated.contains("403"), "repeated Origin: {repeated}");
+
+    let repeated_host = status_of(port, &format!("Host: 127.0.0.1:{port}\r\nHost: evil.example\r\n")).await;
+    assert!(!repeated_host.contains("200"), "repeated Host: {repeated_host}");
 
     server.stop().await.unwrap();
 }

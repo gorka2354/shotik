@@ -260,32 +260,38 @@ impl RequestState {
 /// POST here, and through DNS rebinding read the reply, which would hand any site a screenshot. Only
 /// loopback hosts and origins pass. MCP clients outside a browser send no Origin at all.
 pub fn is_local_request(host: Option<&str>, origin: Option<&str>) -> bool {
-    let host_ok = host.is_some_and(|host| is_loopback_name(strip_port(host)));
-    let origin_ok = origin.is_none_or(|origin| {
-        ["http://", "https://"]
-            .iter()
-            .find_map(|scheme| origin.strip_prefix(scheme))
-            .is_some_and(|authority| is_loopback_name(strip_port(authority)))
-    });
-    host_ok && origin_ok
+    host.is_some_and(is_loopback_authority)
+        && origin.is_none_or(|origin| {
+            ["http://", "https://"]
+                .iter()
+                .find_map(|scheme| origin.get(..scheme.len()).filter(|s| s.eq_ignore_ascii_case(scheme)).map(|_| &origin[scheme.len()..]))
+                .is_some_and(is_loopback_authority)
+        })
 }
 
-fn strip_port(authority: &str) -> &str {
-    match authority.strip_prefix('[') {
-        Some(rest) => rest.split(']').next().unwrap_or(""),
-        None => authority.split(':').next().unwrap_or(""),
-    }
-}
-
-fn is_loopback_name(name: &str) -> bool {
-    name.eq_ignore_ascii_case("localhost") || name == "127.0.0.1" || name == "::1"
+/// The whole value must match: a prefix check would pass `localhost:1@evil.example`.
+fn is_loopback_authority(authority: &str) -> bool {
+    let lower = authority.to_ascii_lowercase();
+    ["localhost", "127.0.0.1", "[::1]"].iter().any(|name| match lower.strip_prefix(name) {
+        Some("") => true,
+        Some(rest) => rest
+            .strip_prefix(':')
+            .is_some_and(|port| (1..=5).contains(&port.len()) && port.bytes().all(|b| b.is_ascii_digit())),
+        None => false,
+    })
 }
 
 async fn request_listener(State(state): State<Arc<RequestState>>, request: Request) -> Response {
     let local = {
         let headers = request.headers();
+        // A repeated header is not a value we can vouch for: `get` would only look at the first.
+        let single = |name: header::HeaderName| headers.get_all(&name).iter().count() <= 1;
         let text = |name| headers.get(name).and_then(|v: &HeaderValue| v.to_str().ok());
-        is_local_request(text(header::HOST), text(header::ORIGIN))
+        let readable_origin = headers.get(header::ORIGIN).is_none() || text(header::ORIGIN).is_some();
+        single(header::HOST)
+            && single(header::ORIGIN)
+            && readable_origin
+            && is_local_request(text(header::HOST), text(header::ORIGIN))
     };
     if !local {
         return json_response(StatusCode::FORBIDDEN, json!({"error": "forbidden"}));
