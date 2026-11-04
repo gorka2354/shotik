@@ -38,7 +38,7 @@ pub(crate) enum Endpoint {
 
 struct Stream {
     client: IAudioClient,
-    capture: IAudioCaptureClient,
+    capture: Option<IAudioCaptureClient>,
     format: DeviceFormat,
     converter: Converter,
 }
@@ -176,11 +176,13 @@ fn open_stream(endpoint: &Endpoint) -> std::result::Result<Stream, AudioOpenErro
     if unsafe { client.GetBufferSize() }.map_err(|e| fail("IAudioClient::GetBufferSize", e))? == 0 {
         return Err(AudioOpenError { kind: AudioOpenKind::Empty, detail: "the device offers no audio buffer".into() });
     }
+    // Asked for here only to fail early. The stream's own is got on the reading thread: the contract of this
+    // interface wants Release on the thread that called GetService, and the input moves to its thread after this.
     // SAFETY: the client is initialized.
-    let capture: IAudioCaptureClient = unsafe { client.GetService() }.map_err(|e| fail("IAudioCaptureClient", e))?;
+    drop(unsafe { client.GetService::<IAudioCaptureClient>() }.map_err(|e| fail("IAudioCaptureClient", e))?);
     // SAFETY: as above.
     unsafe { client.Start() }.map_err(|e| fail("IAudioClient::Start", e))?;
-    Ok(Stream { client, capture, format, converter: Converter::new(format) })
+    Ok(Stream { client, capture: None, format, converter: Converter::new(format) })
 }
 
 pub(crate) struct WasapiInput {
@@ -239,7 +241,17 @@ impl AudioInput for WasapiInput {
         let Some(stream) = &mut self.stream else {
             return self.try_reopen();
         };
-        let capture = stream.capture.clone();
+        let capture = match &stream.capture {
+            Some(capture) => capture.clone(),
+            // SAFETY: the client is initialized and started.
+            None => match unsafe { stream.client.GetService::<IAudioCaptureClient>() } {
+                Ok(capture) => {
+                    stream.capture = Some(capture.clone());
+                    capture
+                }
+                Err(e) => return self.stream_failed(&e),
+            },
+        };
         let block = usize::from(stream.format.block_align);
         let rate = i64::from(stream.format.rate);
         let mut delivered = false;

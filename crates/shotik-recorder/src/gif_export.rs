@@ -8,7 +8,7 @@
 
 use std::borrow::Cow;
 use std::fs::{self, File};
-use std::io::BufWriter;
+use std::io::{BufWriter, Write as _};
 use std::path::{Path, PathBuf};
 
 use fast_image_resize::images::{Image, ImageRef};
@@ -411,6 +411,8 @@ impl GifBuilder {
                 };
                 encoder.write_frame(&frame)?;
             }
+            // Dropping a BufWriter swallows the error of its last write: a full disk would publish an empty GIF.
+            encoder.into_inner()?.flush()?;
             Ok(())
         };
         let written = write();

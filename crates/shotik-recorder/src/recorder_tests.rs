@@ -914,6 +914,40 @@ fn an_encoder_failing_on_the_last_frames_keeps_the_file_and_says_why() {
 }
 
 #[test]
+fn a_save_folder_lost_during_the_session_keeps_the_recording_and_says_where() {
+    let f = Fixture::new(Script::default());
+    f.start_video(false, false).unwrap();
+    f.wait_running();
+    thread::sleep(Duration::from_millis(80));
+    fs::remove_dir_all(&f.save_dir).unwrap();
+    fs::write(&f.save_dir, b"a file where the folder was").unwrap();
+    f.recorder.stop();
+    let error = f.wait_error();
+    let done = f.wait_done();
+    assert_eq!(fs::read(&done.file).unwrap(), b"part", "the only copy of the recording");
+    assert_eq!(done.file.file_name().unwrap(), "Rec_2026-11-04_12-00-00.mp4", "under its real name");
+    assert!(error.contains(&done.file.display().to_string()), "{error}");
+    fs::remove_file(&f.save_dir).unwrap();
+    f.wait_idle();
+}
+
+#[test]
+fn a_cancel_during_finalize_still_deletes_everything() {
+    let gate = Arc::new(Gate::default());
+    let f = Fixture::new(Script { finalize_gate: Some(Arc::clone(&gate)), ..Script::default() });
+    f.start_video(false, false).unwrap();
+    f.wait_running();
+    f.recorder.stop();
+    thread::sleep(Duration::from_millis(60));
+    f.recorder.cancel();
+    gate.open();
+    f.wait_idle();
+    thread::sleep(Duration::from_millis(100));
+    assert_eq!(f.temp_files(), 0, "no part file");
+    assert_eq!(fs::read_dir(&f.save_dir).unwrap().count(), 0, "no recording");
+}
+
+#[test]
 fn the_finalize_timeout_frees_the_recorder_and_a_late_file_still_arrives() {
     let gate = Arc::new(Gate::default());
     let f = Fixture::build(

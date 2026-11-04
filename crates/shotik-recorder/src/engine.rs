@@ -365,6 +365,10 @@ fn drive(backend: &dyn Backend, job: &Job, ctl: &Control, trace: &Trace, events:
         Ok(problem) => problem,
         Err(e) => return Outcome::Failed(failure.unwrap_or_else(|| e.to_string())),
     };
+    // Cancel can arrive while the index is being written.
+    if ctl.is_canceled() {
+        return Outcome::Canceled;
+    }
     // What was written up to a failure is a valid file: keep it and say what happened.
     if let Some(message) = failure.or(finished) {
         events.problem(message);
@@ -375,7 +379,18 @@ fn drive(backend: &dyn Backend, job: &Job, ctl: &Control, trace: &Trace, events:
     let ext = if audio_only { "m4a" } else { "mp4" };
     let file = match move_into_place(&job.part, &job.save_base, ext) {
         Ok(file) => file,
-        Err(e) => return Outcome::Failed(e.to_string()),
+        // The folder is gone or full, but the recording is complete and this is its only copy. It stays in
+        // the temporary folder under its real name, and the user is told where.
+        Err(e) => {
+            let kept = job.save_base.file_name().map_or_else(|| job.part.clone(), |name| job.part.with_file_name(name));
+            match move_into_place(&job.part, &kept, ext) {
+                Ok(file) => {
+                    events.problem(format!("{e}. The recording is in {}", file.display()));
+                    file
+                }
+                Err(_) => return Outcome::Failed(e.to_string()),
+            }
+        }
     };
     let (width, height) = match &job.target {
         RecordTarget::Region { rect_dip, .. } => (rect_dip.width.max(0) as u32, rect_dip.height.max(0) as u32),

@@ -233,13 +233,26 @@ fn print_window(id: u64) -> Result<Frame> {
 /// Runs `print_window` on its own thread so a hung target becomes an error. On a timeout the thread stays
 /// blocked inside the system call until the target answers or dies, then exits and frees everything.
 fn print_window_with_timeout(id: u64, timeout: Duration) -> Result<Frame> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    // Each stuck thread holds a device context and a bitmap, so repeated calls on a hung window must not add
+    // up. They all come back together once the window answers.
+    static STUCK_OR_RUNNING: AtomicUsize = AtomicUsize::new(0);
+    const MOST: usize = 8;
+    if STUCK_OR_RUNNING.fetch_add(1, Ordering::SeqCst) >= MOST {
+        STUCK_OR_RUNNING.fetch_sub(1, Ordering::SeqCst);
+        return Err(Error::msg(format!("hwnd {id}: earlier captures are still waiting for hung applications")));
+    }
     let (done, result) = mpsc::channel();
     std::thread::Builder::new()
         .name("shotik-printwindow".into())
         .spawn(move || {
             let _ = done.send(print_window(id));
+            STUCK_OR_RUNNING.fetch_sub(1, Ordering::SeqCst);
         })
-        .map_err(|e| Error::msg(format!("cannot start a capture thread: {e}")))?;
+        .map_err(|e| {
+            STUCK_OR_RUNNING.fetch_sub(1, Ordering::SeqCst);
+            Error::msg(format!("cannot start a capture thread: {e}"))
+        })?;
     result.recv_timeout(timeout).map_err(|_| {
         Error::msg(format!("hwnd {id} did not answer within {} s: the application may be hung", timeout.as_secs()))
     })?

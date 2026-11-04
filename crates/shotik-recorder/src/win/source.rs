@@ -257,6 +257,8 @@ impl VideoSource for PipelineSource {
             Path::Cpu(cpu) => {
                 let stride = w as usize * 4;
                 self.grabber.refresh_cpu(self.d3d.as_deref(), &mut cpu.bgra, stride)?;
+                // On a still screen the next frames are not fresh, so nothing else would convert this one.
+                bgra_to_nv12(&cpu.bgra, stride, w, h, &mut cpu.nv12);
                 Ok(Some(Snapshot { bgra: cpu.bgra.clone(), stride, width: w, height: h }))
             }
             Path::Unbound => Err(Error::msg("internal error: frames before an encoder")),

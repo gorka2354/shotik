@@ -104,6 +104,9 @@ impl D3d {
                 // a driver reset or an update took it: it cannot be used again, a new one has to be made
                 Some(reason) => trace.push(format!("the device of \"{name}\" was lost earlier: {reason}")),
             }
+            // It drove capture, so it is never released, even lost: see the module comment. A driver reset is
+            // rare enough that keeping one more device for the life of the process costs nothing that matters.
+            std::mem::forget(Arc::clone(device));
             devices.retain(|(key, _)| *key != luid);
         }
         let device = Self::create(&adapter, luid, trace)?;
