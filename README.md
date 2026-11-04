@@ -46,6 +46,12 @@ Most screenshots today don't go to a photo album — they go to **Claude/ChatGPT
 
 Think ShareX capture + Flameshot annotations + a DeepL-style translator + Claude, in one small MIT app.
 
+## New in 2.0: native
+
+Shotik is now one small native executable, written in Rust: a 7 MB installer instead of 71 MB, 3 MB of
+memory in the tray instead of 404 MB, and it is ready 32 ms after launch instead of 465 ms. Everything it did
+before is still here, and an upgrade keeps your settings, history and shortcuts. Windows only for now.
+
 ## ✨ New in 1.0 — translate anything on screen
 
 <p align="center">
@@ -188,7 +194,29 @@ Shotik is meant to disappear into the tray and cost nothing while it's there. Ve
 Rust binary; the table compares it with the last Electron build, on one machine, with one script
 ([bench/run.js](bench/run.js)). More in [docs/PERF.md](docs/PERF.md).
 
-<!-- perf-table -->
+| | Electron 1.3.0 | Electron 1.3.1 | Rust 2.0 |
+|---|---:|---:|---:|
+| Installer | 71 MB | 71 MB | 7 MB |
+| Installed size | 269 MB | 269 MB | 27 MB |
+| Startup to ready | 662 ms | 465 ms | 32 ms |
+| Processes in the tray | 6 | 6 | 1 |
+| Memory in the tray | 464 MB | 404 MB | 3 MB |
+| CPU in the tray | 13 ms/s | 2 ms/s | 0 ms/s |
+| Overlay shown | 753 ms | 6 460 ms | 82 ms |
+| Memory with overlays open | 1 075 MB | 6 163 MB | 140 MB |
+| Memory after closing them | 706 MB | 6 072 MB | 6 MB |
+| `take_screenshot` | 1 677 ms | 3 804 ms | 191 ms |
+| `list_windows` | 586 ms | 1 211 ms | 27 ms |
+| `capture_window` | 999 ms | 1 714 ms | 31 ms |
+| OCR of a selection | 685 ms | 698 ms | 49 ms |
+| Video: start | 2 507 ms | 11 591 ms | 368 ms |
+| Video: CPU | 871 ms/s | 617 ms/s | 46 ms/s |
+| Video: peak memory | 1 514 MB | 6 782 MB | 113 MB |
+| GIF export | 12 745 ms | 12 535 ms | 1 392 ms |
+| Audio: start | 708 ms | 644 ms | 192 ms |
+| Audio: CPU | 43 ms/s | 37 ms/s | 25 ms/s |
+
+1.3.0 was measured with a game running, 1.3.1 and 2.0 on an idle machine, one after the other. 1.3.1 gave up its warm capture timer to fix a handle leak, which is why it captures slower than 1.3.0. Medians on a Ryzen 9 7950X3D with three monitors, one of them 4K at 150%, in ghost mode: on the real desktop a Rust overlay appears about 150 ms after the key press.
 
 - **No telemetry, no account, no network** except the translation call you trigger (free service or your DeepL key). Screenshots stay on your disk.
 - **One executable, no runtime.** The overlay stays out of memory until you need it: after you close it, the app is back to a few megabytes.

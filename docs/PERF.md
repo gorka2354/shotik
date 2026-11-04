@@ -1,54 +1,58 @@
-# Overlay latency research
+# Performance
 
-How fast can the selection overlay appear after the hotkey? Measured on a
-2560×1440 + 1920×1080 Windows setup (Electron 33).
+`bench/run.js` runs one scenario against any build; `bench/compare.js` prints the difference. The raw results
+are in `bench/results/`.
 
-## Where the time went
+| | Electron 1.3.0 | Electron 1.3.1 | Rust 2.0 |
+|---|---:|---:|---:|
+| Installer | 71 MB | 71 MB | 7 MB |
+| Installed size | 269 MB | 269 MB | 27 MB |
+| Startup to ready | 662 ms | 465 ms | 32 ms |
+| Processes in the tray | 6 | 6 | 1 |
+| Memory in the tray | 464 MB | 404 MB | 3 MB |
+| CPU in the tray | 13 ms/s | 2 ms/s | 0 ms/s |
+| Overlay shown | 753 ms | 6 460 ms | 82 ms |
+| Memory with overlays open | 1 075 MB | 6 163 MB | 140 MB |
+| Memory after closing them | 706 MB | 6 072 MB | 6 MB |
+| `take_screenshot` | 1 677 ms | 3 804 ms | 191 ms |
+| `list_windows` | 586 ms | 1 211 ms | 27 ms |
+| `capture_window` | 999 ms | 1 714 ms | 31 ms |
+| OCR of a selection | 685 ms | 698 ms | 49 ms |
+| Video: start | 2 507 ms | 11 591 ms | 368 ms |
+| Video: CPU | 871 ms/s | 617 ms/s | 46 ms/s |
+| Video: peak memory | 1 514 MB | 6 782 MB | 113 MB |
+| GIF export | 12 745 ms | 12 535 ms | 1 392 ms |
+| Audio: start | 708 ms | 644 ms | 192 ms |
+| Audio: CPU | 43 ms/s | 37 ms/s | 25 ms/s |
 
-| Step | Cost |
-|---|---|
-| First `desktopCapturer.getSources` in a process (cold engine start) | ~300–600 ms |
-| `getSources` **per display** (each call captures *all* screens) | ~300 ms × N |
-| `getSources` **once**, warm | **~25 ms** |
-| `nativeImage.toPNG()` (old freeze-frame handoff) | ~120 ms / display |
-| `nativeImage.toBitmap()` (raw BGRA) | ~2 ms |
-| Half-resolution thumbnail | no faster — capture of all screens dominates |
+1.3.0 was measured with a game running, 1.3.1 and 2.0 on an idle machine, one after the other. 1.3.1 gave up its warm capture timer to fix a handle leak, which is why it captures slower than 1.3.0. Medians on a Ryzen 9 7950X3D with three monitors, one of them 4K at 150%, in ghost mode: on the real desktop a Rust overlay appears about 150 ms after the key press.
 
-Key facts (confirmed empirically and in the Electron docs):
+A recording costs size for speed: a minute of the benchmark's still screen is
+12 MB of hardware H.264 against 6 MB of VP9, which
+Chromium encoded in software at 617 ms of CPU per second.
 
-1. **`getSources` always captures every screen**, even when you ask for one
-   display's thumbnail. So calling it once per monitor multiplies the cost.
-   *("even though we only need a screenshot of one display, we can only fetch
-   thumbnails for all of them" — Electron docs / yal.cc.)*
-2. **The first call is a cold start** — it spins up the capture engine (~300–600 ms).
-3. **PNG encode + disk round-trip** was a large, avoidable cost.
+## Why the Electron version was slow
 
-## What we shipped
+Most of an overlay's time was `desktopCapturer.getSources`, which captures every screen on each call and starts
+its engine cold. Keeping the engine warm on a timer took 350 ms off the overlay, but each call left two handles
+behind inside Chromium's capturer: 140,000 handles and 5 GB of memory after 16 days.
 
-- **0.5.6** — pre-warm the capture engine at startup (kept hot on a 30 s timer)
-  and hand the freeze frame to the overlay as a raw BGRA bitmap over IPC instead
-  of a PNG file. ~800 ms → ~270 ms.
-- **0.6.0** — **cursor-display-first**: capture the monitor under the cursor with
-  a single `getSources` and show it immediately (~25–50 ms warm); capture the
-  other monitors natively in the background. The monitor you're actually on
-  appears near-instantly, with no resolution/quality trade-off. A single
-  `getSources` can't return each monitor at its native resolution (thumbnailSize
-  is global and upscales smaller displays), so non-cursor monitors get their own
-  native capture a moment later rather than a blurry immediate one.
+## The rule that keeps Rust flat
 
-## Considered / future
+GDI `BitBlt` takes a frame in tens of milliseconds and holds nothing between frames. Only Windows Graphics Capture,
+for video, needs a D3D11 device, and on this driver releasing a device that drove capture leaks a section, a
+mutant and about 123 KB per cycle. So a device that drove capture is never released, not even a lost one.
 
-- **Persistent `getDisplayMedia` stream** (the Electron-recommended path for
-  frequent capture): keep a live screen stream warm and grab the current frame
-  instantly (<16 ms) on hotkey. Downside: a continuously-running capture uses
-  GPU/CPU/battery even when idle. Would need a start/stop policy (e.g. only while
-  the app is focused, or opt-in "instant mode").
-- **Native capture addon** (Windows Graphics Capture / DXGI Desktop Duplication):
-  sub-frame capture, but requires a native module — breaks the zero-native-deps
-  goal. Possible optional addon later.
+The cost: after the first video recording the process keeps about 100 MB of private memory, 42 threads, an NVENC
+session and 25 MB of GPU memory until it exits. After audio-only recording it keeps about 3 MB. If OBS or
+ShadowPlay run out of NVENC sessions, restarting Shotik gives its session back.
 
-## Floor
+## Checking for a leak
 
-The native full-resolution capture of a single 2560×1440 display is ~25 ms warm;
-that's effectively the floor without a persistent stream. Cursor-first reaches it
-for the common case.
+```bash
+node bench/soak.js --impl rust --exe target/release/shotik.exe --hours 6 --out soak.jsonl
+```
+
+Two instances run side by side, one idle and one taking a real overlay and a real screenshot every cycle. Each
+sample has private memory and handle counts. Watch the handles: a leak of a few KB per call hides in the noise of
+private bytes, and that is how this one stayed unseen for months.

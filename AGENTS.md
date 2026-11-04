@@ -15,6 +15,11 @@ Read first: `docs/rust/ARCHITECTURE.md`, `docs/rust/CONTRACT.md`.
    - Real screen pixels and real audio are private: never commit them, never write them outside a
      temporary directory, and delete that directory when done. Use `test/fake-screen.png` by default.
    - Never kill processes you did not start. `Shotik.exe` on this machine is the user's real app.
+   - Never start the binary without `--test` and a private `APPDATA`: without them it opens the user's real
+     profile, and it has no `--version` to stop it.
+   - The one exception is `test/live/`, which takes over the desktop on purpose: only with the owner's
+     agreement and on an idle machine. Ghost mode cannot see focus, DPI changes or native dialogs, so a
+     change to any of those needs that check, or a plain statement that it did not get one.
 2. **Stay inside your allowed paths.** Each task names the files or crates it owns. If you need a
    change elsewhere, do not make it: describe it in your final summary.
    `crates/shotik-core/src/ports.rs` is shared: additive changes only, and name them in your summary.
