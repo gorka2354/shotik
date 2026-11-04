@@ -19,6 +19,7 @@ const which = process.argv[2] || 'all';
     require('./unit/webm-index.test.js');
     require('./unit/mp4-index.test.js');
     require('./unit/ghost-adapter.test.js');
+    require('./unit/mcp-origin.test.js');
     const r = await runRegistered('unit › ');
     passed += r.passed; failed += r.failed;
   }

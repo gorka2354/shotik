@@ -90,7 +90,21 @@ function readBody(req) {
   });
 }
 
+// Binding to 127.0.0.1 keeps other machines out, not web pages in the user's own
+// browser: a page can POST here, and through DNS rebinding read the reply, which
+// would hand any site a screenshot. Only loopback hosts and origins pass. MCP
+// clients outside a browser send no Origin at all.
+// The whole value must match: a prefix check would pass http://localhost:1@evil.example.
+const LOOPBACK_AUTHORITY = /^(localhost|127\.0\.0\.1|\[::1\])(:\d{1,5})?$/i;
+function isLocalRequest(host, origin) {
+  if (typeof host !== 'string' || !LOOPBACK_AUTHORITY.test(host)) return false;
+  if (origin === undefined || origin === null) return true;
+  const m = /^https?:\/\/(.+)$/i.exec(origin); // repeated headers arrive joined and fail here
+  return !!m && LOOPBACK_AUTHORITY.test(m[1]);
+}
+
 async function requestListener(req, res) {
+  if (!isLocalRequest(req.headers.host, req.headers.origin)) return jsonRes(res, 403, { error: 'forbidden' });
   const url = new URL(req.url, 'http://127.0.0.1');
 
   // ---- test endpoints (only active when a testHandler is installed) ----
@@ -152,4 +166,4 @@ function stop() {
   });
 }
 
-module.exports = { start, stop, status, setTools, setTestHandler, setLogListener, getLog };
+module.exports = { start, stop, status, setTools, setTestHandler, setLogListener, getLog, isLocalRequest };

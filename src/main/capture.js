@@ -93,17 +93,19 @@ function enumWindows() {
 }
 
 // The first desktopCapturer.getSources in a process is slow (~300-600ms) — it
-// spins up the capture engine. Warming it at startup (and keeping it hot) makes
-// the first real capture, when the user hits the hotkey, snappy.
-let warmTimer = null;
+// spins up the capture engine. Warming it once at startup makes the first real
+// capture, when the user hits the hotkey, snappy.
+//
+// Never call it on a timer: every call leaves OS handles behind inside Chromium's
+// capturer (Section + Mutant pairs, about 1.5 handles per call; a forced GC does
+// not release them). A 30 s timer reached 140,000 handles and 5 GB of memory
+// after 16 days.
 async function prewarm() {
   try { await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } }); } catch (_) {}
 }
 function keepWarm() {
   if (FAKE_SCREEN) return;
   prewarm();
-  clearInterval(warmTimer);
-  warmTimer = setInterval(prewarm, 30000);
 }
 
 function displayById(id) {
