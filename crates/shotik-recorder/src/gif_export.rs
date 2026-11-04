@@ -27,16 +27,13 @@ const GAP_TOLERANCE_SEC: f64 = 0.004;
 /// `max_width` means the defaults of the JS version, 12 and 640.
 #[cfg(windows)]
 pub fn export_gif(video: &Path, fps: u32, max_width: u32) -> Result<PathBuf> {
-    let mut builder: Option<GifBuilder> = None;
     let fps = if fps == 0 { DEFAULT_FPS } else { fps };
     let max_width = if max_width == 0 { DEFAULT_MAX_WIDTH } else { max_width };
-    crate::win::gif_decode::decode_frames(video, |frame| {
-        let gif = builder.get_or_insert_with(|| GifBuilder::new(frame.width, frame.height, fps, max_width));
-        gif.offer(frame.seconds, frame.bgrx)
-    })?;
-    let Some(gif) = builder else {
+    let mut gif = GifBuilder::new(fps, max_width);
+    crate::win::gif_decode::decode_frames(video, &mut gif)?;
+    if gif.is_empty() {
         return Err(Error::msg(format!("No frames decoded from {}", video.display())));
-    };
+    }
     let out = video.with_extension("gif");
     gif.finish(&out)?;
     Ok(out)
@@ -263,9 +260,19 @@ fn scaled_size(width: u32, height: u32, max_width: u32) -> (u32, u32) {
     (w, h)
 }
 
+/// What the decoder should do with the frame it has.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) enum Wanted {
+    Frame,
+    Skip,
+    Stop,
+}
+
 /// Collects sampled frames, writes the file at the end.
 pub(crate) struct GifBuilder {
     fps: u32,
+    max_width: u32,
     source: (u32, u32),
     size: (u32, u32),
     resizer: Resizer,
@@ -278,14 +285,14 @@ pub(crate) struct GifBuilder {
 }
 
 impl GifBuilder {
-    pub fn new(width: u32, height: u32, fps: u32, max_width: u32) -> Self {
-        let size = scaled_size(width, height, max_width);
+    pub fn new(fps: u32, max_width: u32) -> Self {
         Self {
             fps,
-            source: (width, height),
-            size,
+            max_width,
+            source: (0, 0),
+            size: (0, 0),
             resizer: Resizer::new(),
-            scaled: vec![0; size.0 as usize * size.1 as usize * 4],
+            scaled: Vec::new(),
             histogram: Histogram::new(),
             frames: Vec::new(),
             seconds: Vec::new(),
@@ -293,19 +300,36 @@ impl GifBuilder {
         }
     }
 
-    /// Takes a tightly packed top-down BGRX frame. Returns false once there are enough frames. A frame
-    /// is kept when it reaches the next multiple of the frame interval, which holds the average rate
-    /// also when the source rate is no multiple of it: the minimum gap of gif.js turned 30 fps into 10.
-    pub fn offer(&mut self, seconds: f64, bgrx: &[u8]) -> bool {
+    #[cfg_attr(not(windows), allow(dead_code))]
+    pub fn is_empty(&self) -> bool {
+        self.frames.is_empty()
+    }
+
+    /// Whether the frame at this time is sampled. A frame is kept when it reaches the next multiple of
+    /// the frame interval, which holds the average rate also when the source rate is no multiple of
+    /// it: the minimum gap of gif.js turned 30 fps into 10.
+    pub fn wants(&mut self, seconds: f64) -> Wanted {
         if self.frames.len() >= MAX_FRAMES {
-            return false;
+            return Wanted::Stop;
         }
         let interval = 1.0 / f64::from(self.fps);
         if seconds + GAP_TOLERANCE_SEC < self.next_sample as f64 * interval {
-            return true;
+            return Wanted::Skip;
         }
         self.next_sample = ((seconds + GAP_TOLERANCE_SEC) / interval).floor() as u64 + 1;
         self.seconds.push(seconds);
+        Wanted::Frame
+    }
+
+    /// Takes the frame `wants` asked for: tightly packed, top-down BGRX.
+    pub fn take(&mut self, width: u32, height: u32, bgrx: &[u8]) {
+        if self.source != (width, height) {
+            self.source = (width, height);
+            if self.frames.is_empty() {
+                self.size = scaled_size(width, height, self.max_width);
+                self.scaled = vec![0; self.size.0 as usize * self.size.1 as usize * 4];
+            }
+        }
         let pixels = if self.size == self.source {
             bgrx
         } else {
@@ -324,7 +348,6 @@ impl GifBuilder {
             keys.push(key as u16);
         }
         self.frames.push(keys);
-        self.frames.len() < MAX_FRAMES
     }
 
     fn scale(&mut self, bgrx: &[u8]) {
@@ -340,6 +363,18 @@ impl GifBuilder {
     #[cfg(test)]
     fn frame_count(&self) -> usize {
         self.frames.len()
+    }
+
+    #[cfg(test)]
+    fn offer(&mut self, seconds: f64, width: u32, height: u32, bgrx: &[u8]) -> bool {
+        match self.wants(seconds) {
+            Wanted::Frame => {
+                self.take(width, height, bgrx);
+                true
+            }
+            Wanted::Skip => true,
+            Wanted::Stop => false,
+        }
     }
 
     /// Writes next to the destination first: an interrupted export leaves no broken GIF.
@@ -477,25 +512,25 @@ mod tests {
 
     #[test]
     fn frames_are_sampled_at_the_rate_like_gif_js() {
-        let mut gif = GifBuilder::new(4, 2, 12, 640);
+        let mut gif = GifBuilder::new(12, 640);
         let frame = solid_bgrx(4, 2, 1, 2, 3);
         for i in 0..90 {
-            assert!(gif.offer(f64::from(i) / 30.0, &frame));
+            assert!(gif.offer(f64::from(i) / 30.0, 4, 2, &frame));
         }
         assert_eq!(gif.frame_count(), 36, "3 s at 12 fps");
-        let mut slow = GifBuilder::new(4, 2, 12, 640);
+        let mut slow = GifBuilder::new(12, 640);
         for i in 0..30 {
-            assert!(slow.offer(f64::from(i) * 0.1, &frame));
+            assert!(slow.offer(f64::from(i) * 0.1, 4, 2, &frame));
         }
         assert_eq!(slow.frame_count(), 30, "a slower source keeps every frame");
     }
 
     #[test]
     fn sampling_stops_at_the_frame_limit() {
-        let mut gif = GifBuilder::new(2, 2, 12, 640);
+        let mut gif = GifBuilder::new(12, 640);
         let frame = solid_bgrx(2, 2, 1, 2, 3);
         let mut offered = 0;
-        while gif.offer(f64::from(offered), &frame) {
+        while gif.offer(f64::from(offered), 2, 2, &frame) {
             offered += 1;
             assert!(offered < 1000);
         }
@@ -505,9 +540,9 @@ mod tests {
     #[test]
     fn the_file_decodes_to_the_frames_with_one_global_palette_and_loops() {
         let out = temp("roundtrip.gif");
-        let mut gif = GifBuilder::new(8, 4, 12, 4);
+        let mut gif = GifBuilder::new(12, 4);
         for i in 0_u8..3 {
-            gif.offer(f64::from(i), &solid_bgrx(8, 4, 40 + i * 100, 10, 200 - i * 50));
+            gif.offer(f64::from(i), 8, 4, &solid_bgrx(8, 4, 40 + i * 100, 10, 200 - i * 50));
         }
         gif.finish(&out).unwrap();
 
@@ -531,7 +566,7 @@ mod tests {
     #[test]
     fn nothing_to_write_is_an_error_and_leaves_no_file() {
         let out = temp("empty.gif");
-        let gif = GifBuilder::new(8, 4, 12, 640);
+        let gif = GifBuilder::new(12, 640);
         assert!(gif.finish(&out).is_err());
         assert!(!out.exists());
     }

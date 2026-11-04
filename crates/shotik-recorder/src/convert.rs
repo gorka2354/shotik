@@ -41,6 +41,55 @@ pub fn bgra_to_nv12(bgra: &[u8], stride: usize, width: u32, height: u32, nv12: &
     }
 }
 
+/// How a YUV picture encodes colour.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum YuvMatrix {
+    Bt709,
+    Bt601,
+}
+
+/// Integer coefficients, times 1024: luma scale, then V to red, U and V to green, U to blue.
+fn yuv_coefficients(matrix: YuvMatrix, full_range: bool) -> (i32, i32, i32, i32, i32, i32) {
+    match (matrix, full_range) {
+        (YuvMatrix::Bt709, false) => (1192, 1836, 218, 546, 2163, 16),
+        (YuvMatrix::Bt709, true) => (1024, 1613, 192, 479, 1900, 0),
+        (YuvMatrix::Bt601, false) => (1192, 1634, 401, 832, 2066, 16),
+        (YuvMatrix::Bt601, true) => (1024, 1436, 352, 731, 1815, 0),
+    }
+}
+
+/// NV12 to tightly packed top-down BGRX. `luma` and `chroma` start at the first visible row, `pitch`
+/// bytes between rows of either plane; a chroma pair covers 2x2 pixels. `chroma_x` and `chroma_y` say
+/// how the visible area starts relative to the chroma grid, for a crop on odd coordinates.
+pub struct Nv12Planes<'a> {
+    pub luma: &'a [u8],
+    pub chroma: &'a [u8],
+    pub pitch: usize,
+    pub width: usize,
+    pub height: usize,
+}
+
+pub fn nv12_to_bgrx(planes: &Nv12Planes<'_>, matrix: YuvMatrix, full_range: bool, out: &mut Vec<u8>) {
+    let (scale, rv, gu, gv, bu, black) = yuv_coefficients(matrix, full_range);
+    let (w, h, pitch) = (planes.width, planes.height, planes.pitch);
+    out.resize(w * h * 4, 0);
+    for (row, target) in out.chunks_exact_mut(w * 4).enumerate() {
+        let luma = &planes.luma[row * pitch..row * pitch + w];
+        let chroma_row = (row / 2) * pitch;
+        let chroma = &planes.chroma[chroma_row..chroma_row + w.div_ceil(2) * 2];
+        for (x, (px, y)) in target.chunks_exact_mut(4).zip(luma).enumerate() {
+            let pair = (x / 2) * 2;
+            let u = i32::from(chroma[pair]) - 128;
+            let v = i32::from(chroma[pair + 1]) - 128;
+            let luma_term = (i32::from(*y) - black) * scale + 512;
+            px[0] = ((luma_term + bu * u) >> 10).clamp(0, 255) as u8;
+            px[1] = ((luma_term - gu * u - gv * v) >> 10).clamp(0, 255) as u8;
+            px[2] = ((luma_term + rv * v) >> 10).clamp(0, 255) as u8;
+            px[3] = 255;
+        }
+    }
+}
+
 /// JPEG of a top-down BGRA picture, at the quality `recorder.js` passes to `toBlob`.
 pub fn bgra_to_jpeg(bgra: &[u8], stride: usize, width: u32, height: u32) -> Result<Vec<u8>, String> {
     let mut rgb = Vec::with_capacity(width as usize * height as usize * 3);
@@ -100,6 +149,37 @@ mod tests {
         let mut nv12 = vec![0; nv12_len(2, 2)];
         bgra_to_nv12(&bgra, 32, 2, 2, &mut nv12);
         assert_eq!(&nv12[..4], &[16, 16, 16, 16]);
+    }
+
+    fn back_to_rgb(y: u8, u: u8, v: u8, matrix: YuvMatrix, full: bool) -> (u8, u8, u8) {
+        let (luma, chroma) = ([y, y, y, y], [u, v]);
+        let planes = Nv12Planes { luma: &luma, chroma: &chroma, pitch: 2, width: 2, height: 2 };
+        let mut out = Vec::new();
+        nv12_to_bgrx(&planes, matrix, full, &mut out);
+        assert_eq!(out.len(), 16);
+        (out[2], out[1], out[0])
+    }
+
+    fn close(a: (u8, u8, u8), b: (u8, u8, u8)) -> bool {
+        a.0.abs_diff(b.0) <= 2 && a.1.abs_diff(b.1) <= 2 && a.2.abs_diff(b.2) <= 2
+    }
+
+    #[test]
+    fn nv12_comes_back_to_the_colours_it_was_made_from() {
+        for (b, g, r) in [(0, 0, 0), (255, 255, 255), (0, 0, 255), (0, 255, 0), (255, 0, 0), (0x1c, 0x14, 0x12), (0xff, 0x5c, 0x7c)] {
+            let (y, u, v) = convert(b, g, r);
+            let back = back_to_rgb(y, u, v, YuvMatrix::Bt709, false);
+            assert!(close(back, (r, g, b)), "{:?} became {back:?}", (r, g, b));
+        }
+    }
+
+    #[test]
+    fn the_matrix_and_the_range_change_the_colour() {
+        // red in BT.601 limited range and in BT.709 full range
+        assert!(close(back_to_rgb(81, 90, 240, YuvMatrix::Bt601, false), (255, 0, 0)));
+        assert!(close(back_to_rgb(54, 99, 255, YuvMatrix::Bt709, true), (255, 0, 0)));
+        assert!(close(back_to_rgb(76, 85, 255, YuvMatrix::Bt601, true), (255, 0, 0)));
+        assert!(!close(back_to_rgb(81, 90, 240, YuvMatrix::Bt709, false), (255, 0, 0)));
     }
 
     #[test]
