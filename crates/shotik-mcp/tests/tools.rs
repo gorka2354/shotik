@@ -1,6 +1,5 @@
 mod common;
 
-use std::process::Command;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
@@ -10,34 +9,40 @@ use shotik_core::ports::{HistoryStore, MainEvent, RegionSelection};
 use shotik_core::{Frame, PointF};
 use tokio::time::timeout;
 
+/// Names and required arguments are what connected clients and their saved prompts rely on.
 #[tokio::test]
-async fn tool_names_descriptions_and_schemas_match_js_verbatim() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut command = Command::new("node");
-    command
-        .arg(root.join("tests/reference-tools.cjs"))
-        .arg(root.join("../../src/main/main.js"));
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
-    let reference = command
-        .output()
-        .expect("Node is required to compare the JS reference");
-    assert!(
-        reference.status.success(),
-        "{}",
-        String::from_utf8_lossy(&reference.stderr)
-    );
-    let reference: Value = serde_json::from_slice(&reference.stdout).unwrap();
+async fn tools_list_keeps_the_names_and_arguments_clients_rely_on() {
     let fixture = Fixture::new();
     let server = fixture.server();
     let port = server.start(0).await.unwrap();
     let response = rpc(port, json!({"id":1,"method":"tools/list"})).await;
     assert_eq!(response.status, 200);
-    assert_eq!(response.json()["result"]["tools"], reference);
-    assert_eq!(reference.as_array().unwrap().len(), 10);
+    let body = response.json();
+    let tools = body["result"]["tools"].as_array().unwrap();
+    let offered: Vec<(&str, Value)> = tools
+        .iter()
+        .map(|tool| (tool["name"].as_str().unwrap(), tool["inputSchema"]["required"].clone()))
+        .collect();
+    let none = Value::Null;
+    assert_eq!(
+        offered,
+        [
+            ("take_screenshot", none.clone()),
+            ("take_screenshot_region", json!(["x", "y", "width", "height"])),
+            ("list_windows", none.clone()),
+            ("capture_window", none.clone()),
+            ("ask_user_to_select_region", none.clone()),
+            ("get_last_screenshot", none.clone()),
+            ("list_screenshots", none.clone()),
+            ("list_recordings", none.clone()),
+            ("get_last_recording", none.clone()),
+            ("list_displays", none),
+        ]
+    );
+    for tool in tools {
+        assert!(!tool["description"].as_str().unwrap().is_empty(), "{}", tool["name"]);
+        assert_eq!(tool["inputSchema"]["type"], "object", "{}", tool["name"]);
+    }
     server.stop().await.unwrap();
 }
 

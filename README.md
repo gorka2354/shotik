@@ -19,7 +19,7 @@
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4" alt="Platform">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="MIT"></a>
   <img src="https://img.shields.io/badge/MCP-built--in-7c5cff" alt="MCP">
-  <img src="https://img.shields.io/badge/deps-Electron%20only-informational" alt="Zero deps">
+  <img src="https://img.shields.io/badge/built%20with-Rust-b7410e" alt="Rust">
 </p>
 
 ---
@@ -42,7 +42,7 @@ Most screenshots today don't go to a photo album — they go to **Claude/ChatGPT
 - **AI-first.** One keypress puts a shot straight into Claude Code, correctly. A built-in MCP server lets Claude *take* screenshots itself.
 - **Translate anything you can see.** Select text in any app — or even text baked into a Telegram post, a Steam page, an image or a video — and get an instant translation. No copy-paste, no browser tab.
 - **Speed without dialogs.** Capture → it's already in the clipboard, already on disk, ready to paste.
-- **Lightweight & honest.** One runtime dependency (Electron). No telemetry, no account, no cloud. ~0.5% of one CPU core at idle (see [Performance](#performance--privacy)).
+- **Lightweight & honest.** One native executable and nothing else. No telemetry, no account, no cloud. 3 MB of memory and no measurable CPU in the tray (see [Performance](#performance--privacy)).
 
 Think ShareX capture + Flameshot annotations + a DeepL-style translator + Claude, in one small MIT app.
 
@@ -114,7 +114,7 @@ Same region, fresh pixels, instant, no overlay. Perfect for iteration loops:
 fix the CSS → `Shift+PrtSc` → `Ctrl+V` to Claude → "see it now?". Survives restarts.
 
 ### ✦ Screen recording → video or GIF (`Ctrl+Alt+PrtSc`)
-Select a region (or a window, or the whole screen) and record it to **WebM**, with a floating
+Select a region (or a window, or the whole screen) and record it to **MP4** (H.264, hardware-encoded), with a floating
 controls bar (timer, pause, stop) and a live red border. Then **export any recording to GIF** in one
 click. Optional system-audio and microphone capture, 15–60 fps and a 3-2-1 countdown.
 
@@ -149,15 +149,15 @@ CLI too: `Shotik.exe --capture region|full|repeat|text|record|audio|translate`.
 
 ## Hotkeys
 
-| Action | Windows | macOS |
-|---|---|---|
-| Capture area | `PrtSc` | `⌘⇧2` |
-| Full screen (monitor under cursor) | `Ctrl+PrtSc` | `⌘⇧1` |
-| Repeat last area | `Shift+PrtSc` | `⌘⇧7` |
-| Extract text (Live Text) | `Ctrl+Shift+PrtSc` | `⌘⇧4` |
-| Record region → video / GIF | `Ctrl+Alt+PrtSc` | `⌘⇧6` |
-| Record audio (call, voice note) | `Ctrl+Alt+Shift+R` | `⌘⇧8` |
-| Translate selected text | `Ctrl+Alt+T` | `⌘⌥T` |
+| Action | Key |
+|---|---|
+| Capture area | `PrtSc` |
+| Full screen (monitor under cursor) | `Ctrl+PrtSc` |
+| Repeat last area | `Shift+PrtSc` |
+| Extract text (Live Text) | `Ctrl+Shift+PrtSc` |
+| Record region → video / GIF | `Ctrl+Alt+PrtSc` |
+| Record audio (call, voice note) | `Ctrl+Alt+Shift+R` |
+| Translate selected text | `Ctrl+Alt+T` |
 
 In the overlay: `Enter`/double-click — copy · `Ctrl+S` — save as · `P` — pin · `T` — OCR ·
 `A` — copy for Claude · `F` — whole screen · `1..0` — tools · `[` `]` — stroke width ·
@@ -168,30 +168,31 @@ In the overlay: `Enter`/double-click — copy · `Ctrl+S` — save as · `P` —
 **Prebuilt:** [Releases](https://github.com/gorka2354/shotik/releases) →
 `Shotik-Setup-x.x.x.exe` (installer with shortcuts) or `Shotik-x.x.x-portable.exe` (single file, no install).
 
-**From source:**
+**From source** (Rust 1.85 or newer):
 
 ```bash
 git clone https://github.com/gorka2354/shotik && cd shotik
-npm install
-npm start
+cargo build --release -p shotik
+target/release/shotik.exe
 ```
 
-Windows 10/11 (Node.js ≥ 20 to build). The app lives in the tray; quit via the tray menu.
+Windows 10 (2004 or newer) and Windows 11. The app lives in the tray; quit via the tray menu.
+Upgrading from an Electron version in place keeps your settings, history, autostart and shortcuts.
 
-**macOS (experimental):** `.dmg` builds (arm64 &amp; x64) are produced in Releases. OCR uses Apple Vision;
-window hover-snap and the translate bubble are Windows-only for now. Builds are unsigned:
-right-click → Open on first launch, and grant Screen Recording permission.
-
-**Microsoft Store:** packaging is ready (`npm run dist:store` builds the MSIX) — see [docs/STORE.md](docs/STORE.md).
+**macOS:** 2.0 is Windows-only for now. The last macOS build is the `.dmg` in
+[v1.3.1](https://github.com/gorka2354/shotik/releases/tag/v1.3.1).
 
 ## Performance &amp; privacy
 
-Shotik is meant to disappear into the tray and cost nothing while it's there.
+Shotik is meant to disappear into the tray and cost nothing while it's there. Version 2.0 is a native
+Rust binary; the table compares it with the last Electron build, on one machine, with one script
+([bench/run.js](bench/run.js)). More in [docs/PERF.md](docs/PERF.md).
 
-- **Idle CPU ≈ 0.5% of one core** — effectively nothing. Capture/record work only runs on demand.
+<!-- perf-table -->
+
 - **No telemetry, no account, no network** except the translation call you trigger (free service or your DeepL key). Screenshots stay on your disk.
-- **One runtime dependency: Electron.** No bundlers, no frameworks, no native modules.
-- **The select-to-translate watcher** is a small background helper (Windows UI Automation) that reads *whether* text is selected — it never logs keystrokes and never touches your clipboard. It runs **only** while "Translate bubble on selection" is enabled, and you can turn it off in Settings. Its process is plainly labelled (`selection-watch.ps1`) and self-exits if Shotik closes — nothing hidden.
+- **One executable, no runtime.** The overlay stays out of memory until you need it: after you close it, the app is back to a few megabytes.
+- **The select-to-translate watcher** runs inside the app and uses Windows UI Automation to read *whether* text is selected. It never logs keystrokes and never touches the clipboard. It runs **only** while "Translate bubble on selection" is on, and you can turn it off in Settings.
 
 ## For contributors: quality &amp; ghost mode
 
@@ -199,26 +200,35 @@ Tests never touch your desktop: windows are placed off-screen, the desktop is re
 global hotkeys aren't registered, and everything is driven over HTTP `/test/*` endpoints.
 
 ```bash
-npm test          # unit + ghost integration (translation, OCR, highlight detection, the bubble, the Text tab)
-npm run test:unit # fast, no Electron
+cargo test --workspace            # unit and integration tests of every crate
+cargo build --release -p shotik
+npm test                          # contract tests over HTTP against the built binary (needs Node.js and ffmpeg)
+node bench/run.js --impl rust --exe target/release/shotik.exe --label mine   # the numbers above
 ```
 
 The suite covers the parts that are easy to get subtly wrong: OCR faithfulness (small text is upscaled;
-Latin vs Cyrillic engines are disambiguated), selection-highlight detection, popup dismiss races, and
-the translate flow end-to-end. The README demo is rendered from code with
-[motion-engine](https://www.remotion.dev/) (Remotion).
+Latin vs Cyrillic engines are disambiguated), selection-highlight detection, popup dismiss races, real
+encoded recordings decoded and measured, and the translate flow end-to-end. See [AGENTS.md](AGENTS.md)
+for the rules and [docs/rust/](docs/rust/ARCHITECTURE.md) for the design.
 
 ## Architecture
 
 ```
-src/
-  main/        capture (desktopCapturer), history, OCR (WinRT / Apple Vision), translation,
-               selection watcher + highlight detection, MCP server (zero-deps HTTP), windows, i18n
-  overlay/     selection overlay: canvas, annotations, toolbar
-  app/         main window: gallery, Claude page, Text tab, settings
-  bubble/ translate-popup/ pin/ toast/   the small floating windows
+crates/
+  shotik-core/      pure logic and ports: settings, history, translation, OCR selection, i18n
+  shotik-win/       Windows adapters: capture, OCR (WinRT), UI Automation, hotkeys, tray, clipboard
+  shotik-recorder/  screen and audio recording: Graphics Capture, Media Foundation, WASAPI
+  shotik-mcp/       the MCP server
+  shotik-ui/        windows in Slint: overlay, main window, toast, pin, translate popup, recording bar
+  shotik-app/       the application: triggers, overlay results, selection flow, tray menu
+  shotik/           the binary, wires everything together
 ```
 
 ## License
 
-MIT
+MIT. The Electron version it replaced stays readable at tag
+[`electron-final`](https://github.com/gorka2354/shotik/tree/electron-final).
+
+The windows are drawn with [Slint](https://slint.dev), used under its royalty-free license.
+
+<a href="https://slint.dev"><img src="https://raw.githubusercontent.com/slint-ui/slint/master/logo/MadeWithSlint-logo-whitebg.png" height="36" alt="Made with Slint"></a>

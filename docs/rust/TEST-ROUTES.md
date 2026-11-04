@@ -1,10 +1,8 @@
 # Ghost UI test protocol
 
-`test/ghost/adapter.js` is the boundary between the same Node tests and either
-implementation. Select `SHOTIK_IMPL=electron` (default), or `SHOTIK_IMPL=rust`
-with `SHOTIK_BIN` pointing to the Rust executable. Both start with `--hidden
---test`, `SHOTIK_TEST=1`, `SHOTIK_GHOST=1`, the fake-screen PNG and translation
-stub. Never send real input, register hotkeys, activate windows or capture a real
+`test/ghost/adapter.js` is the boundary between the Node tests and the binary. `SHOTIK_BIN` points
+to the executable; by default it is `release/shotik.exe` under `CARGO_TARGET_DIR` or `target`. It starts
+with `--hidden --test`, `SHOTIK_TEST=1`, `SHOTIK_GHOST=1`, the fake-screen PNG and translation stub. Never send real input, register hotkeys, activate windows or capture a real
 display/audio device in these tests.
 
 The harness creates a fresh private `%APPDATA%/Shotik-Test`, `%TEMP%`, save
@@ -173,7 +171,7 @@ and, for screen recording, the border for rendered-meter tests/references.
 
 ## `overlay` state and reference actions
 
-Used by `test/reference-ui.js` to produce the UI specification from fake data.
+`docs/rust/reference-ui/` shows these states as Electron drew them, from fake data.
 
 ```json
 {

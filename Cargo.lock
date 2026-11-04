@@ -3871,7 +3871,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "shotik"
-version = "2.0.0-alpha.0"
+version = "2.0.0"
 dependencies = [
  "shotik-app",
  "shotik-core",
@@ -3885,7 +3885,7 @@ dependencies = [
 
 [[package]]
 name = "shotik-app"
-version = "2.0.0-alpha.0"
+version = "2.0.0"
 dependencies = [
  "chrono",
  "serde",
@@ -3898,7 +3898,7 @@ dependencies = [
 
 [[package]]
 name = "shotik-core"
-version = "2.0.0-alpha.0"
+version = "2.0.0"
 dependencies = [
  "chrono",
  "fast_image_resize",
@@ -3911,14 +3911,14 @@ dependencies = [
 
 [[package]]
 name = "shotik-fake"
-version = "2.0.0-alpha.0"
+version = "2.0.0"
 dependencies = [
  "shotik-core",
 ]
 
 [[package]]
 name = "shotik-mcp"
-version = "2.0.0-alpha.0"
+version = "2.0.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -3932,7 +3932,7 @@ dependencies = [
 
 [[package]]
 name = "shotik-recorder"
-version = "2.0.0-alpha.0"
+version = "2.0.0"
 dependencies = [
  "fast_image_resize",
  "gif",
@@ -3944,7 +3944,7 @@ dependencies = [
 
 [[package]]
 name = "shotik-ui"
-version = "2.0.0-alpha.0"
+version = "2.0.0"
 dependencies = [
  "chrono",
  "image",
@@ -3961,7 +3961,7 @@ dependencies = [
 
 [[package]]
 name = "shotik-win"
-version = "2.0.0-alpha.0"
+version = "2.0.0"
 dependencies = [
  "serde_json",
  "shotik-core",

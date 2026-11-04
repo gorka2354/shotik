@@ -2,7 +2,7 @@
 // Shotik benchmark: one scenario for the Electron and Rust builds.
 //
 //   node bench/run.js --impl electron --exe "%LOCALAPPDATA%\Programs\shotik\Shotik.exe" --label electron-1.3.0
-//   node bench/run.js --impl rust --exe target/release/shotik.exe --label rust-0.1.0
+//   node bench/run.js --impl rust --exe target/release/shotik.exe --label rust-2.0.0
 //
 // The instance runs in ghost mode: windows off-screen, no hotkeys, the desktop stays untouched.
 // Capture is REAL: screen frames and system audio reach only a temporary directory that is deleted
@@ -99,7 +99,10 @@ async function benchOverlay(results, port, pid) {
   for (let i = 0; i < N.overlays; i++) {
     const r = await post(port, 'trigger', { mode: 'region' });
     if (!r.overlayOpen) throw new Error(`overlay did not open (session ${i + 1})`);
-    const marks = parseMarks(await post(port, 'overlay-timing', {}));
+    const marks = await waitFor(async () => {
+      const m = parseMarks(await post(port, 'overlay-timing', {}));
+      return m.show === undefined ? null : m;
+    }, 'the overlay show mark');
     showTimes.push(marks.show);
     marksAll.push(marks);
     if (i === 0 || i === N.overlays - 1) duringPrivate = Math.max(duringPrivate, snapshot(pid).treePrivateMB);

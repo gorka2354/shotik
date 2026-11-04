@@ -1,5 +1,6 @@
 'use strict';
-// Test runner: `npm test` (unit + ghost) · `npm test unit` · `npm test ghost`.
+// Contract tests of the built binary: `npm test` (unit + ghost) · `npm test unit` · `npm test ghost`.
+// Rust's own tests run with `cargo test --workspace`.
 // Zero deps. Exits non-zero if anything fails so it can gate a release.
 const { runRegistered } = require('./tiny');
 
@@ -10,16 +11,7 @@ const which = process.argv[2] || 'all';
 
   if (which === 'all' || which === 'unit') {
     console.log('\n── unit ──');
-    require('./unit/translate.test.js');
-    require('./unit/highlight.test.js');
-    require('./unit/region-map.test.js');
-    require('./unit/accelerator.test.js');
-    require('./unit/recorder.test.js');
-    require('./unit/recorder-session.test.js');
-    require('./unit/webm-index.test.js');
-    require('./unit/mp4-index.test.js');
     require('./unit/ghost-adapter.test.js');
-    require('./unit/mcp-origin.test.js');
     const r = await runRegistered('unit › ');
     passed += r.passed; failed += r.failed;
   }

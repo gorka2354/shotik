@@ -9,11 +9,17 @@ const path = require('path');
 const { preserveClipboard } = require('./clipboard');
 
 const ROOT = path.join(__dirname, '..', '..');
-const ELECTRON = path.join(ROOT, 'node_modules', 'electron', 'dist', 'electron.exe');
 
-function makeApp({ port = 0, env = {}, impl = process.env.SHOTIK_IMPL || 'electron', settings = {}, history = [] } = {}) {
-  if (!['electron', 'rust'].includes(impl)) throw new Error('SHOTIK_IMPL must be electron or rust');
-  if (impl === 'rust' && !process.env.SHOTIK_BIN) throw new Error('SHOTIK_IMPL=rust requires SHOTIK_BIN');
+// Set SHOTIK_BIN, or build with `cargo build --release -p shotik` first.
+function binary() {
+  const exe = process.env.SHOTIK_BIN
+    || path.join(process.env.CARGO_TARGET_DIR || path.join(ROOT, 'target'), 'release', 'shotik.exe');
+  if (!fs.existsSync(exe)) throw new Error('no Shotik binary at ' + exe + ': build it or set SHOTIK_BIN');
+  return exe;
+}
+
+function makeApp({ port = 0, env = {}, settings = {}, history = [] } = {}) {
+  const exe = binary();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shotik-ghost-'));
   const appData = path.join(dir, 'appdata');
   const profile = path.join(appData, 'Shotik-Test');
@@ -22,13 +28,6 @@ function makeApp({ port = 0, env = {}, impl = process.env.SHOTIK_IMPL || 'electr
   for (const d of [profile, temp, saveDir]) fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ saveDir, ...settings }));
   fs.writeFileSync(path.join(profile, 'history.json'), JSON.stringify(history));
-  // Electron resolves appData using Windows known folders, ignoring APPDATA.
-  // Apply private paths in the entry point before loading frozen src/.
-  const pkg = require('../../package.json');
-  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({
-    name: pkg.name, productName: pkg.productName, version: pkg.version,
-    main: path.join(__dirname, 'electron-entry.js'),
-  }));
   const childEnv = {
     ...process.env, ...env,
     APPDATA: appData, TEMP: temp, TMP: temp,
@@ -37,7 +36,6 @@ function makeApp({ port = 0, env = {}, impl = process.env.SHOTIK_IMPL || 'electr
     SHOTIK_FAKE_SCREEN: path.join(ROOT, 'test', 'fake-screen.png'),
     SHOTIK_REAL_CAPTURE: '0', SHOTIK_POPUP_REAL: '0',
   };
-  delete childEnv.ELECTRON_RUN_AS_NODE;
   let child = null, stopped = false, clipboardGuard = null, ownsListener = false;
 
   function listenerPid() {
@@ -78,8 +76,7 @@ function makeApp({ port = 0, env = {}, impl = process.env.SHOTIK_IMPL || 'electr
         });
       });
       clipboardGuard = await preserveClipboard();
-      child = spawn(impl === 'electron' ? ELECTRON : process.env.SHOTIK_BIN,
-        impl === 'electron' ? [dir, '--hidden', '--test'] : ['--hidden', '--test'],
+      child = spawn(exe, ['--hidden', '--test'],
         { cwd: ROOT, env: childEnv, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
       child.stdout.resume(); child.stderr.resume();
       child.on('error', (e) => { child.launchError = e; });
@@ -87,7 +84,7 @@ function makeApp({ port = 0, env = {}, impl = process.env.SHOTIK_IMPL || 'electr
     const end = Date.now() + timeoutMs;
     while (Date.now() < end) {
       if (child.launchError) throw child.launchError;
-      if (child.exitCode !== null) throw new Error(impl + ' exited before ready: ' + child.exitCode);
+      if (child.exitCode !== null) throw new Error('Shotik exited before ready: ' + child.exitCode);
       const owner = listenerPid();
       if (owner && owner !== child.pid) throw new Error('test port belongs to another process: ' + port);
       if (owner === child.pid) {
@@ -122,9 +119,9 @@ function makeApp({ port = 0, env = {}, impl = process.env.SHOTIK_IMPL || 'electr
     }
   }
 
-  return { post, waitReady, stop, sleep, impl, dir, profile, saveDir, temp, childEnv,
+  return { post, waitReady, stop, sleep, dir, profile, saveDir, temp, childEnv,
     get port() { return port; },
     get child() { return child; } };
 }
 
-module.exports = { makeApp, ELECTRON };
+module.exports = { makeApp };

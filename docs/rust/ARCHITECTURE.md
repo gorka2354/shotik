@@ -1,9 +1,9 @@
 # Shotik in Rust: architecture
 
-Goal: replace the Electron app with a native Rust binary while keeping the behaviour in
-`CONTRACT.md`. Success is measured by `bench/run.js`, the same script against both versions.
-The first Rust release is Windows-only. macOS stays on the last Electron build until it has its
-own implementation of the platform ports; nothing in `shotik-core` may assume Windows.
+Shotik is a native Rust binary that replaced the Electron app while keeping the behaviour in
+`CONTRACT.md`. The numbers are in `docs/PERF.md`, from `bench/run.js`, the same script against both.
+It is Windows-only. macOS stays on the last Electron build, v1.3.1, until it has its own implementation
+of the platform ports; nothing in `shotik-core` may assume Windows.
 
 ## Layout
 
@@ -17,7 +17,6 @@ crates/
   shotik-ui/        All windows. Each window = pure state + view (see below).
   shotik-app/       Orchestration: triggers, overlay result handling, selection logic, tray menu.
   shotik/           Binary. Composition root only: picks real or fake ports, starts everything.
-spikes/             Throwaway prototypes, excluded from the workspace.
 ```
 
 Dependencies point inward: everything depends on `shotik-core`; `shotik-core` depends on nothing of
@@ -46,7 +45,7 @@ Other threads talk to the UI only through `UiPort`, which posts to the event loo
 
 ## UI toolkit: Slint on the software renderer
 
-Chosen from two prototypes on this machine (`spikes/` reports, numbers for a 3840x2160 window):
+Chosen from two throwaway prototypes, built and measured on one machine (a 3840x2160 window):
 
 | | Slint software | egui on DX12 | egui on glow |
 |---|---|---|---|
@@ -95,10 +94,10 @@ so they are not ported, unless a crash-safe fragmented file turns out to need it
 
 ## Testing layers
 
-1. Unit tests in each crate (`cargo test`), including everything ported from `test/unit/`.
-2. Contract tests in `test/ghost/`, Node.js over HTTP against a ghost instance, the same files for
-   Electron and Rust (`SHOTIK_IMPL=electron|rust`, see `test/ghost/adapter.js`).
-3. `bench/run.js` for numbers, on the same scenario as the Electron baseline in `bench/results/`.
+1. Unit tests in each crate (`cargo test --workspace`), including everything ported from the JS unit tests.
+2. Contract tests in `test/ghost/`, Node.js over HTTP against a ghost instance: the files that passed
+   against Electron, unchanged, now run against the binary (`npm test`, `SHOTIK_BIN`).
+3. `bench/run.js` for numbers, on the same scenario as the Electron baselines in `bench/results/`.
 
 Ghost mode is not full coverage: it skips real focus, real hotkeys and on-screen painting. Anything
 that depends on those needs a separate real-mode check with the user's agreement.

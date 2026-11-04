@@ -1,14 +1,14 @@
 # Shotik in Rust: behaviour contract
 
-The Rust binary must keep everything here. The reference is the JavaScript in `src/` at tag
-`electron-final`; file references below point to it. When this document and the reference disagree,
-the reference wins, except in "Accepted differences".
+The Rust binary keeps everything here. The reference is the JavaScript at tag `electron-final`, which
+is no longer in the tree: every `src/...` path below points to that tag. When this document and the
+reference disagree, the reference wins, except in "Accepted differences".
 
 ## Process
 
 - Arguments: `--hidden` (start in tray), `--test` (test mode), `--capture <region|full|repeat|text|record|audio|translate>`
   and `--capture=<mode>`. A second instance forwards its arguments to the first and exits; with no
-  `--capture` it shows the main window. Start-menu shortcuts in `build/installer.nsh` rely on this.
+  `--capture` it shows the main window. Start-menu shortcuts in `installer/shotik.nsi` rely on this.
 - Environment (`src/main/*.js`): `SHOTIK_TEST`, `SHOTIK_GHOST`, `SHOTIK_FAKE_SCREEN`, `SHOTIK_PORT`,
   `SHOTIK_SAVE_DIR`, `SHOTIK_TRANSLATE_STUB`, `SHOTIK_REAL_CAPTURE`, `SHOTIK_FORCE_CONTROLS`,
   `SHOTIK_POPUP_REAL`, `SHOTIK_TP_TTL`, `SHOTIK_WINCAP_FAIL`. Same meaning.
@@ -118,5 +118,20 @@ action shapes are in `docs/rust/TEST-ROUTES.md`. `exec-js` does not exist in Rus
 - **Display ids:** computed differently, so a `lastRegion` remembered by Electron falls back to the primary
   display once. Chromium's id did not survive a reboot anyway.
 - **Rendering:** no drawn soft shadows; windows use DWM rounded corners with the native shadow.
+  Panels have no `backdrop-filter` blur. Text is rendered by Slint, a little thinner than in Chromium.
+- **Voice processing:** best effort through the Communications audio category, instead of Chromium's
+  own echo cancellation. A driver that declines is not an error.
+- **Windows N and KN:** recording needs the Media Feature Pack, otherwise it fails with an explicit error.
+- **Microphone device ids:** Electron stored Chromium hashes. Such an id reports
+  `microphone:OverconstrainedError` until the device is chosen again; `default` carries over.
+- **Video without loopback:** the recording continues and reports `audio:system-unavailable`.
+- **GIF:** a real 12 fps, measured from the video's timestamps.
+- **Autostart path:** quoted in the registry value.
+- **`open_url`:** http and https only.
+- **Live Text:** an OCR answer that arrives after leaving Live Text is dropped; the JS drew it over the plain view.
+- **Snap rectangles:** computed from the display's physical origin; the JS formula was right on the primary only.
+- **Pixelate:** averages each block, where the canvas downscaled bilinearly.
+- **Bubble:** clicks count inside its visible circle, not the transparent 60 DIP window around it.
+- **Removed:** `scripts/repair-recording.js`, for files from 1.1.2 and older; it remains at the tag.
 
 Anything else that changes user-visible behaviour is a bug unless this list is updated by the lead.

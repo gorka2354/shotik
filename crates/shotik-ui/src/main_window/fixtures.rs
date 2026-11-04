@@ -78,7 +78,7 @@ impl PreviewHost {
     }
     fn response(&self) -> Value {
         let settings = self.settings.lock().unwrap().clone();
-        json!({"settings":settings,"version":"1.3.0","mcp":{"running":settings["mcp"]["enabled"] == true && self.mcp_running.load(Ordering::SeqCst),"port":settings["mcp"]["port"]},"mcpLog":[],"hotkeyErrors":[],"hasLastRegion":true})
+        json!({"settings":settings,"version":env!("CARGO_PKG_VERSION"),"mcp":{"running":settings["mcp"]["enabled"] == true && self.mcp_running.load(Ordering::SeqCst),"port":settings["mcp"]["port"]},"mcpLog":[],"hotkeyErrors":[],"hasLastRegion":true})
     }
 }
 

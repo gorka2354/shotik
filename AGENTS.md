@@ -1,9 +1,8 @@
 # Shotik: instructions for coding agents
 
-Shotik is an open-source Windows screenshot tool with a built-in MCP server. The current
-product is Electron (`src/`, tag `electron-final`). Branch `feat/rust-rewrite` rewrites it
-in Rust. Until cut-over the JavaScript in `src/` is the **reference implementation**: when a
-behaviour is unclear, read it, do not guess.
+Shotik is an open-source Windows screenshot tool with a built-in MCP server, written in Rust
+(`crates/`). The Electron version it replaced stays readable at tag `electron-final`: comments and docs
+that mention `src/...` point there. When a behaviour is unclear, read that code, do not guess.
 
 Read first: `docs/rust/ARCHITECTURE.md`, `docs/rust/CONTRACT.md`.
 

@@ -20,13 +20,12 @@ function arg(name, fallback = null) {
   return i === -1 ? fallback : process.argv[i + 1];
 }
 
-const IMPL = adapters[arg('impl', 'electron')];
+const IMPL = adapters[arg('impl', 'rust')];
 const EXE = path.resolve(arg('exe'));
 const HOURS = Number(arg('hours', 6));
 const CYCLE_MS = Number(arg('cycle', 60)) * 1000;
 const SAMPLE_MS = Number(arg('sample', 300)) * 1000;
 const OUT = path.resolve(arg('out', 'soak.jsonl'));
-const ENTRY = arg('entry') ? path.resolve(arg('entry')) : null;
 
 function empty(dir) {
   for (const f of fs.readdirSync(dir)) {
@@ -39,8 +38,8 @@ async function main() {
   const start = (name, port) => {
     const dir = path.join(tmp, name);
     fs.mkdirSync(path.join(dir, 'saved'), { recursive: true });
-    const args = ENTRY ? [ENTRY, ...IMPL.args] : IMPL.args;
-    const app = launch({ exe: EXE, args, cwd: path.dirname(EXE), port, env: { ...IMPL.env, SHOTIK_APPDATA: dir, TEMP: dir, TMP: dir } });
+    const args = IMPL.args;
+    const app = launch({ exe: EXE, args, cwd: path.dirname(EXE), port, env: { ...IMPL.env, APPDATA: dir, TEMP: dir, TMP: dir } });
     return { name, app, port, saved: path.join(dir, 'saved') };
   };
   const active = start('active', Number(arg('port', 7611)));

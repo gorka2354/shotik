@@ -45,97 +45,29 @@ pub fn t(lang: &str, key: &str, args: &[&str]) -> String {
 mod tests {
     use super::*;
 
-    /// Reads the literal string entries of the reference (no Node runtime needed by cargo test).
-    /// The source has comments, multiple entries per line and escaped single quotes.
-    fn reference_dictionary(lang: &str) -> Map<String, Value> {
-        let source = include_str!("../../../src/main/strings.js");
-        let start = source.find(&format!("  {lang}: {{")).unwrap();
-        let block = source[start..]
-            .split_once('{')
-            .unwrap()
-            .1
-            .split("\n  },")
-            .next()
-            .unwrap();
-        let mut chars = block.chars().peekable();
-        let mut map = Map::new();
-        while let Some(c) = chars.next() {
-            if c == '/' && chars.peek() == Some(&'/') {
-                for ch in chars.by_ref() {
-                    if ch == '\n' {
-                        break;
-                    }
-                }
-                continue;
-            }
-            if !c.is_ascii_alphabetic() && c != '_' {
-                continue;
-            }
-            let mut key = c.to_string();
-            while chars
-                .peek()
-                .is_some_and(|c| c.is_ascii_alphanumeric() || *c == '_')
-            {
-                key.push(chars.next().unwrap());
-            }
-            while chars.peek().is_some_and(|c| c.is_whitespace()) {
-                chars.next();
-            }
-            assert_eq!(chars.next(), Some(':'), "reference key {key}");
-            while chars.peek().is_some_and(|c| c.is_whitespace()) {
-                chars.next();
-            }
-            let quote = chars.next().unwrap();
-            assert!(matches!(quote, '\'' | '"'));
-            let mut value = String::new();
-            loop {
-                let ch = chars.next().expect("closing quote in strings.js");
-                if ch == quote {
-                    break;
-                }
-                value.push(if ch == '\\' {
-                    match chars.next().unwrap() {
-                        'n' => '\n',
-                        'r' => '\r',
-                        't' => '\t',
-                        ch => ch,
-                    }
-                } else {
-                    ch
-                });
-            }
-            assert!(
-                map.insert(key, Value::String(value)).is_none(),
-                "duplicate reference key"
-            );
-        }
-        map
-    }
-
+    /// A key missing from one language would show its raw name, and a placeholder missing from a
+    /// translation would silently drop a value from the sentence.
     #[test]
-    fn every_js_key_and_value_survives_in_both_languages() {
-        for lang in ["en", "ru"] {
-            let reference = reference_dictionary(lang);
-            assert_eq!(
-                reference.len(),
-                232,
-                "reference key count changed for {lang}"
-            );
-            assert_eq!(
-                dict(lang).len(),
-                reference.len(),
-                "{lang} key count vs strings.js"
-            );
-            assert_eq!(
-                dict(lang),
-                reference,
-                "{lang} keys and full strings vs strings.js"
-            );
+    fn both_languages_have_the_same_keys_and_placeholders() {
+        let placeholders = |text: &str| {
+            let mut found: Vec<String> = text
+                .split('{')
+                .skip(1)
+                .filter_map(|rest| rest.split_once('}').map(|(inside, _)| inside.to_string()))
+                .filter(|inside| !inside.is_empty() && inside.chars().all(|c| c.is_ascii_digit()))
+                .collect();
+            found.sort();
+            found.dedup();
+            found
+        };
+        let (en, ru) = (dict("en"), dict("ru"));
+        assert!(en.len() >= 232, "strings were lost: {}", en.len());
+        assert_eq!(en.keys().collect::<Vec<_>>(), ru.keys().collect::<Vec<_>>());
+        for (key, value) in &en {
+            let (english, russian) = (value.as_str().unwrap(), ru[key].as_str().unwrap());
+            assert!(!english.is_empty() && !russian.is_empty(), "{key} is empty");
+            assert_eq!(placeholders(english), placeholders(russian), "{key}");
         }
-        assert_eq!(
-            dict("en").keys().collect::<Vec<_>>(),
-            dict("ru").keys().collect::<Vec<_>>()
-        );
     }
 
     #[test]

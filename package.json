@@ -1,110 +1,15 @@
 {
-  "name": "shotik",
-  "productName": "Shotik",
-  "version": "1.3.1",
-  "description": "Beautiful open-source screenshot tool with built-in MCP server — let Claude see your screen",
-  "main": "src/main/main.js",
+  "name": "shotik-contract-tests",
+  "private": true,
+  "description": "Contract tests and benchmarks of the Shotik binary. The app itself is Rust: see crates/.",
   "license": "MIT",
-  "author": "Shotik contributors",
-  "homepage": "https://github.com/gorka2354/shotik",
   "repository": {
     "type": "git",
     "url": "https://github.com/gorka2354/shotik.git"
   },
   "scripts": {
-    "start": "electron .",
-    "dev": "electron . --dev",
-    "dist": "electron-builder --win",
-    "dist:store": "electron-builder --win appx",
     "test": "node test/run-tests.js",
     "test:unit": "node test/run-tests.js unit",
     "test:ghost": "node test/run-tests.js ghost"
-  },
-  "devDependencies": {
-    "electron": "^33.0.0",
-    "electron-builder": "^25.1.8",
-    "pngjs": "^7.0.0"
-  },
-  "build": {
-    "appId": "dev.shotik.app",
-    "productName": "Shotik",
-    "directories": {
-      "output": "dist"
-    },
-    "files": [
-      "src/**/*",
-      "assets/**/*",
-      "package.json"
-    ],
-    "asarUnpack": [
-      "src/main/ocr.ps1",
-      "src/main/windows-enum.ps1",
-      "src/main/capture-window.ps1",
-      "src/main/ocr-mac.js",
-      "src/main/copy-selection.ps1",
-      "src/main/selection-watch.ps1"
-    ],
-    "win": {
-      "icon": "assets/icon.png",
-      "target": [
-        {
-          "target": "portable",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ]
-    },
-    "nsis": {
-      "oneClick": true,
-      "artifactName": "Shotik-Setup-${version}.exe",
-      "shortcutName": "Shotik",
-      "include": "build/installer.nsh"
-    },
-    "appx": {
-      "applicationId": "Shotik",
-      "identityName": "REPLACE.WithIdentityFromPartnerCenter",
-      "publisher": "CN=REPLACE-WITH-PUBLISHER-ID-FROM-PARTNER-CENTER",
-      "publisherDisplayName": "gorka2354",
-      "backgroundColor": "#202020",
-      "languages": [
-        "en-US",
-        "ru-RU"
-      ]
-    },
-    "portable": {
-      "artifactName": "Shotik-${version}-portable.exe"
-    },
-    "mac": {
-      "icon": "assets/icon.png",
-      "category": "public.app-category.productivity",
-      "identity": null,
-      "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
-        }
-      ]
-    },
-    "dmg": {
-      "artifactName": "Shotik-${version}-${arch}.dmg"
-    },
-    "publish": {
-      "provider": "github",
-      "owner": "gorka2354",
-      "repo": "shotik"
-    }
-  },
-  "dependencies": {
-    "gifenc": "^1.0.3"
   }
 }

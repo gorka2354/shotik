@@ -24,7 +24,7 @@ test('ghost adapter: readiness waits for main UI after the HTTP listener', async
 test('ghost adapter: Rust operations preserve route bodies and results', async () => {
   const calls = [];
   const value = { marker: 'actual result' };
-  const app = createAdapter({ impl: 'rust', post: async (route, body) => { calls.push([route, body]); return value; } });
+  const app = createAdapter({ post: async (route, body) => { calls.push([route, body]); return value; } });
   const patch = { recording: { microphone: false } };
   const region = { displayId: 7, rectDip: { x: 1, y: 2, w: 3, h: 4 }, rectPhys: { x: 2, y: 4, w: 6, h: 8 } };
   eq(await app.settingsSet(patch), value);
@@ -45,7 +45,7 @@ test('ghost adapter: Rust operations preserve route bodies and results', async (
 test('ghost adapter: Rust UI actions and snapshots stay semantic and indexed', async () => {
   const calls = [];
   const snapshot = { original: 'hello', translated: '', loading: true };
-  const app = createAdapter({ impl: 'rust', post: async (route, body) => { calls.push([route, body]); return snapshot; } });
+  const app = createAdapter({ post: async (route, body) => { calls.push([route, body]); return snapshot; } });
   eq(await app.uiState('tp'), snapshot);
   const action = { type: 'select', rect: { x: 20, y: 30, w: 320, h: 180 } };
   eq(await app.uiAction('overlay', action, 1), snapshot);
@@ -59,7 +59,7 @@ test('ghost adapter: Rust UI actions and snapshots stay semantic and indexed', a
 
 test('ghost adapter: Rust diagnostics do not invent successful finalization', async () => {
   const diagnostics = { audioCodec: null, indexed: false, screenVideoTracks: null, screenAudioTracks: null };
-  const app = createAdapter({ impl: 'rust', post: async (route, body) => {
+  const app = createAdapter({ post: async (route, body) => {
     eq([route, body], ['ui-state', { target: 'rec-controls' }]);
     return { meters: [], diagnostics };
   } });
@@ -67,12 +67,8 @@ test('ghost adapter: Rust diagnostics do not invent successful finalization', as
 });
 
 test('ghost adapter: accepted format and fallback differences stay explicit', () => {
-  const electron = createAdapter({ impl: 'electron' });
-  const rust = createAdapter({ impl: 'rust' });
-  eq([electron.videoExtension('auto'), electron.videoExtension('mp4')], ['webm', 'mp4']);
+  const rust = createAdapter({ post: async () => null });
   eq([rust.videoExtension('auto'), rust.videoExtension('mp4')], ['mp4', 'mp4']);
-  assert(electron.isCaptureFallback('Captured window via desktopCapturer'));
-  assert(!electron.isCaptureFallback('Captured window via printwindow'));
   assert(rust.isCaptureFallback('Captured window via windows-graphics-capture'));
   assert(!rust.isCaptureFallback('Captured window via printwindow'));
   assert(!rust.isCaptureFallback('Captured window without a method'));

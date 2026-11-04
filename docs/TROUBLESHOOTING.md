@@ -1,35 +1,31 @@
-# Installed Shotik writes over the terminal UI (Windows)
+# Troubleshooting (Windows)
 
-Launching Shotik from an interactive terminal with `Start-Process ... --hidden`
-can leave its output handles attached to that terminal. Chromium's native
-DXGI diagnostics then appear over the terminal application's interface.
-`--hidden` hides Shotik's window; it does not redirect its output.
+## The app does not start
 
-In `src/main/capture.js`, `keepWarm()` requests a screen thumbnail every 30
-seconds. If Windows desktop duplication fails, Chromium can emit native errors
-on this schedule even though the JavaScript request is caught. This identifies
-the source of terminal output, not the underlying reason for a DXGI failure.
+A failure before any window exists is written to `%TEMP%\shotik-fatal.log`. If Shotik is already running,
+a second launch only forwards its arguments to the first instance and exits: look for the tray icon.
 
-For maintenance launches, quit the existing Shotik instance from its tray menu,
-then run from the repository:
+## Claude cannot reach the MCP server
 
-```powershell
-node scripts/start-installed-windows.js
-```
+Shotik listens on `127.0.0.1:7464`. If another program holds the port, Shotik says so in a toast
+("MCP server failed to start") and on the Claude page. Requests with a foreign `Host` or `Origin` get
+HTTP 403: this is what keeps web pages from reaching the server, so connect from a local client.
 
-The launcher requires Node.js and the standard per-user Windows installation.
-It detaches the process, redirects stdout/stderr and sends Chromium diagnostics
-to timestamped files in `%LOCALAPPDATA%\Shotik\logs`. If another instance is
-still running, Shotik's single-instance lock keeps that old process and its
-original output handles; launching a second copy does not repair them.
+## Recording fails right away
 
-This is for starting the installed application after local maintenance. Normal
-launches through Explorer or the Start menu do not require Node.js.
+- **Windows N or KN editions** have no Media Foundation until the
+  [Media Feature Pack](https://support.microsoft.com/help/4516397) is installed. Shotik reports this as
+  an error instead of writing an empty file.
+- **A microphone selected in an older version** may be reported as unavailable: Electron stored its own
+  device ids. Pick the device again in Settings → Screen recording. The system-default choice carries over.
 
-Verified locally on 2026-09-09: the detached installed process retained its MCP
-listener on `127.0.0.1:7464` after the launch shell exited, and a real region
-screenshot succeeded. This does not establish the cause of the earlier Windows
-DXGI errors or replace the separate microphone audibility check.
+## After an upgrade from an Electron version
 
-References: [Electron logging switches](https://www.electronjs.org/docs/latest/api/command-line-switches),
-[Node.js detached processes](https://nodejs.org/api/child_process.html#optionsdetached).
+Settings, history and screenshots stay where they were, in `%APPDATA%\Shotik`. Fields that a new version
+cannot read are reset one by one, so one damaged value costs that value only. The last Electron build,
+including the macOS DMG, is [v1.3.1](https://github.com/gorka2354/shotik/releases/tag/v1.3.1).
+
+## Uninstalling
+
+Uninstalling removes the program, its shortcuts and its autostart entry. Your settings, history and
+screenshots stay on disk: delete `%APPDATA%\Shotik` and your screenshots folder yourself if you want them gone.
