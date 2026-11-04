@@ -740,6 +740,163 @@ const sections = {
     await P('settings-set', { patch: { audioRecording: { systemAudio: true, microphone: false }, recording: { microphoneDeviceId: 'default' } } });
   },
 
+  async overlay_keys() {
+    const m = monitors.find((x) => !x.primary) || monitors[0];
+    // F takes the whole screen.
+    let { ok } = await openOverlay(m);
+    if (!L.check('overlay for its keys', ok)) return;
+    await L.key(app.pid, VK.f);
+    let s = await overlayState();
+    L.check('F selects the whole monitor', s.selection && near(s.selection.w, m.w, 1) && near(s.selection.h, m.h, 1), JSON.stringify(s.selection));
+    await L.key(app.pid, VK.esc);
+    await sleep(120);
+    await closeOverlay();
+    // C copies the colour under the cursor.
+    ({ ok } = await openOverlay(m));
+    if (ok) {
+      await L.move(m.x + 300, m.y + 300);
+      await sleep(120);
+      await L.key(app.pid, VK.c);
+      await until(async () => !(await P('state')).overlayOpen, 1500);
+      await sleep(200);
+      const clip = await call('clip');
+      L.check('C copies the colour under the cursor', /^#[0-9a-f]{6}$/i.test(clip.text || ''), clip.text || 'no text');
+    }
+    // A copies for Claude: picture and path.
+    ({ ok } = await openOverlay(m));
+    if (ok) {
+      await L.drag([app.pid], m.x + 200, m.y + 200, m.x + 600, m.y + 500);
+      await L.key(app.pid, VK.a);
+      await until(async () => !(await P('state')).overlayOpen, 1500);
+      await sleep(300);
+      const clip = await call('clip');
+      L.check('A puts both the picture and its path on the clipboard', clip.hasImage && /\.png/i.test(clip.text || ''), `image ${clip.hasImage}, text ${clip.text ? path.extname(clip.text) : 'none'}`);
+    }
+    // A double click inside the selection copies.
+    ({ ok } = await openOverlay(m));
+    if (ok) {
+      await L.drag([app.pid], m.x + 250, m.y + 250, m.x + 650, m.y + 450);
+      await L.click([app.pid], m.x + 400, m.y + 350, { twice: true });
+      const closed = await until(async () => !(await P('state')).overlayOpen, 1500);
+      await sleep(250);
+      const clip = await call('clip');
+      L.check('a double click inside the selection copies it', closed && clip.hasImage && near(clip.w, 400, 3) && near(clip.h, 200, 3), `${clip.w}x${clip.h}`);
+    }
+  },
+
+  async toolbar_mouse() {
+    const m = monitors.find((x) => !x.primary) || monitors[0];
+    const { ok } = await openOverlay(m);
+    if (!L.check('overlay for the toolbar', ok)) return;
+    await L.drag([app.pid], m.x + 400, m.y + 200, m.x + 1000, m.y + 600);
+    // At 100% the toolbar is centred under the selection, 720 wide, with its middle 36 below it.
+    const centre = m.x + 700, row = m.y + 636;
+    await L.click([app.pid], centre - 305, row);
+    await sleep(150);
+    let s = await overlayState();
+    L.check('a real click on the pen button selects the pen', s.tool === 'pen', s.tool);
+    await L.drag([app.pid], m.x + 500, m.y + 300, m.x + 800, m.y + 500, { steps: 12 });
+    s = await overlayState();
+    L.check('and it draws', s.annotationCount === 1, String(s.annotationCount));
+    await shot('toolbar', { x: m.x + 300, y: m.y + 150, w: 900, h: 560 }, 1);
+    await L.click([app.pid], centre + 300, row);
+    const closed = await until(async () => !(await P('state')).overlayOpen, 2000);
+    await sleep(300);
+    const clip = await call('clip');
+    L.check('a real click on the copy button copies with the annotation', closed && clip.hasImage && near(clip.w, 600, 3) && near(clip.h, 400, 3), `${clip.w}x${clip.h}`);
+  },
+
+  async russian_layout() {
+    const m = monitors.find((x) => x.primary);
+    const { ok, } = await openOverlay(m);
+    if (!L.check('overlay for the Russian layout', ok)) return;
+    const fg = await call('fg');
+    const original = fg.layout;
+    const WM_INPUTLANGCHANGEREQUEST = 0x50, RUSSIAN = 0x04190419;
+    await call('post', { hwnd: fg.hwnd, msg: WM_INPUTLANGCHANGEREQUEST, w: 0, l: RUSSIAN });
+    await sleep(300);
+    const now = await call('fg');
+    try {
+      if (!L.check('the overlay thread switched to Russian', now.layout === '04190419', now.layout)) return;
+      await L.drag([app.pid], m.x + 300, m.y + 300, m.x + 1500, m.y + 1100);
+      await L.key(app.pid, digit(2));
+      let s = await overlayState();
+      L.check('in Russian, the digit keys still pick tools', s.tool === 'pen', s.tool);
+      await L.drag([app.pid], m.x + 500, m.y + 500, m.x + 900, m.y + 800, { steps: 12 });
+      await L.key(app.pid, VK.ctrl, VK.z);
+      s = await overlayState();
+      L.check('Ctrl+Z works by physical key', s.annotationCount === 0, String(s.annotationCount));
+      await L.key(app.pid, digit(9));
+      await L.click([app.pid], m.x + 1000, m.y + 500);
+      await sleep(120);
+      for (const key of [0x47, 0x48, 0x42, 0x44, 0x54, 0x4E]) await L.key(app.pid, key); // g h b d t n
+      await sleep(150);
+      s = await overlayState();
+      L.check('physical keys type Russian letters in the editor', s.editorText === 'привет', s.editorText);
+      await L.key(app.pid, VK.esc);
+      await sleep(100);
+      await L.key(app.pid, digit(1));
+      const before = (await overlayState()).selection;
+      await L.key(app.pid, VK.p);
+      const closed = await until(async () => !(await P('state')).overlayOpen, 1500);
+      L.check('P pins by physical key', closed && before, 'closed ' + closed);
+      await sleep(300);
+      const pin = (await list()).find((x) => x.w > 300);
+      if (pin) {
+        await L.click([app.pid], pin.x + 100, pin.y + 100, { button: 'right' });
+        await until(async () => (await list()).find((x) => x.cls === '#32768'), 1500);
+        await L.key(app.pid, VK.up);
+        await L.key(app.pid, VK.enter);
+        await until(async () => !(await list()).find((x) => x.hwnd === pin.hwnd), 1500);
+      }
+    } finally {
+      await closeOverlay();
+      await sleep(150);
+      // The layout is global on this Windows: ask whatever window has the keyboard now to change it back.
+      for (let i = 0; i < 5 && (await call('fg')).layout !== original; i++) {
+        await call('post', { hwnd: (await call('fg')).hwnd, msg: WM_INPUTLANGCHANGEREQUEST, w: 0, l: parseInt(original.slice(0, 8), 16) });
+        await sleep(300);
+      }
+      const restored = (await call('fg')).layout;
+      L.check('the keyboard layout is back as it was', restored === original, `${restored}, it was ${original}`);
+    }
+  },
+
+  async record_controls() {
+    await P('settings-set', { patch: { recording: { systemAudio: false, microphone: false, countdown: false } } });
+    const m = monitors.find((x) => x.primary);
+    const { ok } = await openOverlay(m, VK.f7);
+    if (!L.check('overlay to record', ok)) return;
+    await L.drag([app.pid], m.x + 500, m.y + 400, m.x + 1300, m.y + 1000);
+    const rec = await until(async () => (await P('record-status')).recording, 4000, 80);
+    if (!L.check('recording starts without a countdown', rec)) return;
+    await sleep(500);
+    const controls = (await list()).find((w) => w.h < 120 && w.w > 200 && !w.transparent);
+    if (!L.check('the controls are there', !!controls)) return;
+    // Measured from the right edge in DIP: see rec_controls.slint.
+    const scale = controls.dpi / 96;
+    const at = (fromRight) => ({ x: controls.x + controls.w - Math.round(fromRight * scale), y: controls.y + Math.round(24 * scale) });
+    const pause = at(96), stop = at(60);
+    await L.click([app.pid], pause.x, pause.y);
+    const paused = await until(async () => (await P('record-status')).paused === true, 1500, 60);
+    L.check('a real click on Pause pauses', paused);
+    await sleep(600);
+    await shot('controls-paused', { x: controls.x - 20, y: controls.y - 20, w: controls.w + 40, h: controls.h + 40 }, 1);
+    await L.click([app.pid], pause.x, pause.y);
+    const resumed = await until(async () => (await P('record-status')).paused === false, 1500, 60);
+    L.check('and again resumes', resumed);
+    await sleep(800);
+    await L.click([app.pid], stop.x, stop.y);
+    const stopped = await until(async () => !(await P('record-status')).recording, 4000, 80);
+    L.check('a real click on Stop stops', stopped);
+    await sleep(400);
+    const item = asList(await P('history-list', { limit: 1 }))[0];
+    const file = item && (item.path || item.file);
+    L.check('the file is saved', file && fs.existsSync(file), file ? path.basename(file) : '');
+    L.check('the controls are gone', !(await list()).find((w) => w.hwnd === controls.hwnd));
+    await P('settings-set', { patch: { recording: { systemAudio: true, microphone: false, countdown: true } } });
+  },
+
   async second_instance() {
     const r = spawnSync(EXE, ['--capture', 'region'], { env: app.env, timeout: 10000, windowsHide: true });
     L.check('a second start forwards and exits', r.status === 0, `status ${r.status}`);
