@@ -91,13 +91,22 @@ struct Watchers {
 }
 
 impl Watchers {
-    fn on_message(&mut self, read: impl Fn() -> Theme) {
+    /// What to tell whom, if anything. The callbacks run after the lock is released: one may well call
+    /// back into `watch`.
+    fn on_message(&mut self, read: impl Fn() -> Theme) -> Option<(Theme, Vec<Callback<Theme>>)> {
         let now = read();
-        if now != self.last {
-            self.last = now.clone();
-            for callback in &self.callbacks {
-                callback(now.clone());
-            }
+        if now == self.last {
+            return None;
+        }
+        self.last = now.clone();
+        Some((now, self.callbacks.clone()))
+    }
+}
+
+fn notify(change: Option<(Theme, Vec<Callback<Theme>>)>) {
+    if let Some((theme, callbacks)) = change {
+        for callback in callbacks {
+            callback(theme.clone());
         }
     }
 }
@@ -126,9 +135,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         // outlives the window because the owning Arc is held by the thread running this procedure.
         let watchers = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *const Mutex<Watchers>;
         if let Some(watchers) = unsafe { watchers.as_ref() } {
-            if let Ok(mut watchers) = watchers.lock() {
-                watchers.on_message(read_theme);
-            }
+            let change = watchers.lock().ok().and_then(|mut w| w.on_message(read_theme));
+            notify(change);
         }
     }
     // SAFETY: the standard default for everything not handled above.
@@ -323,13 +331,13 @@ mod tests {
                 f.fetch_add(1, Ordering::SeqCst);
             })],
         };
-        w.on_message(|| theme(false, "#000000"));
+        notify(w.on_message(|| theme(false, "#000000")));
         assert_eq!(fired.load(Ordering::SeqCst), 0, "same theme: silent");
-        w.on_message(|| theme(true, "#000000"));
+        notify(w.on_message(|| theme(true, "#000000")));
         assert_eq!(fired.load(Ordering::SeqCst), 1, "dark changed");
-        w.on_message(|| theme(true, "#123456"));
+        notify(w.on_message(|| theme(true, "#123456")));
         assert_eq!(fired.load(Ordering::SeqCst), 2, "accent changed");
-        w.on_message(|| theme(true, "#123456"));
+        notify(w.on_message(|| theme(true, "#123456")));
         assert_eq!(fired.load(Ordering::SeqCst), 2, "a repeat of the same change is silent");
     }
 
