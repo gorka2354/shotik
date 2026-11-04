@@ -92,7 +92,7 @@ async function stop(app) {
 
 // Snapshot of a process tree: memory and accumulated CPU time.
 function snapshot(rootPid) {
-  const cmd = 'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,PrivatePageCount,WorkingSetSize,KernelModeTime,UserModeTime | ConvertTo-Json -Compress';
+  const cmd = 'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,HandleCount,PrivatePageCount,WorkingSetSize,KernelModeTime,UserModeTime | ConvertTo-Json -Compress';
   const all = JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', cmd], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }));
   const ids = new Set([rootPid]);
   for (let grew = true; grew;) {
@@ -110,6 +110,7 @@ function snapshot(rootPid) {
     rootPrivateMB: mb(root.PrivatePageCount),
     treePrivateMB: mb(tree.reduce((s, p) => s + p.PrivatePageCount, 0)),
     treeWorkingSetMB: mb(tree.reduce((s, p) => s + p.WorkingSetSize, 0)),
+    treeHandles: tree.reduce((s, p) => s + Number(p.HandleCount || 0), 0),
     cpuMs: tree.reduce((s, p) => s + Number(p.KernelModeTime || 0) + Number(p.UserModeTime || 0), 0) / 10000,
   };
 }

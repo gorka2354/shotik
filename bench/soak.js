@@ -64,7 +64,7 @@ async function main() {
           write({
             t: Math.round((Date.now() - t0) / 1000), name: inst.name,
             cycles: inst === active ? cycles : 0, failures: inst === active ? failures : 0,
-            procs: s.procs, rootPrivateMB: s.rootPrivateMB, treePrivateMB: s.treePrivateMB, treeWorkingSetMB: s.treeWorkingSetMB,
+            procs: s.procs, rootPrivateMB: s.rootPrivateMB, treePrivateMB: s.treePrivateMB, treeWorkingSetMB: s.treeWorkingSetMB, treeHandles: s.treeHandles,
           });
         }
       }
