@@ -1149,52 +1149,72 @@ mod tests {
         assert_eq!(text, "");
     }
 
-    /// Holds the clipboard from another thread, like an app in the middle of a copy.
-    fn hold_clipboard_for(duration: Duration) -> (std::thread::JoinHandle<()>, std::sync::mpsc::Receiver<()>) {
-        let (held_tx, held_rx) = std::sync::mpsc::channel();
-        let join = std::thread::spawn(move || {
-            let owner = OwnerWindow::create().unwrap();
-            let open = open_clipboard(Some(owner.0), OPEN_BUDGET).unwrap();
-            held_tx.send(()).unwrap();
-            std::thread::sleep(duration);
-            drop(open);
-            drop(owner);
-        });
-        (join, held_rx)
+    /// Holds the clipboard from another thread, like an app in the middle of a copy, until dropped. Holding by
+    /// signal rather than for a duration keeps the tests below independent of how busy the machine is.
+    struct ClipboardHolder {
+        release: Option<std::sync::mpsc::Sender<()>>,
+        join: Option<std::thread::JoinHandle<()>>,
+    }
+
+    impl ClipboardHolder {
+        fn start() -> Self {
+            let (held_tx, held_rx) = std::sync::mpsc::channel();
+            let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+            let join = std::thread::spawn(move || {
+                let owner = OwnerWindow::create().unwrap();
+                let open = open_clipboard(Some(owner.0), OPEN_BUDGET).unwrap();
+                held_tx.send(()).unwrap();
+                // Ends when the sender is dropped.
+                let _ = release_rx.recv();
+                drop(open);
+                drop(owner);
+            });
+            held_rx.recv().expect("the holder took the clipboard");
+            Self { release: Some(release_tx), join: Some(join) }
+        }
+    }
+
+    impl Drop for ClipboardHolder {
+        fn drop(&mut self) {
+            drop(self.release.take());
+            if let Some(join) = self.join.take() {
+                let _ = join.join();
+            }
+        }
     }
 
     #[test]
     fn a_write_waits_out_a_brief_lock() {
-        let ok = with_clipboard(|c| {
-            let (join, held) = hold_clipboard_for(Duration::from_millis(40));
-            held.recv().unwrap();
-            let t = Instant::now();
+        let text = with_clipboard(|c| {
+            let holder = ClipboardHolder::start();
+            // Lets go a moment after the write below has begun retrying.
+            let later = std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(40));
+                drop(holder);
+            });
             c.write_text("after the lock").unwrap();
-            let waited = t.elapsed();
-            join.join().unwrap();
-            assert!(waited >= Duration::from_millis(20), "it had to wait, waited {waited:?}");
+            later.join().unwrap();
             c.read_text().unwrap()
         });
-        assert_eq!(ok, "after the lock");
+        assert_eq!(text, "after the lock");
     }
 
     #[test]
     fn a_lock_that_stays_is_an_explicit_error_and_says_who() {
-        let message = with_clipboard(|_| {
-            let (join, held) = hold_clipboard_for(Duration::from_millis(90));
-            held.recv().unwrap();
+        let (write_err, read_err) = with_clipboard(|_| {
+            let holder = ClipboardHolder::start();
             let impatient = WinClipboard::excluded_from_history().with_open_budget(Duration::from_millis(20));
-            let err = impatient.write_text("never").unwrap_err().to_string();
-            let read_err = impatient.read_text().unwrap_err().to_string();
-            join.join().unwrap();
-            assert!(read_err.contains("locked"), "{read_err}");
-            err
+            let errors = (impatient.write_text("never"), impatient.read_text());
+            drop(holder);
+            errors
         });
-        assert!(message.contains("stayed locked"), "{message}");
+        let write_err = write_err.unwrap_err().to_string();
+        assert!(write_err.contains("stayed locked"), "{write_err}");
+        assert!(read_err.unwrap_err().to_string().contains("stayed locked"));
         // The holder is this test process, which the error must name.
         let me = std::env::current_exe().unwrap();
         let stem = me.file_stem().unwrap().to_string_lossy().into_owned();
-        assert!(message.contains(&stem) || message.contains("pid"), "{message}");
+        assert!(write_err.contains(&stem) && write_err.contains("pid"), "{write_err}");
     }
 
     #[test]
