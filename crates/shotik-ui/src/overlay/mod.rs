@@ -225,17 +225,22 @@ fn open_window(session_id: u64, pending: Pending) -> Result<()> {
     opened.unwrap_or(Ok(()))
 }
 
-/// The session cannot go on: tell the user and end it, so it cannot hang unseen.
-fn fail_session(message: &str) {
-    eprintln!("overlay session failed: {message}");
+/// Tells the user, the way the application reports a failed capture.
+fn show_problem(title_key: &str, message: &str) {
+    eprintln!("overlay: {message}");
     crate::toast::show(Toast {
         kind: "text".into(),
-        title: runtime::tr("recFailTitle").to_string(),
+        title: runtime::tr(title_key).to_string(),
         body: message.chars().take(120).collect(),
         thumb: None,
         file: None,
         color: None,
     });
+}
+
+/// The session cannot go on: tell the user and end it, so it cannot hang unseen.
+fn fail_session(message: &str) {
+    show_problem("recFailTitle", message);
     settle(Plan::Cancelled);
 }
 
@@ -290,7 +295,8 @@ fn run_effect(session_id: u64, index: usize, effect: Effect) {
         Effect::CopyText(text) => {
             std::thread::spawn(move || {
                 if let Err(e) = runtime::host().copy_text(&text) {
-                    eprintln!("overlay: cannot copy the text: {e}");
+                    // The window already said "copied", so this has to be heard.
+                    on_ui(move || show_problem("ocrFailTitle", &format!("cannot copy the text: {e}")));
                 }
             });
         }

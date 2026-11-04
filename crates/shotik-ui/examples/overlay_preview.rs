@@ -368,6 +368,14 @@ fn reference_shots(ui: &Ui, host: &PreviewHost, frame: &Frame, out: &Path, check
     );
     checks.ok(snap["annotationCount"] == 4, "annotate replaces the annotations");
     ui.capture_page("overlay", 0, &out.join("overlay-annotations.png")).expect("capture annotations");
+    action(
+        ui,
+        0,
+        json!({ "type": "annotate", "annotations": [
+            {"type":"text","x":450.0,"y":300.0,"lines":["Смайл 😀 emoji ✓ 日本語"],"fontPx":32,"color":"#FFE03A"},
+        ] }),
+    );
+    ui.capture_page("overlay", 0, &out.join("overlay-emoji.png")).expect("capture emoji");
 
     action(ui, 0, json!({ "type": "annotate", "annotations": [] }));
     let snap = action(ui, 0, json!({ "type": "live-text" }));
@@ -570,6 +578,9 @@ fn interaction_shots(ui: &Ui, host: &PreviewHost, frame: &Frame, out: &Path, che
     pointer_move(0, 1000.0, 500.0);
     pointer_button(0, 1000.0, 500.0, false);
 
+    // What the view shows inside the selection is what will leave the overlay.
+    ui.capture_page("overlay", 0, &out.join("overlay-before-output.png")).expect("capture before output");
+
     // Enter by its real message: the output image, with everything burned in.
     send_key(0, 0x0D, 0x1C);
     let outcome = rx.recv_timeout(Duration::from_secs(15)).expect("an outcome");
@@ -584,6 +595,20 @@ fn interaction_shots(ui: &Ui, host: &PreviewHost, frame: &Frame, out: &Path, che
             std::fs::write(out.join("overlay-output.png"), &png).expect("write output");
             let image = Frame::from_png(&png).expect("decode");
             checks.ok((image.width(), image.height()) == (2200, 1280), format!("output size {}x{}", image.width(), image.height()));
+            let view = Frame::from_png(&std::fs::read(out.join("overlay-before-output.png")).expect("read capture")).expect("decode capture");
+            // Handles sit on the edge of the selection and the toolbar's shadow reaches over the bottom of
+            // it: a margin keeps those out. A window on a stroke rounds a shadow by 1 of 255 at most.
+            let mut worst = 0_i32;
+            for y in 20..1180_usize {
+                for x in 20..2180_usize {
+                    let output = &image.bgra()[(y * 2200 + x) * 4..][..3];
+                    let shown = &view.bgra()[((y + 280) * 3840 + x + 480) * 4..][..3];
+                    for (a, b) in output.iter().zip(shown) {
+                        worst = worst.max((i32::from(*a) - i32::from(*b)).abs());
+                    }
+                }
+            }
+            checks.ok(worst <= 1, format!("output differs from the view by up to {worst} of 255"));
         }
         other => checks.ok(false, format!("expected an action, got {other:?}")),
     }
