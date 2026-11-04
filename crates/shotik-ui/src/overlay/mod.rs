@@ -4,12 +4,12 @@
 //! Everything Slint lives on the UI thread in a thread local. Only `OPEN` and `BOUNDS` are shared, so
 //! `is_open` and `bounds` answer from any thread without waiting for it.
 
-pub mod keys;
-pub mod layer;
-pub mod native;
-pub mod pixels;
-pub mod raster;
-pub mod state;
+mod keys;
+mod layer;
+mod native;
+mod pixels;
+mod raster;
+mod state;
 mod view;
 
 use std::cell::RefCell;
@@ -471,7 +471,7 @@ fn teardown(plan: Plan) {
 }
 
 /// The selection with annotations burned in, as `doAction` does.
-pub fn render_png(
+fn render_png(
     source: &SharedPixelBuffer<Rgb8Pixel>,
     area: IRect,
     annotations: &[Annotation],

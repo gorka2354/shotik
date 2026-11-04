@@ -438,7 +438,6 @@ pub const FLASH_MS: u64 = 1400;
 /// The screen-space state of one overlay window.
 #[derive(Clone, Debug)]
 pub struct State {
-    pub for_claude: bool,
     pub for_text: bool,
     pub for_record: bool,
     i18n: BTreeMap<String, String>,
@@ -679,7 +678,6 @@ impl State {
         let img_w = f64::from(image.0);
         let img_h = f64::from(image.1);
         Self {
-            for_claude: mode == OverlayMode::Claude,
             for_text: mode == OverlayMode::Text,
             for_record: mode == OverlayMode::Record,
             i18n,

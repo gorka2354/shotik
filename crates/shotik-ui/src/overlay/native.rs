@@ -11,7 +11,7 @@ use windows::core::BOOL;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_CLOAK};
 use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
-use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, MapVirtualKeyW, MAPVK_VK_TO_VSC, VK_CONTROL, VK_SHIFT};
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, MapVirtualKeyW, MAPVK_VK_TO_VSC, VK_CONTROL, VK_RMENU, VK_SHIFT};
 use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
     GetForegroundWindow, GetWindowLongPtrW, GetWindowThreadProcessId, SetForegroundWindow, SetWindowLongPtrW, BringWindowToTop,
@@ -91,7 +91,11 @@ unsafe extern "system" fn subclass(window: HWND, message: u32, wparam: WPARAM, l
             if let Some(code) = code_of(virtual_key, scan) {
                 if !(down && hook.editor_open.get()) {
                     // SAFETY: plain queries of this thread's keyboard state.
-                    let (ctrl, shift) = unsafe { (GetKeyState(i32::from(VK_CONTROL.0)) < 0, GetKeyState(i32::from(VK_SHIFT.0)) < 0) };
+                    let (ctrl, shift, alt_gr) = unsafe {
+                        (GetKeyState(i32::from(VK_CONTROL.0)) < 0, GetKeyState(i32::from(VK_SHIFT.0)) < 0, GetKeyState(i32::from(VK_RMENU.0)) < 0)
+                    };
+                    // Windows reports AltGr as Ctrl plus right Alt; the browser does not call that Ctrl.
+                    let ctrl = ctrl && !alt_gr;
                     (hook.on_key)(KeyEvent { code, down, ctrl, shift });
                 }
             }

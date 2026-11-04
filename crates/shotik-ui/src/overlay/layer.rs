@@ -217,11 +217,6 @@ impl TileGrid {
         self.rebuild(whole, annotations, source, painter);
         self.live.clear();
     }
-
-    /// True while a live shape is on display.
-    pub fn has_live(&self) -> bool {
-        !self.live.is_empty()
-    }
 }
 
 fn overlap(a: IRect, b: IRect) -> Option<IRect> {

@@ -5,8 +5,11 @@
 //! Touches nothing on the desktop: ghost mode, windows at x+20000, no focus, no input to anything else.
 //!
 //! ```sh
-//! cargo run --release -p shotik-ui --example overlay_preview -- [output-dir] [--bench-only]
+//! cargo run --release -p shotik-ui --example overlay_preview -- [output-dir] [--bench-only | --real-path-offscreen]
 //! ```
+//!
+//! `--real-path-offscreen` runs the non-ghost code path with a display that is itself far off-screen and
+//! without the keyboard focus request: motion, cloak and styles as on the real desktop, still out of sight.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -25,10 +28,11 @@ use slint::platform::{Key, PointerEventButton, WindowEvent};
 use slint::LogicalPosition;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX};
-use windows::Win32::System::Threading::GetCurrentProcess;
+use windows::Win32::System::Threading::{GetCurrentProcess, GetGuiResources, GR_GDIOBJECTS, GR_USEROBJECTS};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetClientRect, GetForegroundWindow, GetWindowLongPtrW, GetWindowRect, PostMessageW, SendMessageW, SetWindowPos, GWL_EXSTYLE,
-    SWP_NOACTIVATE, SWP_NOZORDER, WM_CLOSE, WM_KEYDOWN, WM_KEYUP, WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    GetClientRect, GetForegroundWindow, GetWindowLongPtrW, GetWindowRect, IsWindowVisible, PostMessageW, SendMessageW, SetWindowPos,
+    GWL_EXSTYLE, SWP_NOACTIVATE, SWP_NOZORDER, WM_CLOSE, WM_KEYDOWN, WM_KEYUP, WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    WS_EX_TOPMOST,
 };
 
 /// `StubHost` with word boxes for Live Text and a record of what reached the application.
@@ -115,6 +119,12 @@ fn private_mb() -> f64 {
         .expect("process memory info");
     }
     counters.PrivateUsage as f64 / 1_048_576.0
+}
+
+/// GDI objects and USER objects of this process: every window a session makes has to be gone after it.
+fn gui_objects() -> (u32, u32) {
+    // SAFETY: plain queries with the pseudo handle.
+    unsafe { (GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS), GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS)) }
 }
 
 fn median_worst(samples: &mut [f64]) -> (f64, f64) {
@@ -385,7 +395,7 @@ fn reference_shots(ui: &Ui, host: &PreviewHost, frame: &Frame, out: &Path, check
     }
     checks.ok(host.colors.lock().unwrap().as_slice() == ["#3E9EFF"], "copy-color reports the colour");
 
-    native_window_checks(0, checks);
+    native_window_checks(0, (20000, 0, 3840, 2160), true, checks);
 
     checks.ok(ui.ui_state("overlay", 5).is_err(), "an unknown window index is an error");
     checks.ok(ui.ui_action("overlay", 0, json!({ "type": "nonsense" })).is_err(), "an unknown action is an error");
@@ -395,7 +405,7 @@ fn reference_shots(ui: &Ui, host: &PreviewHost, frame: &Frame, out: &Path, check
 }
 
 /// The window is exactly where it should be, and nothing can change that.
-fn native_window_checks(index: usize, checks: &mut Checks) {
+fn native_window_checks(index: usize, bounds: (i32, i32, i32, i32), ghost: bool, checks: &mut Checks) {
     let hwnd = HWND(overlay::hwnd_for_test(index).expect("hwnd") as *mut _);
     let read = || {
         let (mut outer, mut inner) = (Default::default(), Default::default());
@@ -408,9 +418,9 @@ fn native_window_checks(index: usize, checks: &mut Checks) {
     };
     let check = |checks: &mut Checks, what: &str| {
         let (outer, inner) = read();
-        let at_exact_bounds = (outer.left, outer.top, outer.right, outer.bottom) == (20000, 0, 23840, 2160);
+        let at_exact_bounds = (outer.left, outer.top, outer.right - outer.left, outer.bottom - outer.top) == bounds;
         checks.ok(at_exact_bounds, format!("{what}: outer {outer:?}"));
-        checks.ok((inner.right, inner.bottom) == (3840, 2160), format!("{what}: client {inner:?}"));
+        checks.ok((inner.right, inner.bottom) == (bounds.2, bounds.3), format!("{what}: client {inner:?}"));
     };
     check(checks, "placed");
     // SAFETY: moving this process's own off-screen window; the subclass is expected to refuse.
@@ -419,9 +429,12 @@ fn native_window_checks(index: usize, checks: &mut Checks) {
     }
     check(checks, "after an attempt to move and resize");
     // SAFETY: plain queries.
-    let (ex, foreground) = unsafe { (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32, GetForegroundWindow()) };
+    let (ex, foreground, visible) =
+        unsafe { (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32, GetForegroundWindow(), IsWindowVisible(hwnd).as_bool()) };
+    checks.ok(visible, "the window is shown");
     checks.ok(ex & WS_EX_TOOLWINDOW.0 != 0 && ex & WS_EX_APPWINDOW.0 == 0, "out of the taskbar");
-    checks.ok(ex & WS_EX_NOACTIVATE.0 != 0, "ghost windows do not activate");
+    checks.ok(ex & WS_EX_TOPMOST.0 != 0, "topmost");
+    checks.ok((ex & WS_EX_NOACTIVATE.0 != 0) == ghost, "only ghost windows refuse activation");
     checks.ok(foreground != hwnd, "the overlay did not take the foreground");
 }
 
@@ -742,6 +755,21 @@ fn modes(ui: &Ui, host: &PreviewHost, frame: &Frame, out: &Path, checks: &mut Ch
     checks.ok(rx.recv_timeout(Duration::from_millis(50)).is_err(), "done fires exactly once on Esc");
 }
 
+/// Russian strings come from the dictionary and the light theme applies to an open window.
+fn language_and_theme(ui: &Ui, host: &PreviewHost, frame: &Frame, out: &Path, checks: &mut Checks) {
+    *host.inner.lang.lock().unwrap() = "ru";
+    let (_m, rx) = open(ui, OverlayMode::Claude, frame);
+    ui.capture_page("overlay", 0, &out.join("overlay-ru.png")).expect("capture Russian");
+    action(ui, 0, json!({ "type": "select", "rect": { "x": 320, "y": 186.5, "w": 1466.5, "h": 853.5 } }));
+    action(ui, 0, json!({ "type": "set-tool", "tool": "pen" }));
+    ui.apply_theme(Theme { dark: false, accent: "#C42B1C".into(), platform: "win32".into() });
+    let snap = state(ui, 0);
+    checks.ok(snap["ready"] == true, "the theme applies to an open window");
+    ui.capture_page("overlay", 0, &out.join("overlay-light.png")).expect("capture light");
+    *host.inner.lang.lock().unwrap() = "en";
+    cancel_and_wait(ui, rx, checks);
+}
+
 /// A second begin while open is refused; a frame after the end is ignored; several displays at once.
 fn sessions(ui: &Ui, frame: &Frame, second_frame: &Frame, third_frame: &Frame, checks: &mut Checks) {
     let marks = Marks::new();
@@ -808,6 +836,17 @@ fn is_open_never_blocks(ui: &Ui, frame: &Frame, checks: &mut Checks) {
     }
     println!("overlay_is_open + overlay_bounds, worst of 1000: {:.1} us", worst.as_secs_f64() * 1e6);
     checks.ok(worst < Duration::from_millis(50), "is_open and bounds do not wait for the UI thread");
+    cancel_and_wait(ui, rx, checks);
+}
+
+/// An open overlay left alone must not redraw: this window spends most of its life waiting for a person.
+fn idle_does_not_paint(ui: &Ui, frame: &Frame, checks: &mut Checks) {
+    let (_m, rx) = open(ui, OverlayMode::Normal, frame);
+    std::thread::sleep(Duration::from_millis(300));
+    let (before, _) = overlay::paint_stats_for_test();
+    std::thread::sleep(Duration::from_secs(1));
+    let (after, _) = overlay::paint_stats_for_test();
+    checks.ok(after == before, format!("{} paints in a second of nothing", after - before));
     cancel_and_wait(ui, rx, checks);
 }
 
@@ -915,41 +954,51 @@ fn bench_stroke(ui: &Ui, frame: &Frame, out: &Path, checks: &mut Checks) {
     println!("  committing it: {:.1} ms", t.elapsed().as_secs_f64() * 1000.0);
     checks.ok(state(ui, 0)["annotationCount"] == 1, "the long stroke committed");
 
-    // Selection drag: full window versus the hole.
-    action(ui, 0, json!({ "type": "set-tool", "tool": "move" }));
-    action(ui, 0, json!({ "type": "annotate", "annotations": [] }));
-    action(ui, 0, json!({ "type": "select", "rect": { "x": 300, "y": 300, "w": 400, "h": 300 } }));
-    pointer_move(0, 500.0, 450.0);
-    pointer_button(0, 500.0, 450.0, true);
-    let (mut paints, _) = overlay::paint_stats_for_test();
-    let mut moves = Vec::new();
-    for i in 1..=240 {
-        let t = Instant::now();
-        pointer_move(0, 500.0 + i as f32 * 3.0, 450.0 + i as f32);
-        let (count, last_ms) = wait_paint(paints);
-        paints = count;
-        let _ = last_ms;
-        moves.push(t.elapsed().as_secs_f64() * 1000.0);
+    // Selection drag in a fresh session: only the hole repaints, so a small selection costs little on 4K.
+    cancel_and_wait(ui, rx, checks);
+    let (_m, rx) = open(ui, OverlayMode::Normal, frame);
+    for (name, rect, start) in [
+        ("600x450", json!({ "x": 300, "y": 300, "w": 400, "h": 300 }), (500.0, 450.0)),
+        ("3000x1500", json!({ "x": 100, "y": 100, "w": 2000, "h": 1000 }), (1100.0, 600.0)),
+    ] {
+        action(ui, 0, json!({ "type": "select", "rect": rect }));
+        pointer_move(0, start.0, start.1);
+        pointer_button(0, start.0, start.1, true);
+        let (mut paints, _) = overlay::paint_stats_for_test();
+        let mut moves = Vec::new();
+        let mut paint_times = Vec::new();
+        for i in 1..=240 {
+            let t = Instant::now();
+            pointer_move(0, start.0 + i as f32 * 1.5, start.1 + i as f32 * 0.5);
+            let (count, last_ms) = wait_paint(paints);
+            paints = count;
+            paint_times.push(last_ms);
+            moves.push(t.elapsed().as_secs_f64() * 1000.0);
+        }
+        pointer_button(0, start.0 + 360.0, start.1 + 120.0, false);
+        let (median, worst) = stats(&moves);
+        let (paint_median, paint_worst) = stats(&paint_times);
+        println!("moving a {name} px selection on 4K: paint median {paint_median:.2} ms, worst {paint_worst:.2} ms; move to painted median {median:.2} ms, worst {worst:.2} ms");
     }
-    pointer_button(0, 1220.0, 690.0, false);
-    let (median, worst) = stats(&moves);
-    println!("moving a 600x450 px selection on 4K: move to painted median {median:.2} ms, worst {worst:.2} ms");
 
-    // Idle pointer with magnifier.
+    // Idle pointer with the magnifier.
     cancel_and_wait(ui, rx, checks);
     let (_m, rx) = open(ui, OverlayMode::Normal, frame);
     pointer_move(0, 100.0, 100.0);
     let (mut paints, _) = overlay::paint_stats_for_test();
     let mut moves = Vec::new();
+    let mut paint_times = Vec::new();
     for i in 1..=240 {
         let t = Instant::now();
         pointer_move(0, 100.0 + i as f32 * 3.0, 100.0 + i as f32);
-        let (count, _) = wait_paint(paints);
+        let (count, last_ms) = wait_paint(paints);
         paints = count;
+        paint_times.push(last_ms);
         moves.push(t.elapsed().as_secs_f64() * 1000.0);
     }
     let (median, worst) = stats(&moves);
-    println!("idle pointer with the magnifier on 4K: move to painted median {median:.2} ms, worst {worst:.2} ms");
+    let (paint_median, paint_worst) = stats(&paint_times);
+    println!("idle pointer with the magnifier on 4K: paint median {paint_median:.2} ms, worst {paint_worst:.2} ms; move to painted median {median:.2} ms, worst {worst:.2} ms");
     let _ = out;
     cancel_and_wait(ui, rx, checks);
 }
@@ -985,7 +1034,20 @@ fn run(ui: &Ui, host: &PreviewHost, out: &Path, bench_only: bool) -> Vec<String>
     println!("fixture ready in {:.0} ms, private {:.1} MB", t.elapsed().as_secs_f64() * 1000.0, private_mb());
 
     bench_conversion(&frame);
+    {
+        // Everything that lazily initializes once is in place after a first session.
+        let (_m, rx) = open(ui, OverlayMode::Normal, &frame);
+        cancel_and_wait(ui, rx, &mut checks);
+    }
+    let objects_before = gui_objects();
     bench_show(ui, &frame, &mut checks);
+    let objects_after = gui_objects();
+    println!("GDI and USER objects before and after 41 sessions: {objects_before:?} {objects_after:?}");
+    checks.ok(
+        objects_after.0 <= objects_before.0 + 4 && objects_after.1 <= objects_before.1 + 4,
+        format!("no window or GDI object stays behind: {objects_before:?} -> {objects_after:?}"),
+    );
+    idle_does_not_paint(ui, &frame, &mut checks);
     {
         let (_m, rx) = open(ui, OverlayMode::Normal, &frame);
         println!("private with one 4K overlay open (fixture frames loaded): {:.1} MB", private_mb());
@@ -996,6 +1058,7 @@ fn run(ui: &Ui, host: &PreviewHost, out: &Path, bench_only: bool) -> Vec<String>
         reference_shots(ui, host, &frame, out, &mut checks);
         interaction_shots(ui, host, &frame, out, &mut checks);
         modes(ui, host, &frame, out, &mut checks);
+        language_and_theme(ui, host, &frame, out, &mut checks);
         sessions(ui, &frame, &second_frame, &third_frame, &mut checks);
         is_open_never_blocks(ui, &frame, &mut checks);
     }
@@ -1031,15 +1094,54 @@ fn run(ui: &Ui, host: &PreviewHost, out: &Path, bench_only: bool) -> Vec<String>
     checks.failed
 }
 
+/// The non-ghost path: motion on, no activation refused, no offset added. The display itself is far off
+/// every monitor and the session does not ask for focus, so this stays as invisible as ghost mode.
+fn real_path_offscreen(ui: &Ui, out: &Path) -> Vec<String> {
+    let mut checks = Checks { failed: Vec::new(), passed: 0 };
+    let png = std::fs::read(fixture_path()).expect("test/fake-screen.png");
+    let frame = Frame::from_png(&png).expect("decode fixture").resize(1920, 1080).expect("resize");
+    let bounds = Rect::new(30000, 0, 1920, 1080);
+    let display = Display { id: 7, bounds, work_area: bounds, scale_factor: 1.0, physical_bounds: bounds, primary: false };
+    let marks = Marks::new();
+    let (tx, rx) = mpsc::channel();
+    ui.overlay_begin(OverlayMode::Normal, marks.sink.clone(), Box::new(move |o| tx.send(o).expect("receiver"))).expect("begin");
+    // Not focused: the one thing this path may not do from here is call SetForegroundWindow.
+    ui.overlay_add_display(display, frame, false).expect("add");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while ui.overlay_bounds().is_empty() {
+        assert!(Instant::now() < deadline, "the window never opened");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    checks.ok(ui.overlay_bounds() == [bounds], "no ghost offset on this path");
+    native_window_checks(0, (30000, 0, 1920, 1080), false, &mut checks);
+
+    action(ui, 0, json!({ "type": "select", "rect": { "x": 180, "y": 105, "w": 825, "h": 480 } }));
+    ui.capture_page("overlay", 0, &out.join("real-entering.png")).expect("capture");
+    std::thread::sleep(Duration::from_millis(400));
+    ui.capture_page("overlay", 0, &out.join("real-entered.png")).expect("capture");
+    let (before, _) = overlay::paint_stats_for_test();
+    checks.ok(before > 0, "the window paints through WM_PAINT here too");
+    std::thread::sleep(Duration::from_secs(1));
+    let (after, _) = overlay::paint_stats_for_test();
+    checks.ok(after == before, format!("{} paints in a second after the animation ended", after - before));
+
+    ui.overlay_cancel();
+    wait_closed(ui);
+    checks.ok(rx.recv_timeout(Duration::from_secs(5)) == Ok(OverlayOutcome::Cancelled), "cancel ends the session");
+    println!("checks passed: {}, failed: {}", checks.passed, checks.failed.len());
+    checks.failed
+}
+
 fn main() {
     let mut args = std::env::args().skip(1).collect::<Vec<_>>();
     let bench_only = args.iter().any(|a| a == "--bench-only");
-    args.retain(|a| a != "--bench-only");
+    let real_path = args.iter().any(|a| a == "--real-path-offscreen");
+    args.retain(|a| !a.starts_with("--"));
     let out = args.into_iter().next().map_or_else(|| std::env::temp_dir().join("shotik-overlay-preview"), PathBuf::from);
     std::fs::create_dir_all(&out).expect("output directory");
     println!("output: {}", out.display());
 
-    let ui = Arc::new(Ui::new(UiEnv { ghost: true, popup_real: false, translate_popup_ttl_ms: 9000 }).expect("ui"));
+    let ui = Arc::new(Ui::new(UiEnv { ghost: !real_path, popup_real: false, translate_popup_ttl_ms: 9000 }).expect("ui"));
     let host = Arc::new(PreviewHost::default());
     ui.set_host(host.clone());
 
@@ -1048,7 +1150,8 @@ fn main() {
     std::thread::spawn(move || {
         // The event loop has to be running before the first window.
         std::thread::sleep(Duration::from_millis(100));
-        let failed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(&driver_ui, &host, &out, bench_only)))
+        let scenario = || if real_path { real_path_offscreen(&driver_ui, &out) } else { run(&driver_ui, &host, &out, bench_only) };
+        let failed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(scenario))
             .unwrap_or_else(|_| vec!["the scenario panicked".to_string()]);
         result_tx.send(failed).expect("main waits");
         Ui::quit();

@@ -198,7 +198,10 @@ component Glass inherits Rectangle {
     y: root.rest-y + root.slide;
     opacity: root.shown;
     init => {
-        root.entered = true;
+        // A property animates from the value it last showed, so it has to have shown one.
+        if root.slide >= 0px && root.shown >= 0 {
+            root.entered = true;
+        }
     }
     background: Chrome.glass;
     border-width: 1px;
@@ -683,7 +686,10 @@ export component Overlay inherits Window {
         animate slide { duration: OverlayMotion.enabled ? 350ms : 0ms; easing: cubic-bezier(0.2, 0.9, 0.3, 1.2); }
         animate shown { duration: OverlayMotion.enabled ? 350ms : 0ms; easing: cubic-bezier(0.2, 0.9, 0.3, 1.2); }
         init => {
-            self.entered = true;
+            // A property animates from the value it last showed, so it has to have shown one.
+            if self.slide != 1000px && self.shown >= 0 {
+                self.entered = true;
+            }
         }
         x: (root.width - self.width) / 2;
         y: 22px + self.slide;
@@ -1108,7 +1114,10 @@ export component Overlay inherits Window {
         animate slide { duration: OverlayMotion.enabled ? 200ms : 0ms; easing: ease-out; }
         animate shown { duration: OverlayMotion.enabled ? 200ms : 0ms; easing: ease-out; }
         init => {
-            self.entered = true;
+            // A property animates from the value it last showed, so it has to have shown one.
+            if self.slide != 1000px && self.shown >= 0 {
+                self.entered = true;
+            }
         }
         x: root.flash-x - self.width / 2;
         y: root.flash-y + self.slide;

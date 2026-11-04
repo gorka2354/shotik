@@ -16,11 +16,6 @@ fn veiled(value: u8, channel: usize) -> u8 {
     ((u32::from(value) * FRAME_ALPHA + VEIL_RGB[channel] * VEIL_ALPHA + 128) >> 8) as u8
 }
 
-/// Bytes of an RGB image of this size.
-pub fn rgb_len(width: u32, height: u32) -> usize {
-    width as usize * height as usize * 3
-}
-
 /// Converts tightly packed BGRA to RGB, and fills `dim` with the same picture under the veil.
 pub fn bgra_to_rgb_and_veil(bgra: &[u8], rgb: &mut [u8], dim: &mut [u8]) {
     let pixels = bgra.len() / 4;
