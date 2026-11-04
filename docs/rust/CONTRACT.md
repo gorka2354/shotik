@@ -113,5 +113,10 @@ action shapes are in `docs/rust/TEST-ROUTES.md`. `exec-js` does not exist in Rus
 - **Removed:** `exec-js`, `win-sources` (Chromium diagnostics), Microsoft Store packaging for now.
 - **macOS:** not in the first Rust release.
 - **Installer:** not electron-builder, but the same install location, shortcuts and upgrade over Electron.
+- **Secure desktop:** a capture fails with an explicit error instead of returning a black frame.
+- **Clipboard:** an RLE-compressed image on the clipboard is refused with an error, because it is untrusted input.
+- **Display ids:** computed differently, so a `lastRegion` remembered by Electron falls back to the primary
+  display once. Chromium's id did not survive a reboot anyway.
+- **Rendering:** no drawn soft shadows; windows use DWM rounded corners with the native shadow.
 
 Anything else that changes user-visible behaviour is a bug unless this list is updated by the lead.

@@ -71,6 +71,18 @@ pub trait Displays: Send + Sync {
     fn nearest(&self, point: PointF) -> Display;
     /// Physical pixels to global DIP.
     fn phys_to_dip(&self, point: Point) -> PointF;
+    /// A physical rectangle to global DIP, on the display holding most of it: floored origin, enclosing
+    /// size. `screen.screenToDipRect(null, rect)` in the JS version, which `list_windows` reports.
+    fn phys_rect_to_dip(&self, rect: Rect) -> Rect {
+        let origin = self.phys_to_dip(Point { x: rect.x, y: rect.y });
+        let scale = self.nearest(origin).scale_factor;
+        Rect::new(
+            origin.x.floor() as i32,
+            origin.y.floor() as i32,
+            (f64::from(rect.width) / scale).ceil() as i32,
+            (f64::from(rect.height) / scale).ceil() as i32,
+        )
+    }
 
     fn under_cursor(&self) -> Display {
         self.nearest(self.cursor())
