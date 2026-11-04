@@ -914,7 +914,7 @@ mod tests {
     }
 
     fn error_of(dib: &[u8]) -> String {
-        frame_from_dib(dib).err().expect("must be refused").to_string()
+        frame_from_dib(dib).expect_err("must be refused").to_string()
     }
 
     #[test]
