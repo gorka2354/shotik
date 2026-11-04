@@ -1,0 +1,197 @@
+// Shotik's own accent-aware Fluent controls. No decorative gradients.
+import { Theme } from "theme.slint";
+
+export component Icon inherits Path {
+    in property <string> name;
+    in property <color> ink: Theme.text;
+    width: 17px; height: 17px; viewbox-width: 24; viewbox-height: 24;
+    stroke: ink; stroke-width: 1.6px; fill: transparent;
+    commands: name == "history" ? "M6 5 H18 Q21 5 21 8 V16 Q21 19 18 19 H6 Q3 19 3 16 V8 Q3 5 6 5 M15.5 12 A3.5 3.5 0 1 1 8.5 12 A3.5 3.5 0 1 1 15.5 12"
+    : name == "text" ? "M4 5 H11 M7 5 V5.5 Q7 10 3 13 M5 9 Q5 12 10 13.5 M12 20 L16 11 L20 20 M13.5 17 H18.5"
+    : name == "claude" ? "M12 3 L13.9 8.1 L19 10 L13.9 11.9 L12 17 L10.1 11.9 L5 10 L10.1 8.1 Z M19 15 L19.9 17.1 L22 18 L19.9 18.9 L19 21 L18.1 18.9 L16 18 L18.1 17.1 Z"
+    : name == "settings" ? "M15.2 12 A3.2 3.2 0 1 1 8.8 12 A3.2 3.2 0 1 1 15.2 12 M10 2 H14 L15 6 L18 5 L21 8 L19 11 L22 12 V15 L18 16 L19 19 L16 21 L13 19 L12 22 H9 L8 18 L5 19 L2 16 L4 13 L2 12 V9 L6 8 L5 5 L8 2 L11 4 Z"
+    : name == "region" ? "M4 8 V6 Q4 4 6 4 H8 M16 4 H18 Q20 4 20 6 V8 M20 16 V18 Q20 20 18 20 H16 M8 20 H6 Q4 20 4 18 V16 M8.5 8.5 H15.5 V15.5 H8.5 Z"
+    : name == "full" ? "M5 5 H19 Q21 5 21 7 V17 Q21 19 19 19 H5 Q3 19 3 17 V7 Q3 5 5 5 Z"
+    : name == "repeat" ? "M3 12 A9 9 0 0 1 18.7 6 L21 8 M21 3 V8 H16 M21 12 A9 9 0 0 1 5.3 18 L3 16 M3 21 V16 H8"
+    : name == "ocr" ? "M3 7 V5 Q3 3 5 3 H7 M17 3 H19 Q21 3 21 5 V7 M21 17 V19 Q21 21 19 21 H17 M7 21 H5 Q3 21 3 19 V17 M7 8 H17 M7 12 H13 M7 16 H15"
+    : name == "record" ? "M19 12 A7 7 0 1 1 5 12 A7 7 0 1 1 19 12 M15 12 A3 3 0 1 1 9 12 A3 3 0 1 1 15 12"
+    : name == "audio" ? "M9 6 A3 3 0 0 1 15 6 V11 A3 3 0 0 1 9 11 Z M5 11 A7 7 0 0 0 19 11 M12 18 V21 M8 21 H16"
+    : name == "folder" ? "M3 7 Q3 5 5 5 H9 L11 7.5 H19 Q21 7.5 21 9.5 V17 Q21 19 19 19 H5 Q3 19 3 17 Z"
+    : name == "copy" ? "M11 9 H18 Q20 9 20 11 V18 Q20 20 18 20 H11 Q9 20 9 18 V11 Q9 9 11 9 Z M5 15 V5 Q5 3 7 3 H17"
+    : name == "path" ? "M4 17 L10 11 L4 5 M12 19 H20"
+    : name == "pin" ? "M12 17 V22 M9 4 H15 L15.8 10.2 L18 13 H6 L8.2 10.2 Z"
+    : name == "gif" ? "M5 6 H19 Q21 6 21 8 V16 Q21 18 19 18 H5 Q3 18 3 16 V8 Q3 6 5 6 Z M8 10.5 A2 2 0 1 0 8 13.5 H9.5 V12 M12.5 9.5 V14.5 M15.5 14.5 V9.5 H18 M15.5 12 H17.5"
+    : name == "remove" ? "M4 7 H20 M10 11 V17 M14 11 V17 M6 7 L7 20 H17 L18 7 M9 7 V4 H15 V7"
+    : name == "open" ? "M8 5 L19 12 L8 19 Z"
+    : name == "close" ? "M6 6 L18 18 M18 6 L6 18"
+    : name == "minimize" ? "M5 12 H19"
+    : name == "maximize" ? "M6 6 H18 V18 H6 Z"
+    : name == "restore" ? "M8 8 H18 V18 H8 Z M6 15 H4 V4 H15 V6" : "";
+}
+
+export component Button inherits Rectangle {
+    in property <string> text;
+    in property <string> icon;
+    in property <string> shortcut;
+    in property <string> tip;
+    in property <bool> primary;
+    in property <bool> danger;
+    in property <bool> ghost;
+    in property <bool> enabled: true;
+    in property <bool> small;
+    callback clicked();
+    height: small ? 28px : 32px; min-width: 28px;
+    preferred-width: content.preferred-width;
+    border-radius: 5px; border-width: 1px;
+    border-color: focus.has-focus ? Theme.accent : Theme.main-stroke-strong;
+    background: danger ? #d13438 : primary ? Theme.accent : touch.pressed ? Theme.pressed : touch.has-hover ? Theme.hover : Theme.main-layer;
+    opacity: enabled ? 1 : 0.45; forward-focus: focus;
+    accessible-role: button; accessible-label: text != "" ? text : tip;
+    accessible-enabled: enabled; accessible-action-default => { if root.enabled { root.clicked(); } }
+    content := HorizontalLayout {
+        padding-left: root.small ? 11px : root.ghost ? 9px : 13px; padding-right: root.small ? 11px : root.ghost ? 9px : 13px; spacing: 8px;
+        if root.icon != "": Icon { name: root.icon; width: 15px; height: 15px; y: (parent.height - self.height) / 2; ink: root.primary ? Theme.accent-text : root.danger ? white : Theme.text; }
+        if root.text != "": Text { text: root.text; color: root.primary ? Theme.accent-text : root.danger ? white : Theme.text;
+            font-size: root.small ? 12.5px : 13px; font-weight: root.primary ? 600 : 400; vertical-alignment: center; }
+        if root.shortcut != "": Rectangle {
+            height: 15px; y: (parent.height - self.height) / 2; width: key.preferred-width + 10px; border-radius: 3px; background: #00000038;
+            key := Text { text: root.shortcut; font-family: "Cascadia Mono"; font-size: 10px; color: root.primary ? Theme.accent-text : Theme.text; horizontal-alignment: center; vertical-alignment: center; }
+        }
+    }
+    focus := FocusScope { x: 0px; y: 0px; width: parent.width; height: parent.height; enabled: root.enabled;
+        key-pressed(event) => { if event.text == " " || event.text == "\n" { root.clicked(); return accept; } return reject; }
+    }
+    touch := TouchArea { x: 0px; y: 0px; width: parent.width; height: parent.height; enabled: root.enabled; mouse-cursor: pointer; clicked => { focus.focus(); root.clicked(); } }
+    if touch.has-hover && root.tip != "": Rectangle {
+        x: 0px; y: parent.height + 7px; height: 26px; width: tooltip.preferred-width + 20px;
+        background: Theme.window-bg; border-color: Theme.main-stroke-strong; border-width: 1px; border-radius: 5px;
+        tooltip := Text { text: root.tip; color: Theme.text; font-size: 11.5px; horizontal-alignment: center; vertical-alignment: center; }
+    }
+}
+export component PrimaryButton inherits Button { primary: true; }
+
+export component Switch inherits Rectangle {
+    in-out property <bool> checked;
+    in property <string> label;
+    in property <bool> enabled: true;
+    callback toggled(bool);
+    width: 40px; height: 20px; border-radius: 10px; border-width: 1px;
+    border-color: checked ? Theme.accent : Theme.text-tertiary;
+    background: checked ? Theme.accent : touch.has-hover ? Theme.hover : transparent;
+    forward-focus: focus;
+    accessible-role: switch; accessible-label: label; accessible-checked: checked;
+    accessible-action-default => { if root.enabled { root.checked = !root.checked; root.toggled(root.checked); } }
+    Rectangle { x: root.checked ? 24px : 4px; y: 4px; width: 12px; height: 12px; border-radius: 6px; background: root.checked ? Theme.accent-text : Theme.text-secondary; }
+    if focus.has-focus: Rectangle { x: -3px; y: -3px; width: parent.width + 6px; height: parent.height + 6px; border-radius: 12px; border-width: 1px; border-color: Theme.accent; }
+    focus := FocusScope { x: 0px; y: 0px; width: parent.width; height: parent.height; enabled: root.enabled;
+        key-pressed(event) => { if event.text == " " || event.text == "\n" { root.checked = !root.checked; root.toggled(root.checked); return accept; } return reject; }
+    }
+    touch := TouchArea { x: 0px; y: 0px; width: parent.width; height: parent.height; enabled: root.enabled; mouse-cursor: pointer; clicked => { focus.focus(); root.checked = !root.checked; root.toggled(root.checked); } }
+}
+
+export component ComboBox inherits Rectangle {
+    in property <[string]> model;
+    in-out property <int> current-index;
+    in property <string> label;
+    callback selected(int);
+    height: 35px; width: 150px; border-radius: 5px; border-width: 1px;
+    border-color: focus.has-focus ? Theme.accent : Theme.main-stroke-strong; background: Theme.main-code;
+    forward-focus: focus;
+    accessible-role: combobox; accessible-label: label; accessible-value: model[current-index];
+    accessible-action-expand => { popup.show(); }
+    Text { x: 14px; width: parent.width - 42px; text: root.model[root.current-index]; color: Theme.text; font-size: 13px; vertical-alignment: center; overflow: elide; }
+    Path { x: parent.width - 18px; y: 15px; width: 7px; height: 5px; viewbox-width: 7; viewbox-height: 5; commands: "M1 1 L3.5 3.5 L6 1"; stroke: Theme.text; stroke-width: 1.5px; }
+    focus := FocusScope { x: 0px; y: 0px; width: parent.width; height: parent.height;
+        key-pressed(event) => {
+            if event.text == Key.DownArrow { root.current-index = min(root.model.length - 1, root.current-index + 1); root.selected(root.current-index); return accept; }
+            if event.text == Key.UpArrow { root.current-index = max(0, root.current-index - 1); root.selected(root.current-index); return accept; }
+            if event.text == " " || event.text == "\n" { popup.show(); return accept; } return reject;
+        }
+    }
+    TouchArea { x: 0px; y: 0px; width: parent.width; height: parent.height; mouse-cursor: pointer; clicked => { focus.focus(); popup.show(); } }
+    popup := PopupWindow {
+        y: root.height + 3px; width: root.width; height: min(8, root.model.length) * 32px + 8px; close-policy: close-on-click-outside;
+        forward-focus: popup-focus;
+        popup-focus := FocusScope { width: parent.width; height: parent.height;
+            key-pressed(event) => {
+                if event.text == Key.Escape { popup.close(); return accept; }
+                if event.text == " " || event.text == "\n" { popup.close(); return accept; }
+                if event.text == Key.DownArrow { root.current-index = min(root.model.length - 1,root.current-index + 1); root.selected(root.current-index); return accept; }
+                if event.text == Key.UpArrow { root.current-index = max(0,root.current-index - 1); root.selected(root.current-index); return accept; }
+                return reject;
+            }
+        }
+        Rectangle { background: Theme.window-bg; border-width: 1px; border-color: Theme.main-stroke-strong; border-radius: 6px; clip: true;
+            Flickable { x: 4px; y: 4px; width: parent.width - 8px; height: parent.height - 8px; content-width: self.width; content-height: root.model.length * 32px;
+                for item[i] in root.model: Rectangle {
+                    y: i * 32px; height: 32px; width: parent.width; border-radius: 4px;
+                    background: i == root.current-index ? Theme.main-layer : hit.has-hover ? Theme.hover : transparent;
+                    if i == root.current-index: Rectangle { x: 0px; y: 8px; width: 3px; height: 16px; background: Theme.accent; border-radius: 2px; }
+                    Text { x: 10px; width: parent.width - 16px; text: item; color: Theme.text; font-size: 13px; vertical-alignment: center; overflow: elide; }
+                    hit := TouchArea { x: 0px; y: 0px; width: parent.width; height: parent.height; clicked => { root.current-index = i; root.selected(i); popup.close(); } }
+                }
+            }
+        }
+    }
+}
+
+component FluentTextInput inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <string> label;
+    in property <bool> multiline;
+    in property <bool> password;
+    in property <bool> read-only;
+    in property <bool> mono;
+    in property <bool> centered;
+    in property <bool> recording;
+    out property <bool> has-focus: input.has-focus;
+    callback edited(string);
+    callback committed(string);
+    callback focus-changed(bool);
+    callback translate();
+    public function blur() { input.clear-focus(); }
+    changed has-focus => { root.focus-changed(self.has-focus); if !self.has-focus && !root.read-only { root.committed(root.text); } }
+    forward-focus: input;
+    height: multiline ? 87px : 32px;
+    background: Theme.main-code; border-radius: 5px; border-width: 1px;
+    border-color: recording ? #b58900 : input.has-focus ? Theme.accent : Theme.main-stroke-strong;
+    clip: true;
+    if root.text == "": Text { x: 13px; y: root.multiline ? 11px : 0px; width: parent.width - 26px; height: root.multiline ? 22px : parent.height;
+        text: root.placeholder; color: Theme.text-tertiary; font-size: root.multiline ? 14px : 12.5px; vertical-alignment: center; horizontal-alignment: root.centered ? center : left; overflow: elide; }
+    input := TextInput {
+        x: 13px; y: root.multiline ? 11px : 0px; width: parent.width - 26px; height: parent.height - (root.multiline ? 22px : 0px);
+        text <=> root.text; color: Theme.text; selection-background-color: Theme.accent; selection-foreground-color: Theme.accent-text;
+        font-family: root.mono ? "Cascadia Mono" : Theme.main-font; font-size: root.multiline ? 14px : 12.5px;
+        single-line: !root.multiline; wrap: root.multiline ? word-wrap : no-wrap;
+        input-type: root.password ? InputType.password : InputType.text; read-only: root.read-only;
+        vertical-alignment: root.multiline ? top : center; horizontal-alignment: root.centered ? center : left;
+        accessible-label: root.label;
+        edited => { root.edited(self.text); } accepted => { root.committed(self.text); }
+        key-pressed(event) => { if root.multiline && event.text == "\n" && (event.modifiers.control || event.modifiers.meta) { root.translate(); return accept; } return reject; }
+    }
+}
+export { FluentTextInput as TextInput }
+
+export component Card inherits Rectangle {
+    background: Theme.main-layer; border-color: Theme.main-stroke; border-width: 1px; border-radius: 8px;
+    @children
+}
+
+export component NavItem inherits Rectangle {
+    in property <string> text;
+    in property <string> icon;
+    in property <bool> active;
+    in property <bool> status;
+    in property <bool> show-status;
+    callback clicked();
+    height: 36px; border-radius: 5px; background: active ? Theme.main-layer : hit.has-hover ? Theme.hover : transparent;
+    accessible-role: button; accessible-label: text; accessible-action-default => { root.clicked(); }
+    forward-focus: focus;
+    if active: Rectangle { x: 0px; y: 9px; width: 3px; height: 18px; border-radius: 2px; background: Theme.accent; }
+    Icon { x: 12px; y: 9px; width: 17px; height: 17px; name: root.icon; ink: Theme.text; opacity: 0.85; }
+    Text { x: 41px; text: root.text; color: Theme.text; font-size: 13.5px; font-weight: root.active ? 600 : 400; vertical-alignment: center; }
+    if show-status: Rectangle { x: parent.width - 19px; y: 14px; width: 7px; height: 7px; border-radius: 4px; background: root.status ? #2e9e5b : Theme.text-tertiary; }
+    focus := FocusScope { x: 0px; y: 0px; width: parent.width; height: parent.height; key-pressed(e) => { if e.text == " " || e.text == "\n" { root.clicked(); return accept; } return reject; } }
+    hit := TouchArea { x: 0px; y: 0px; width: parent.width; height: parent.height; mouse-cursor: pointer; clicked => { focus.focus(); root.clicked(); } }
+}
