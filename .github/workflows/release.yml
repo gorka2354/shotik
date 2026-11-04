@@ -36,7 +36,7 @@ jobs:
             Install-WindowsFeature Server-Media-Foundation | Out-Null
           }
       - name: Rust tests
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --locked --no-fail-fast
       - name: Build
         run: cargo build --release -p shotik --locked
       - name: Contract tests
