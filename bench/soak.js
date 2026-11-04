@@ -40,7 +40,7 @@ async function main() {
     const dir = path.join(tmp, name);
     fs.mkdirSync(path.join(dir, 'saved'), { recursive: true });
     const args = ENTRY ? [ENTRY, ...IMPL.args] : IMPL.args;
-    const app = launch({ exe: EXE, args, cwd: path.dirname(EXE), port, env: { ...IMPL.env, SHOTIK_APPDATA: dir } });
+    const app = launch({ exe: EXE, args, cwd: path.dirname(EXE), port, env: { ...IMPL.env, SHOTIK_APPDATA: dir, TEMP: dir, TMP: dir } });
     return { name, app, port, saved: path.join(dir, 'saved') };
   };
   const active = start('active', Number(arg('port', 7611)));

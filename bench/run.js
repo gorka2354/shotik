@@ -73,12 +73,12 @@ function dirSizeMB(dir) {
   return Math.round(total / 1048576);
 }
 
-async function benchStartup(results) {
+async function benchStartup(results, env) {
   log(`startup: ${N.startups} runs`);
   const times = [];
   const idle = [];
   for (let i = 0; i < N.startups; i++) {
-    const app = launch({ exe: EXE, args: IMPL.args, cwd: path.dirname(EXE), port: PORT, env: { ...IMPL.env } });
+    const app = launch({ exe: EXE, args: IMPL.args, cwd: path.dirname(EXE), port: PORT, env });
     try {
       times.push(await waitReady(app));
       await sleep(5000);
@@ -261,15 +261,18 @@ async function main() {
   };
   let testWin = null;
   let app = null;
+  // The instance's own temp directory: an interrupted recording leaves a part file with real screen
+  // content, and it must go away with everything else, without touching the shared %TEMP%.
+  const env = { ...IMPL.env, TEMP: tmp, TMP: tmp };
   try {
-    await benchStartup(results);
+    await benchStartup(results, env);
 
     const testTitle = 'ShotikBench-' + Date.now();
     testWin = spawn('powershell.exe',
       ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(ROOT, 'test', 'ghost', 'testwin.ps1'), '-Title', testTitle],
       { windowsHide: true, stdio: 'ignore' });
 
-    app = launch({ exe: EXE, args: IMPL.args, cwd: path.dirname(EXE), port: PORT, env: { ...IMPL.env } });
+    app = launch({ exe: EXE, args: IMPL.args, cwd: path.dirname(EXE), port: PORT, env });
     await waitReady(app);
     const pid = app.child.pid;
     await IMPL.setSettings(PORT, { saveDir });
