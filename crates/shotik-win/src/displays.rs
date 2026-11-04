@@ -21,7 +21,7 @@ use windows::Win32::UI::HiDpi::{
     AreDpiAwarenessContextsEqual, GetDpiAwarenessContextForProcess, GetDpiForMonitor, SetProcessDpiAwarenessContext,
     SetThreadDpiAwarenessContext, DPI_AWARENESS_CONTEXT, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, MDT_EFFECTIVE_DPI,
 };
-use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, EDD_GET_DEVICE_INTERFACE_NAME};
+use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, EDD_GET_DEVICE_INTERFACE_NAME, MONITORINFOF_PRIMARY};
 
 use crate::dip_layout::{self, DipRects, MonitorInfo};
 
@@ -156,8 +156,7 @@ fn entry_for(monitor: HMONITOR, text_scale: f32) -> Option<Entry> {
             scale: dpi_x as f32 / 96.0 * text_scale,
         },
         id: monitor_id(&info),
-        // MONITORINFOF_PRIMARY, which the crate exposes under a different module per version.
-        primary: info.monitorInfo.dwFlags & 1 != 0,
+        primary: info.monitorInfo.dwFlags & MONITORINFOF_PRIMARY != 0,
     })
 }
 

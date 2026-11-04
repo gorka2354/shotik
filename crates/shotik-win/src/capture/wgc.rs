@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use shotik_core::error::{Error, Result};
 use shotik_core::frame::Frame;
+use shotik_core::geom::Rect;
 use windows::core::{factory, Interface};
 use windows::Foundation::TypedEventHandler;
 use windows::Graphics::Capture::{Direct3D11CaptureFramePool, GraphicsCaptureItem, GraphicsCaptureSession};
@@ -69,6 +70,7 @@ pub(crate) fn capture_window(hwnd: HWND, timeout: Duration) -> Result<Frame> {
     wait.recv_timeout(timeout)
         .map_err(|_| Error::msg(format!("no frame of the window within {} ms", timeout.as_millis())))?;
     let frame = session.pool.TryGetNextFrame().map_err(|e| win_err("cannot take the captured frame", e))?;
+    let content = frame.ContentSize().map_err(|e| win_err("cannot read the size of the captured frame", e))?;
     let surface = frame.Surface().map_err(|e| win_err("cannot read the captured surface", e))?;
     let access: IDirect3DDxgiInterfaceAccess = surface.cast().map_err(|e| win_err("IDirect3DDxgiInterfaceAccess", e))?;
     // SAFETY: the surface wraps a texture of the shared device, alive as long as `frame`.
@@ -79,5 +81,11 @@ pub(crate) fn capture_window(hwnd: HWND, timeout: Duration) -> Result<Frame> {
     drop(access);
     let _ = surface.Close();
     let _ = frame.Close();
-    pixels
+    let pixels = pixels?;
+    // The texture keeps the size the pool was made with. A window that shrank at this very moment fills only
+    // part of it, and the rest is undefined.
+    if content.Width < pixels.width() as i32 || content.Height < pixels.height() as i32 {
+        return pixels.crop(Rect::new(0, 0, content.Width, content.Height));
+    }
+    Ok(pixels)
 }
