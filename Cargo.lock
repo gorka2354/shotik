@@ -3935,6 +3935,7 @@ dependencies = [
 name = "shotik-ui"
 version = "2.0.0-alpha.0"
 dependencies = [
+ "image",
  "raw-window-handle",
  "serde",
  "serde_json",

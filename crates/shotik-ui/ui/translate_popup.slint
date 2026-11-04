@@ -1,8 +1,86 @@
 // Translation near the cursor. Reference: src/translate-popup/.
 import { Theme } from "theme.slint";
+import { ScrollView } from "std-widgets.slint";
 
 export component TranslatePopup inherits Window {
     no-frame: true;
-    background: Theme.window-bg;
+    preferred-width: 380px;
+    preferred-height: 182px;
+    background: Theme.dark ? #1e1e22 : #fafafb;
     default-font-family: Theme.font;
+    in property <string> heading;
+    in property <string> copy-label;
+    in property <string> original;
+    in property <string> translated;
+    in property <string> meta;
+    in property <bool> loading;
+    out property <float> content-height: (copy-button.y + copy-button.height + 22px) / 1px;
+    out property <bool> pointer-over: whole.has-hover || close.has-hover || header-drag.has-hover || copy-touch.has-hover;
+    callback dismiss();
+    callback copy();
+    callback hover(bool);
+    callback resize(float);
+    callback drag();
+    forward-focus: keys;
+    changed content-height => { root.resize(root.content-height); }
+    changed pointer-over => { root.hover(root.pointer-over); }
+    keys := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) { root.dismiss(); return accept; }
+            return reject;
+        }
+    Rectangle {
+        border-width: 1px; border-color: Theme.card-border; border-radius: 12px; background: transparent;
+        // The enclosing touch area observes hover even over selectable text and scrollbars.
+        whole := TouchArea {
+        Path { x: 22px; y: 23px; width: 16px; height: 16px; viewbox-width: 24; viewbox-height: 24;
+            commands: "M4 5h7 M7 5v.5C7 9 5.5 12 3 13 M5 9c0 2 2 3.5 5 4.5 M12 20l4-9 4 9 M13.5 17h5";
+            fill: transparent; stroke: Theme.accent; stroke-width: 1.8px; }
+        Text { x: 46px; y: 20px; height: 22px; text: root.heading; font-size: 12.5px;
+            font-weight: 700; color: Theme.text; }
+        Text { x: 151px; y: 20px; width: 160px; height: 22px; text: root.meta;
+            font-family: "Consolas"; font-size: 11px; color: Theme.text-secondary; }
+        header-drag := TouchArea { x: 0px; y: 0px; width: root.width - 48px; height: 48px;
+            pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.drag(); } } }
+        Rectangle { x: root.width - 45px; y: 20px; width: 22px; height: 22px; border-radius: 6px;
+            background: close.has-hover ? Theme.hover : transparent;
+            Path { x: 5px; y: 5px; width: 12px; height: 12px; viewbox-width: 24; viewbox-height: 24;
+                commands: "M4 4l16 16 M20 4L4 20"; fill: transparent; stroke: Theme.text-secondary; stroke-width: 1px; }
+            close := TouchArea { clicked => { root.dismiss(); } mouse-cursor: pointer; }
+        }
+        original-measure := Text { visible: false; width: 336px; text: root.original;
+            font-size: 12px; wrap: word-wrap; }
+        original-box := ScrollView {
+            x: 22px; y: 51px; width: 336px; height: min(60px, max(17px, original-measure.preferred-height));
+            content-width: self.width;
+            content-height: max(self.height, original-measure.preferred-height);
+            TextInput { width: 336px; height: original-measure.preferred-height;
+                text: root.original; read-only: true; wrap: word-wrap; single-line: false;
+                font-size: 12px; color: Theme.text-secondary; }
+        }
+        translated-measure := Text { visible: false; width: 314px; text: root.translated;
+            font-size: 14.5px; wrap: word-wrap; }
+        translation-box := Rectangle {
+            x: 22px; y: original-box.y + original-box.height + 8px; width: 336px;
+            height: min(220px, max(40px, translated-measure.preferred-height + 18px));
+            border-radius: 8px; background: Theme.dark ? #ffffff0f : #0000000a;
+            ScrollView { x: 11px; y: 9px; width: 314px; height: parent.height - 18px;
+                content-width: self.width;
+                content-height: max(self.height, translated-measure.preferred-height);
+                TextInput { width: 314px; height: translated-measure.preferred-height;
+                    text: root.translated; read-only: true; wrap: word-wrap; single-line: false;
+                    font-size: 14.5px; font-italic: root.loading;
+                    color: root.loading ? Theme.text-secondary : Theme.text; }
+            }
+        }
+        copy-button := Rectangle {
+            x: 22px; y: translation-box.y + translation-box.height + 10px; width: 336px; height: 32px;
+            border-radius: 8px; background: copy-touch.has-hover ? Theme.accent.brighter(0.1) : Theme.accent;
+            Text { text: root.copy-label; font-size: 12.5px; font-weight: 600; color: Theme.accent-text;
+                horizontal-alignment: center; vertical-alignment: center; }
+            copy-touch := TouchArea { mouse-cursor: pointer; clicked => { root.copy(); } }
+        }
+        }
+    }
+    }
 }
