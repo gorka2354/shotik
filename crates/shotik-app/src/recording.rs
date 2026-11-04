@@ -53,6 +53,11 @@ impl App {
         }
         let result = self.begin_recording(target, &pending);
         self.state().rec_starting = None;
+        // Stop or cancel can arrive while the recorder is starting, after the last look at `pending`.
+        if pending.load(Ordering::SeqCst) && matches!(result, Ok(Some(_))) {
+            self.ports.recorder.cancel();
+            return Ok(None);
+        }
         result
     }
 
@@ -112,7 +117,7 @@ impl App {
         Ok(status)
     }
 
-    fn on_recorder_event(self: &Arc<Self>, event: RecorderEvent) {
+    pub(crate) fn on_recorder_event(self: &Arc<Self>, event: RecorderEvent) {
         match event {
             RecorderEvent::State(status) => {
                 self.refresh_tray();
@@ -129,7 +134,10 @@ impl App {
             }
             RecorderEvent::Done(done) => self.on_recording_done(&done),
             RecorderEvent::Error(message) => {
-                self.ports.ui.close_rec_windows();
+                // A lost audio input is an error too, and the recording goes on: its controls must stay.
+                if !self.ports.recorder.is_recording() {
+                    self.ports.ui.close_rec_windows();
+                }
                 let body = self.recording_error_text(&message);
                 self.ports.ui.show_toast(text_toast(self.t("recFailTitle"), body));
             }

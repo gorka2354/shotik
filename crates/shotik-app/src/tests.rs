@@ -27,10 +27,22 @@ fn sample_frame() -> Frame {
     Frame::new(4, 2, vec![10; 4 * 2 * 4]).unwrap()
 }
 
-struct FakeDisplays;
+/// A second monitor, for the tests that need one.
+fn second_display() -> Display {
+    Display { id: 8, primary: false, physical_bounds: Rect::new(1920, 0, 1920, 1080), ..display() }
+}
+
+#[derive(Default)]
+struct FakeDisplays {
+    two: std::sync::atomic::AtomicBool,
+}
 impl Displays for FakeDisplays {
     fn all(&self) -> Vec<Display> {
-        vec![display()]
+        if self.two.load(std::sync::atomic::Ordering::SeqCst) {
+            vec![display(), second_display()]
+        } else {
+            vec![display()]
+        }
     }
     fn primary(&self) -> Display {
         display()
@@ -46,9 +58,22 @@ impl Displays for FakeDisplays {
     }
 }
 
-struct FakeCapture;
+/// Captures of the second monitor wait at the gate while it is closed.
+#[derive(Default)]
+struct FakeCapture {
+    closed: Mutex<bool>,
+    opened: std::sync::Condvar,
+    waiting: std::sync::atomic::AtomicUsize,
+}
 impl ScreenCapture for FakeCapture {
-    fn grab(&self, _display: &Display) -> Result<Frame> {
+    fn grab(&self, display: &Display) -> Result<Frame> {
+        if display.id == second_display().id {
+            self.waiting.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let mut closed = self.closed.lock().unwrap();
+            while *closed {
+                closed = self.opened.wait(closed).unwrap();
+            }
+        }
         Ok(sample_frame())
     }
 }
@@ -224,6 +249,8 @@ struct FakeRecorder {
     recording: Mutex<bool>,
     starts: Mutex<Vec<RecordOptions>>,
     stops: Mutex<u32>,
+    cancels: Mutex<u32>,
+    during_start: Mutex<Option<Box<dyn FnOnce() + Send>>>,
 }
 impl RecorderControl for FakeRecorder {
     fn start(&self, _target: RecordTarget, options: RecordOptions) -> Result<Option<RecStatus>> {
@@ -232,7 +259,11 @@ impl RecorderControl for FakeRecorder {
             return Ok(None);
         }
         *recording = true;
+        drop(recording);
         self.starts.lock().unwrap().push(options);
+        if let Some(during) = self.during_start.lock().unwrap().take() {
+            during();
+        }
         Ok(Some(RecStatus { recording: true, ..RecStatus::default() }))
     }
     fn stop(&self) {
@@ -241,7 +272,10 @@ impl RecorderControl for FakeRecorder {
     }
     fn pause(&self) {}
     fn resume(&self) {}
-    fn cancel(&self) {}
+    fn cancel(&self) {
+        *self.cancels.lock().unwrap() += 1;
+        *self.recording.lock().unwrap() = false;
+    }
     fn is_recording(&self) -> bool {
         *self.recording.lock().unwrap()
     }
@@ -260,6 +294,7 @@ struct FakeUi {
     bubble: Mutex<bool>,
     popup_visible: Mutex<bool>,
     rec_windows: Mutex<Vec<RecWindows>>,
+    rec_windows_closed: Mutex<u32>,
     main_shown: Mutex<u32>,
     overlay_open: Mutex<bool>,
     overlay_answer: Mutex<Option<OverlayOutcome>>,
@@ -362,7 +397,9 @@ impl UiPort for FakeUi {
         self.rec_windows.lock().unwrap().push(windows);
     }
     fn update_rec_windows(&self, _paused: bool, _levels: Option<RecLevels>) {}
-    fn close_rec_windows(&self) {}
+    fn close_rec_windows(&self) {
+        *self.rec_windows_closed.lock().unwrap() += 1;
+    }
     fn apply_theme(&self, _theme: Theme) {}
     fn rebuild_language(&self) {}
     fn ui_state(&self, _target: &str, _index: usize) -> Result<Value> {
@@ -381,6 +418,8 @@ struct Rig {
     ui: Arc<FakeUi>,
     clipboard: Arc<FakeClipboard>,
     recorder: Arc<FakeRecorder>,
+    displays: Arc<FakeDisplays>,
+    capture: Arc<FakeCapture>,
     hotkeys: Arc<FakeHotkeys>,
     tray: Arc<FakeTray>,
     autostart: Arc<FakeAutostart>,
@@ -407,6 +446,8 @@ fn rig_with(name: &str, ghost: bool, test_mode: bool) -> Rig {
     let ui = Arc::new(FakeUi::default());
     let clipboard = Arc::new(FakeClipboard::default());
     let recorder = Arc::new(FakeRecorder::default());
+    let displays = Arc::new(FakeDisplays::default());
+    let capture = Arc::new(FakeCapture::default());
     let hotkeys = Arc::new(FakeHotkeys::default());
     let tray = Arc::new(FakeTray::default());
     let autostart = Arc::new(FakeAutostart::default());
@@ -415,8 +456,8 @@ fn rig_with(name: &str, ghost: bool, test_mode: bool) -> Rig {
     let ports = Ports {
         settings,
         history,
-        displays: Arc::new(FakeDisplays),
-        capture: Arc::new(FakeCapture),
+        displays: displays.clone(),
+        capture: capture.clone(),
         windows: Arc::new(NoWindows),
         clipboard: clipboard.clone(),
         ocr: Arc::new(FakeOcr("распознанный текст")),
@@ -449,7 +490,7 @@ fn rig_with(name: &str, ghost: bool, test_mode: bool) -> Rig {
         temp_dir: dir.clone(),
     };
     let app = App::new(ports, env, rt.handle().clone());
-    Rig { app, ui, clipboard, recorder, hotkeys, tray, autostart, selection, dir, _rt: rt }
+    Rig { app, ui, clipboard, recorder, displays, capture, hotkeys, tray, autostart, selection, dir, _rt: rt }
 }
 
 fn rig(name: &str) -> Rig {
@@ -670,6 +711,72 @@ fn the_record_trigger_stops_a_running_session() {
     r.app.trigger_record();
     assert_eq!(*r.recorder.stops.lock().unwrap(), 1);
     assert!(!r.app.is_recording());
+}
+
+#[test]
+fn a_stop_that_arrives_while_the_recorder_starts_is_not_lost() {
+    let r = rig("start-race");
+    let app = r.app.clone();
+    *r.recorder.during_start.lock().unwrap() = Some(Box::new(move || app.stop_recording()));
+    let started = r.app.start_recording(RecordTarget::AudioOnly).unwrap();
+    assert!(started.is_none(), "it was called off");
+    assert_eq!(*r.recorder.cancels.lock().unwrap(), 1);
+    assert!(!r.app.is_recording());
+}
+
+#[test]
+fn losing_an_audio_input_keeps_the_controls_of_the_recording_that_goes_on() {
+    let r = rig("audio-lost");
+    r.app.start_recording(RecordTarget::AudioOnly).unwrap();
+    r.app.on_recorder_event(RecorderEvent::Error("audio:system-unavailable".into()));
+    assert_eq!(*r.ui.rec_windows_closed.lock().unwrap(), 0, "the recording goes on");
+    assert_eq!(r.ui.toasts.lock().unwrap().len(), 1, "and the user is told");
+
+    r.recorder.stop();
+    r.app.on_recorder_event(RecorderEvent::Error("the encoder failed".into()));
+    assert_eq!(*r.ui.rec_windows_closed.lock().unwrap(), 1, "a failure that ended it closes them");
+}
+
+#[test]
+fn a_late_frame_of_a_cancelled_overlay_stays_out_of_the_next_session() {
+    use std::sync::atomic::Ordering::SeqCst;
+    let r = rig("late-frame");
+    r.displays.two.store(true, SeqCst);
+    *r.capture.closed.lock().unwrap() = true;
+    *r.ui.overlay_answer.lock().unwrap() = Some(OverlayOutcome::Cancelled);
+    assert!(matches!(r.app.run_overlay(OverlayMode::Normal), crate::overlay::OverlayResult::Cancelled));
+    for _ in 0..500 {
+        if r.capture.waiting.load(SeqCst) == 1 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    assert_eq!(r.capture.waiting.load(SeqCst), 1, "the first session's capture is on its way");
+
+    let second = {
+        let app = r.app.clone();
+        std::thread::spawn(move || app.run_overlay(OverlayMode::Normal))
+    };
+    for _ in 0..500 {
+        if r.capture.waiting.load(SeqCst) == 2 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    assert_eq!(r.capture.waiting.load(SeqCst), 2, "and so is the second session's");
+    *r.capture.closed.lock().unwrap() = false;
+    r.capture.opened.notify_all();
+    for _ in 0..500 {
+        if r.ui.overlay_displays.lock().unwrap().iter().any(|(id, _)| *id == second_display().id) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let second_monitor = r.ui.overlay_displays.lock().unwrap().iter().filter(|(id, _)| *id == second_display().id).count();
+    assert_eq!(second_monitor, 1, "one window for the second monitor, not one more with the old frame");
+    r.app.ports.ui.overlay_cancel();
+    second.join().unwrap();
 }
 
 #[test]

@@ -30,8 +30,10 @@ Page instfiles
 UninstPage instfiles
 
 !macro StopRunningShotik
-  ; Only this install's own executable: nothing else named Shotik on the machine is touched.
-  nsExec::Exec `powershell.exe -NoProfile -NonInteractive -Command "Get-Process Shotik -ErrorAction SilentlyContinue | Where-Object { $$_.Path -eq '$INSTDIR\Shotik.exe' } | Stop-Process -Force; Start-Sleep -Milliseconds 500"`
+  ; Only this install's own executable: nothing else named Shotik on the machine is touched. The path goes
+  ; through the environment, because a folder name may hold a quote and a command line would break on it.
+  System::Call 'Kernel32::SetEnvironmentVariable(t "SHOTIK_INSTDIR", t "$INSTDIR")'
+  nsExec::Exec `powershell.exe -NoProfile -NonInteractive -Command "Get-Process Shotik -ErrorAction SilentlyContinue | Where-Object { $$_.Path -eq ($$env:SHOTIK_INSTDIR + '\Shotik.exe') } | Stop-Process -Force; Start-Sleep -Milliseconds 500"`
   Pop $0
 !macroend
 
@@ -41,7 +43,9 @@ Section "Shotik"
 
   ; An Electron install leaves its uninstaller here: let it remove its own files and registry entry.
   ; It keeps user data. ExecWait returns once the uninstaller has finished, with _? keeping it in place.
-  IfFileExists "$INSTDIR\Uninstall Shotik.exe" 0 no_electron
+  ; Our own uninstaller has the same name but must not run on a reinstall, because it removes autostart:
+  ; only Electron has an app.asar.
+  IfFileExists "$INSTDIR\resources\app.asar" 0 no_electron
     ExecWait `"$INSTDIR\Uninstall Shotik.exe" /S _?=$INSTDIR` $0
     Delete "$INSTDIR\Uninstall Shotik.exe"
     RMDir /r "$INSTDIR\resources"

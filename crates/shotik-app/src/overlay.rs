@@ -27,7 +27,12 @@ impl App {
 
         let app = self.clone();
         let marks: MarkSink = Arc::new(move |label| app.overlay_mark(label, started));
-        self.state().overlay_timing.clear();
+        let session = {
+            let mut state = self.state();
+            state.overlay_timing.clear();
+            state.overlay_session += 1;
+            state.overlay_session
+        };
         if let Err(e) = ui.overlay_begin(
             mode,
             marks.clone(),
@@ -59,6 +64,8 @@ impl App {
         }
         for display in self.ports.displays.all().into_iter().filter(|d| d.id != cursor.id) {
             self.spawn(move |app| match app.ports.capture.grab(&display) {
+                // The session this frame was taken for was cancelled and another one is open.
+                Ok(_) if app.state().overlay_session != session => {}
                 Ok(frame) => {
                     if let Err(e) = app.ports.ui.overlay_add_display(display, frame, false) {
                         app.diag.log(&format!("overlay display failed: {e}"));
