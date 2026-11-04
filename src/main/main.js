@@ -237,7 +237,7 @@ async function translateTextToPopup(text) {
     windows.updateTranslatePopup({ original: text, translated: res.text, source: res.source, target });
     lastProcessed = { action: 'translate-selection', file: null, ts: Date.now() };
   } catch (e) {
-    blog('translate: FAIL ' + (e && e.message));
+    blog('translate: FAIL ' + (e && e.name)); // the message can quote the reply, and with it the text
     windows.updateTranslatePopup({ original: text, error: t('txtTranslateFail') });
   }
   return lastProcessed;
