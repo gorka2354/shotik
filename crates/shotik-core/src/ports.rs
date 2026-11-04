@@ -50,6 +50,11 @@ pub trait HistoryStore: Send + Sync {
     fn add_recording(&self, done: &RecordingDone) -> Result<HistoryEntry>;
     /// Newest first. Entries whose file is gone are dropped first.
     fn list(&self, limit: usize, filter: HistoryFilter) -> Vec<HistoryEntry>;
+    /// Fallible listing for stores that persist removal of missing files. New callers should
+    /// use this method to receive write errors; the original `list` signature stays compatible.
+    fn try_list(&self, limit: usize, filter: HistoryFilter) -> Result<Vec<HistoryEntry>> {
+        Ok(self.list(limit, filter))
+    }
     fn get(&self, id: &str) -> Option<HistoryEntry>;
     fn remove(&self, id: &str) -> Result<()>;
     fn clear(&self, delete_files: bool) -> Result<()>;
