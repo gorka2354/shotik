@@ -50,7 +50,7 @@ fn check_video_file(done: &RecordingDone, fps: u64, width: u64, height: u64, aud
     assert_eq!(video["r_frame_rate"], format!("{fps}/1"), "{video}");
     let frames = count(&video["nb_read_frames"]);
     let duration = seconds(&video["duration"]);
-    assert!((frames as f64 - duration * fps as f64).abs() <= 1.0, "{frames} frames in {duration} s");
+    assert!((frames as f64 - duration * fps as f64).abs() <= 1.0, "{frames} frames in {duration} s: {video}");
     assert!((duration - done.duration_sec).abs() < 0.1, "file {duration} s, reported {} s", done.duration_sec);
     assert_eq!(stream(&info, "audio").is_some(), audio, "{info}");
     println!(
@@ -486,4 +486,48 @@ fn gif_of_something_that_is_no_video_is_an_explicit_error() {
     assert!(error.contains("x.mp4"), "{error}");
     assert!(!dir.join("x.gif").exists());
     fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn gif_exports_leave_no_handles_behind() {
+    let _serial = serial();
+    let bench = Bench::synthetic(SynthOptions::default());
+    let done = bench.record(region(0, 0, 640, 360, 1.0), bench.options(30, false, false), 1.0);
+    for _ in 0..2 {
+        export_gif(&done.file, 12, 320).unwrap();
+    }
+    thread::sleep(Duration::from_millis(200));
+    let before = common::handle_types();
+    for _ in 0..8 {
+        export_gif(&done.file, 12, 320).unwrap();
+    }
+    thread::sleep(Duration::from_millis(200));
+    let growth = common::diff_types(&before, &common::handle_types());
+    println!("over 8 exports: {growth:?}");
+    for (kind, delta) in &growth {
+        assert!(*delta < 8, "{kind} grows by {delta} over 8 exports");
+    }
+}
+
+/// The number to beat is the 12.7 s of the Electron build for a 15 s clip of this scenario.
+#[test]
+#[ignore = "takes 20 s, for numbers"]
+fn gif_bench_scenario() {
+    let _serial = serial();
+    let bench = Bench::synthetic(SynthOptions::default());
+    let done = bench.record(bench_target(), bench.options(30, false, false), 15.0);
+    let started = Instant::now();
+    let gif = export_gif(&done.file, 0, 0).unwrap();
+    println!("GIF of {:.1} s took {} ms, {:.2} MB", done.duration_sec, started.elapsed().as_millis(), fs::metadata(&gif).unwrap().len() as f64 / 1_048_576.0);
+}
+
+/// `SHOTIK_GIF_SOURCE` names a file to export, for a comparison from the outside.
+#[test]
+#[ignore = "a tool for comparing quality"]
+fn gif_of_a_given_file() {
+    let source = std::env::var("SHOTIK_GIF_SOURCE").expect("SHOTIK_GIF_SOURCE");
+    let started = Instant::now();
+    let gif = export_gif(Path::new(&source), 0, 0);
+    println!("{source}: {} ms, {gif:?}", started.elapsed().as_millis());
+    gif.unwrap();
 }

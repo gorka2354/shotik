@@ -24,6 +24,17 @@ use crate::trace::Trace;
 /// The synthetic source has no monitor to clip to.
 const SYNTH_CANVAS: u32 = 16384;
 
+/// Outlives everything a session opens.
+struct SessionGuard {
+    _media: MediaFoundation,
+}
+
+impl Drop for SessionGuard {
+    fn drop(&mut self) {
+        D3d::trim_all();
+    }
+}
+
 pub(crate) struct WinBackend {
     capture: CaptureMode,
 }
@@ -36,7 +47,7 @@ impl WinBackend {
 
 impl Backend for WinBackend {
     fn session_guard(&self) -> Result<Box<dyn Any>> {
-        Ok(Box::new(MediaFoundation::start()?))
+        Ok(Box::new(SessionGuard { _media: MediaFoundation::start()? }))
     }
 
     fn enter_thread(&self, role: ThreadRole) -> Box<dyn Any> {
@@ -63,14 +74,14 @@ impl Backend for WinBackend {
                 if monitor.is_invalid() {
                     return Err(Error::msg(format!("No display at {},{}", center.x, center.y)));
                 }
-                let d3d = D3d::create(Some(monitor), trace)?;
+                let d3d = D3d::shared(Some(monitor), trace)?;
                 let grabber = WgcGrabber::start(&d3d, monitor, request.rect_phys, request.fps, trace)?;
                 let (width, height) = grabber.size();
                 Ok(Box::new(PipelineSource::new(Box::new(grabber), Some(d3d), width, height, request.fps)))
             }
             CaptureMode::Synthetic(options) => {
                 let crop = crop_box(request.rect_phys, SYNTH_CANVAS, SYNTH_CANVAS)?;
-                let d3d = match D3d::create(None, trace) {
+                let d3d = match D3d::shared(None, trace) {
                     Ok(d3d) => Some(d3d),
                     Err(e) => {
                         trace.push(format!("no GPU for the synthetic source: {e}"));
@@ -117,6 +128,6 @@ impl Backend for WinBackend {
     }
 
     fn open_audio_sink(&self, request: &SinkRequest, trace: &Trace) -> Result<Box<dyn MediaSink>> {
-        Ok(Box::new(MfSink::open_audio_only(request, trace)?))
+        Ok(Box::new(MfSink::audio_only(request, trace)?))
     }
 }

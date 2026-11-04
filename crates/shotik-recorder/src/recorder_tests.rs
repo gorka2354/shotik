@@ -70,6 +70,7 @@ struct Script {
     finalize_gate: Option<Arc<Gate>>,
     write_error_after: Option<usize>,
     mic_lost_after: Option<u32>,
+    panic_in_video_open: bool,
 }
 
 struct FakeBackend {
@@ -238,6 +239,7 @@ impl Backend for FakeBackend {
 
     fn open_video(&self, _request: &VideoRequest, _trace: &Trace) -> Result<Box<dyn VideoSource>> {
         self.log.video_opened.fetch_add(1, Ordering::SeqCst);
+        assert!(!self.script.panic_in_video_open, "scripted panic");
         if let Some(message) = &self.script.video_error {
             return Err(Error::msg(message.clone()));
         }
@@ -939,6 +941,15 @@ fn a_stuck_cancel_times_out_quietly() {
     assert!(f.trace().iter().any(|l| l == "finalize timed out canceled=true"), "{:?}", f.trace());
     gate.open();
     wait_until("the part file to go", || f.temp_files() == 0);
+}
+
+#[test]
+fn a_panic_in_a_session_is_reported_and_leaves_the_recorder_free() {
+    let f = Fixture::new(Script { panic_in_video_open: true, ..Script::default() });
+    f.start_video(false, false).unwrap();
+    assert!(f.wait_error().contains("internal error"));
+    f.wait_idle();
+    assert!(f.start_audio(true, false).is_some());
 }
 
 #[test]

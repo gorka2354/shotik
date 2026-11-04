@@ -5,6 +5,7 @@
 pub(crate) mod backend;
 mod com;
 mod d3d;
+mod encoder;
 pub(crate) mod gif_decode;
 mod sink;
 mod source;

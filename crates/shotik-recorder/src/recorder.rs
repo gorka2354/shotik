@@ -4,6 +4,7 @@
 //! file in history when it hears `RecorderEvent::Done`.
 
 use std::fs;
+use std::panic::{self, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Condvar, Mutex};
@@ -269,6 +270,9 @@ impl RecorderControl for Recorder {
             }
         }
 
+        // in place before the session exists: a stop that comes right after must find it
+        let control = Arc::new(Control::default());
+        *inner.control.lock().unwrap() = Some(Arc::clone(&control));
         let start_ts = epoch_ms();
         let Some(id) = inner.machine.lock().unwrap().activate(audio_only, start_ts) else {
             return Ok(None);
@@ -278,31 +282,35 @@ impl RecorderControl for Recorder {
         let part = inner.temp_dir.join(format!("shotik-rec-{}-{start_ts}.part", std::process::id()));
         let save_base = options.save_dir.join(ts_name(&inner.backend.local_time()));
         let job = Job { target, options, part, save_base };
-        let control = Arc::new(Control::default());
-        *inner.control.lock().unwrap() = Some(Arc::clone(&control));
+
+        // first in the listener's order, before the worker can report anything
+        let status = inner.status();
+        inner.emit(RecorderEvent::State(status.clone()));
 
         let worker = {
             let inner = Arc::clone(inner);
             thread::Builder::new().name("shotik-rec-session".into()).spawn(move || {
                 let events = WorkerEvents { inner: Arc::clone(&inner), id };
-                let outcome = engine::run_session(inner.backend.as_ref(), &job, &control, &inner.trace, &events);
+                // a panic in a session must not leave the recorder busy for good
+                let outcome = panic::catch_unwind(AssertUnwindSafe(|| {
+                    engine::run_session(inner.backend.as_ref(), &job, &control, &inner.trace, &events)
+                }))
+                .unwrap_or_else(|_| Outcome::Failed("The recording stopped because of an internal error".into()));
                 inner.finish(id, outcome);
             })
         };
         if let Err(e) = worker {
             inner.machine.lock().unwrap().settle(id);
+            inner.emit_state();
             return Err(Error::msg(format!("Cannot start the recording thread: {e}")));
         }
-        {
+        let watchdog = {
             let inner = Arc::clone(inner);
-            let watchdog = thread::Builder::new().name("shotik-rec-watchdog".into()).spawn(move || inner.watch(id));
-            if let Err(e) = watchdog {
-                inner_trace_watchdog(&self.inner, &e);
-            }
+            thread::Builder::new().name("shotik-rec-watchdog".into()).spawn(move || inner.watch(id))
+        };
+        if let Err(e) = watchdog {
+            inner.trace.push(format!("no finalize watchdog: {e}"));
         }
-
-        let status = inner.status();
-        inner.emit(RecorderEvent::State(status.clone()));
         Ok(Some(status))
     }
 
@@ -353,8 +361,4 @@ impl RecorderControl for Recorder {
     fn set_listener(&self, events: Callback<RecorderEvent>) {
         *self.inner.listener.lock().unwrap() = Some(events);
     }
-}
-
-fn inner_trace_watchdog(inner: &Inner, e: &std::io::Error) {
-    inner.trace.push(format!("no finalize watchdog: {e}"));
 }

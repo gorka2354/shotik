@@ -2,6 +2,8 @@
 //! never this crate) and a recorder with its own temporary directories.
 #![allow(dead_code)]
 
+mod handles;
+
 use std::fs;
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -15,7 +17,7 @@ use serde_json::Value;
 use shotik_core::ports::{RecordOptions, RecordTarget, RecorderControl, RecorderEvent, RecordingDone};
 use shotik_core::Rect;
 use shotik_recorder::{CaptureMode, Recorder, RecorderConfig, SynthOptions};
-use windows::Win32::Foundation::{CloseHandle, FILETIME, HANDLE};
+use windows::Win32::Foundation::FILETIME;
 use windows::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX};
 use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessHandleCount, GetProcessTimes};
 
@@ -73,7 +75,7 @@ fn run(mut command: Command) -> Vec<u8> {
 /// `ffprobe -show_streams -show_format` with frames really counted.
 pub fn probe(file: &Path) -> Value {
     let mut c = Command::new(ffprobe_path());
-    c.args(["-v", "error", "-count_frames", "-show_streams", "-show_format", "-of", "json"]).arg(file);
+    c.args(["-v", "error", "-count_frames", "-count_packets", "-show_streams", "-show_format", "-of", "json"]).arg(file);
     serde_json::from_slice(&run(c)).unwrap()
 }
 
@@ -195,10 +197,8 @@ pub fn handle_count() -> u32 {
     count
 }
 
-// Used only so the handle helpers are visibly independent of the crate under test.
-pub fn _handle_types(_: HANDLE) {
-    let _ = CloseHandle;
-}
+#[allow(unused_imports)]
+pub use handles::{diff_types, handle_types};
 
 static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
 

@@ -20,7 +20,8 @@ use windows::Win32::Media::MediaFoundation::{
 
 use super::com::{qpc_ticks, Context};
 use super::d3d::{VideoConverter, D3d};
-use super::sink::{hardware_h264_encoders, nv12_type, MfSink, SendSample, VideoFormat};
+use super::encoder::{retained_encoder, EncoderStream, HardwareEncoder};
+use super::sink::{nv12_type, MfSink, SendSample, VideoFormat};
 use crate::backend::{MediaSink, SinkRequest, Snapshot, VideoFrame, VideoSource};
 use crate::clock::TICKS_PER_SEC;
 use crate::convert::{bgra_to_nv12, nv12_len};
@@ -35,6 +36,9 @@ const SURFACES_INITIAL: u32 = 4;
 const SURFACES_MAX: u32 = 24;
 const ENCODER_STALL_TIMEOUT: Duration = Duration::from_secs(5);
 const TRIAL_FRAMES: i64 = 3;
+/// Below this NVENC refuses the format and is unusable afterwards, other encoders fail in other ways.
+/// The software encoder handles so few pixels at no cost worth mentioning.
+const MIN_HARDWARE_SIDE: u32 = 256;
 
 /// Where the pictures come from.
 pub(crate) trait Grabber: Send {
@@ -51,7 +55,6 @@ struct GpuPath {
     latest: ID3D11Texture2D,
     converter: VideoConverter,
     allocator: IMFVideoSampleAllocatorEx,
-    _manager: IMFDXGIDeviceManager,
 }
 
 struct CpuPath {
@@ -105,45 +108,52 @@ impl PipelineSource {
     }
 
     fn open_gpu(&self, d3d: &D3d, request: &SinkRequest, trace: &Trace) -> Result<(MfSink, GpuPath)> {
-        let encoders = hardware_h264_encoders();
-        if encoders.is_empty() {
-            return Err(Error::msg("no hardware H.264 encoder is installed"));
+        if self.format.width < MIN_HARDWARE_SIDE || self.format.height < MIN_HARDWARE_SIDE {
+            return Err(Error::msg(format!("a region under {MIN_HARDWARE_SIDE} px goes to the software encoder")));
         }
-        trace.push(format!("hardware encoders: {}", encoders.join(", ")));
+        let encoder = retained_encoder(d3d, trace)?;
         let bind = D3D11_BIND_FLAG(D3D11_BIND_RENDER_TARGET.0 | D3D11_BIND_SHADER_RESOURCE.0);
         let (w, h) = (self.format.width, self.format.height);
         let latest = d3d.texture(w, h, DXGI_FORMAT_B8G8R8A8_UNORM, D3D11_USAGE_DEFAULT, bind, 0)?;
         let converter = VideoConverter::new(d3d, &latest, w, h)?;
         let manager = d3d.device_manager()?;
         let allocator = surface_allocator(&manager, &self.format)?;
-        let mut gpu = GpuPath { latest, converter, allocator, _manager: manager };
+        let mut gpu = GpuPath { latest, converter, allocator };
         let trial_started = Instant::now();
-        self.trial_encode(d3d, &mut gpu, request)?;
+        self.trial_encode(d3d, &mut gpu, Arc::clone(&encoder))?;
         trace.push(format!("hardware encoder trial ok in {} ms", trial_started.elapsed().as_millis()));
-        let sink = MfSink::open_hardware(request, &self.format, &gpu._manager, trace)?;
+        let stream = EncoderStream::begin(encoder, &self.format, trace)?;
+        let sink = MfSink::with_encoder(request, &self.format, stream, trace)?;
         Ok((sink, gpu))
     }
 
-    /// Hardware encoders can accept the media type and then fail on the second frame, as the Microsoft
-    /// DX12 encoder does at 64x64 where NVENC refuses at once, and a session limit shows up the same
-    /// way. The real file must not be the one to find out: once frames are lost there is no way to
-    /// switch to the software encoder, so a few blank frames go to a throwaway file first.
-    fn trial_encode(&self, d3d: &D3d, gpu: &mut GpuPath, request: &SinkRequest) -> Result<()> {
-        let path = request.path.with_extension("trial");
-        let probe = SinkRequest { path: path.clone(), audio: false };
-        let result = (|| {
-            let mut sink = MfSink::open_hardware(&probe, &self.format, &gpu._manager, &Trace::default())?;
-            let frame_ticks = TICKS_PER_SEC / i64::from(self.format.fps.max(1));
-            for n in 0..TRIAL_FRAMES {
-                let sample = Self::gpu_frame(d3d, gpu)?;
-                sink.write_video(Box::new(SendSample(sample)), n * frame_ticks, frame_ticks)?;
+    /// An encoder can take a format and then fail on the second frame, as the Microsoft DX12 encoder
+    /// does at 64x64, and a limit on sessions shows up the same way. The real file must not be the one
+    /// to find out: once frames are lost it is too late for the software encoder, so a few blank frames
+    /// go through first and their output is discarded. A stream of its own: the next one has to start
+    /// with a keyframe, which only a fresh format guarantees.
+    fn trial_encode(&self, d3d: &D3d, gpu: &mut GpuPath, encoder: Arc<HardwareEncoder>) -> Result<()> {
+        let mut stream = EncoderStream::begin(encoder, &self.format, &Trace::default())?;
+        let frame_ticks = TICKS_PER_SEC / i64::from(self.format.fps.max(1));
+        let mut outputs = 0;
+        let mut count = |_: &IMFSample| {
+            outputs += 1;
+            Ok(())
+        };
+        for n in 0..TRIAL_FRAMES {
+            let sample = Self::gpu_frame(d3d, gpu)?;
+            // SAFETY: setters on a live sample.
+            unsafe {
+                sample.SetSampleTime(n * frame_ticks).ctx("SetSampleTime")?;
+                sample.SetSampleDuration(frame_ticks).ctx("SetSampleDuration")?;
             }
-            Box::new(sink).finalize()
-        })();
-        if path.exists() {
-            let _ = std::fs::remove_file(&path);
+            stream.encode(&sample, &mut count)?;
         }
-        result
+        stream.drain(&mut count)?;
+        if outputs == 0 {
+            return Err(Error::msg("the encoder took frames and returned nothing"));
+        }
+        Ok(())
     }
 
     fn cpu_path(&self) -> CpuPath {
@@ -213,7 +223,7 @@ impl VideoSource for PipelineSource {
                 Err(e) => trace.push(format!("hardware encoding unavailable: {e}")),
             }
         }
-        let sink = MfSink::open_software(request, &self.format, trace)?;
+        let sink = MfSink::software(request, &self.format, trace)?;
         self.path = Path::Cpu(self.cpu_path());
         Ok(Box::new(sink))
     }

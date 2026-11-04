@@ -1,9 +1,14 @@
 //! Windows Graphics Capture of one monitor. The newest frame waits in a slot and older ones are
 //! returned to the pool at once, so the pool never runs dry and a frame is at most one composition
 //! old when the video thread takes it.
+//!
+//! The calls that reach a system broker leave ALPC ports behind, irregularly, about 0.2 to 0.45 per
+//! call (`IsSupported`, `RequestAccessAsync`, `CreateForMonitor`), which came to two ports per recording.
+//! Capturing again on a kept item and device leaves nothing, so what can be kept is: the answers once
+//! per process, and the item for as long as the monitor exists.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use shotik_core::{Error, Rect, Result};
 use windows::core::{factory, h, Interface, Ref};
@@ -17,9 +22,8 @@ use windows::Graphics::DirectX::Direct3D11::IDirect3DDevice;
 use windows::Graphics::DirectX::DirectXPixelFormat;
 use windows::Graphics::SizeInt32;
 use windows::Win32::Graphics::Direct3D11::{ID3D11Texture2D, D3D11_BOX};
-use windows::Win32::Graphics::Dxgi::IDXGIDevice;
 use windows::Win32::Graphics::Gdi::HMONITOR;
-use windows::Win32::System::WinRT::Direct3D11::{CreateDirect3D11DeviceFromDXGIDevice, IDirect3DDxgiInterfaceAccess};
+use windows::Win32::System::WinRT::Direct3D11::IDirect3DDxgiInterfaceAccess;
 use windows::Win32::System::WinRT::Graphics::Capture::IGraphicsCaptureItemInterop;
 
 use super::com::Context;
@@ -36,8 +40,65 @@ const SESSION_CLASS: &windows::core::HSTRING = h!("Windows.Graphics.Capture.Grap
 /// The frame waiting for the video thread, shared with the capture callback.
 type Slot = Arc<Mutex<Option<Direct3D11CaptureFrame>>>;
 
-pub(crate) struct WgcGrabber {
+/// What this Windows can do, asked once.
+#[derive(Clone, Debug)]
+struct Capabilities {
+    supported: bool,
+    border_setting: bool,
+    update_interval_setting: bool,
+    /// Why borderless capture was not granted, when it was not.
+    access_problem: Option<String>,
+}
+
+fn capabilities() -> &'static Capabilities {
+    static ANSWER: OnceLock<Capabilities> = OnceLock::new();
+    ANSWER.get_or_init(|| {
+        let supported = GraphicsCaptureSession::IsSupported().unwrap_or(false);
+        let border_setting = ApiInformation::IsPropertyPresent(SESSION_CLASS, h!("IsBorderRequired")).unwrap_or(false);
+        let update_interval_setting = ApiInformation::IsPropertyPresent(SESSION_CLASS, h!("MinUpdateInterval")).unwrap_or(false);
+        // Unpackaged applications are allowed without a prompt.
+        let access_problem = border_setting
+            .then(|| GraphicsCaptureAccess::RequestAccessAsync(GraphicsCaptureAccessKind::Borderless).and_then(|op| op.join()).err())
+            .flatten()
+            .map(|e| e.to_string());
+        Capabilities { supported, border_setting, update_interval_setting, access_problem }
+    })
+}
+
+/// A capture item stays usable until its monitor goes away, which `closed` says.
+struct KeptItem {
+    monitor: isize,
     item: GraphicsCaptureItem,
+    closed: Arc<AtomicBool>,
+}
+
+static ITEMS: Mutex<Vec<KeptItem>> = Mutex::new(Vec::new());
+
+fn item_for(monitor: HMONITOR) -> Result<(GraphicsCaptureItem, Arc<AtomicBool>)> {
+    let key = monitor.0 as isize;
+    let mut items = ITEMS.lock().unwrap();
+    items.retain(|kept| !kept.closed.load(Ordering::SeqCst));
+    if let Some(kept) = items.iter().find(|kept| kept.monitor == key) {
+        return Ok((kept.item.clone(), Arc::clone(&kept.closed)));
+    }
+    let interop = factory::<GraphicsCaptureItem, IGraphicsCaptureItemInterop>().ctx("IGraphicsCaptureItemInterop")?;
+    // SAFETY: the monitor handle is checked by the call; it returns an error for a stale one.
+    let item: GraphicsCaptureItem = unsafe { interop.CreateForMonitor(monitor) }.ctx("Cannot capture this display")?;
+    let closed = Arc::new(AtomicBool::new(false));
+    // the handler stays for as long as the item: it is what tells the item is gone
+    item.Closed(&TypedEventHandler::new({
+        let closed = Arc::clone(&closed);
+        move |_, _| {
+            closed.store(true, Ordering::SeqCst);
+            Ok(())
+        }
+    }))
+    .ctx("GraphicsCaptureItem::Closed")?;
+    items.push(KeptItem { monitor: key, item: item.clone(), closed: Arc::clone(&closed) });
+    Ok((item, closed))
+}
+
+pub(crate) struct WgcGrabber {
     device: IDirect3DDevice,
     pool: Direct3D11CaptureFramePool,
     session: GraphicsCaptureSession,
@@ -45,7 +106,6 @@ pub(crate) struct WgcGrabber {
     arrived: Arc<AtomicBool>,
     closed: Arc<AtomicBool>,
     frame_token: i64,
-    closed_token: i64,
     crop: CropBox,
     pool_size: SizeInt32,
     staging: Option<ID3D11Texture2D>,
@@ -58,19 +118,19 @@ unsafe impl Send for WgcGrabber {}
 /// The optional parts of the session, by what this Windows version has. Any failure is reported: a
 /// yellow border on the user's screen must have a visible reason.
 fn configure_session(session: &GraphicsCaptureSession, fps: u32, trace: &Trace) -> windows::core::Result<()> {
+    let can = capabilities();
     session.SetIsCursorCaptureEnabled(true)?;
-    if ApiInformation::IsPropertyPresent(SESSION_CLASS, h!("IsBorderRequired"))? {
-        // Unpackaged applications are allowed without a prompt.
-        if let Err(e) = GraphicsCaptureAccess::RequestAccessAsync(GraphicsCaptureAccessKind::Borderless).and_then(|op| op.join()) {
-            trace.push(format!("borderless access: {e}"));
-        }
+    if let Some(problem) = &can.access_problem {
+        trace.push(format!("borderless access: {problem}"));
+    }
+    if can.border_setting {
         if let Err(e) = session.SetIsBorderRequired(false) {
             trace.push(format!("capture border stays on: {e}"));
         }
     } else {
         trace.push("capture border stays on: this Windows has no IsBorderRequired");
     }
-    if ApiInformation::IsPropertyPresent(SESSION_CLASS, h!("MinUpdateInterval"))? {
+    if can.update_interval_setting {
         // Twice the output rate is enough to always have a fresh frame; it spares a 240 Hz display.
         let interval = TimeSpan { Duration: TICKS_PER_SEC / i64::from(fps.max(1) * 2) };
         if let Err(e) = session.SetMinUpdateInterval(interval) {
@@ -82,21 +142,14 @@ fn configure_session(session: &GraphicsCaptureSession, fps: u32, trace: &Trace) 
 
 impl WgcGrabber {
     pub fn start(d3d: &D3d, monitor: HMONITOR, rect_phys: Rect, fps: u32, trace: &Trace) -> Result<Self> {
-        if !GraphicsCaptureSession::IsSupported().unwrap_or(false) {
+        if !capabilities().supported {
             return Err(Error::msg("Windows Graphics Capture is not supported on this system"));
         }
-        let interop = factory::<GraphicsCaptureItem, IGraphicsCaptureItemInterop>().ctx("IGraphicsCaptureItemInterop")?;
-        // SAFETY: the monitor handle is checked by the call; it returns an error for a stale one.
-        let item: GraphicsCaptureItem = unsafe { interop.CreateForMonitor(monitor) }.ctx("Cannot capture this display")?;
+        let (item, closed) = item_for(monitor)?;
         let pool_size = item.Size().ctx("GraphicsCaptureItem::Size")?;
         let crop = crop_box(rect_phys, pool_size.Width.max(0) as u32, pool_size.Height.max(0) as u32)?;
 
-        let dxgi: IDXGIDevice = d3d.device.cast().ctx("IDXGIDevice")?;
-        // SAFETY: wraps a live device; the result holds its own reference.
-        let device: IDirect3DDevice = unsafe { CreateDirect3D11DeviceFromDXGIDevice(&dxgi) }
-            .ctx("CreateDirect3D11DeviceFromDXGIDevice")?
-            .cast()
-            .ctx("IDirect3DDevice")?;
+        let device = d3d.capture_device()?;
         let pool = Direct3D11CaptureFramePool::CreateFreeThreaded(&device, FORMAT, POOL_BUFFERS, pool_size)
             .ctx("Direct3D11CaptureFramePool")?;
         let session = pool.CreateCaptureSession(&item).ctx("CreateCaptureSession")?;
@@ -120,31 +173,8 @@ impl WgcGrabber {
                 }
             }))
             .ctx("FrameArrived")?;
-        let closed = Arc::new(AtomicBool::new(false));
-        let closed_token = item
-            .Closed(&TypedEventHandler::new({
-                let closed = Arc::clone(&closed);
-                move |_, _| {
-                    closed.store(true, Ordering::SeqCst);
-                    Ok(())
-                }
-            }))
-            .ctx("GraphicsCaptureItem::Closed")?;
 
-        let grabber = Self {
-            item,
-            device,
-            pool,
-            session,
-            slot,
-            arrived,
-            closed,
-            frame_token,
-            closed_token,
-            crop,
-            pool_size,
-            staging: None,
-        };
+        let grabber = Self { device, pool, session, slot, arrived, closed, frame_token, crop, pool_size, staging: None };
         grabber.session.StartCapture().ctx("Cannot start screen capture")?;
         trace.push(format!(
             "capture {}x{} crop {},{} {}x{}",
@@ -235,12 +265,10 @@ impl Drop for WgcGrabber {
     /// reference: `session.Close` is what stops capture and frees the shared surfaces.
     fn drop(&mut self) {
         let _ = self.pool.RemoveFrameArrived(self.frame_token);
-        let _ = self.item.RemoveClosed(self.closed_token);
         let _ = self.session.Close();
         if let Some(frame) = self.take_frame() {
             let _ = frame.Close();
         }
         let _ = self.pool.Close();
-        let _ = self.device.Close();
     }
 }

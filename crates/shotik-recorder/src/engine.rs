@@ -5,7 +5,7 @@
 //! The order of opening and the errors follow `__shotikStart` in `src/recorder/recorder.js`.
 
 use std::any::Any;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
@@ -211,6 +211,18 @@ fn mime_of(has_video: bool, has_audio: bool) -> &'static str {
     }
 }
 
+/// An abandoned sink writer lets go of its file with a small delay.
+fn remove_part(part: &Path, trace: &Trace) {
+    for attempt in 0..50 {
+        match std::fs::remove_file(part) {
+            Ok(()) => return,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
+            Err(e) if attempt == 49 => trace.push(format!("cannot remove {}: {e}", part.display())),
+            Err(_) => thread::sleep(Duration::from_millis(20)),
+        }
+    }
+}
+
 /// Whatever happens, the temporary file does not stay behind unless it became the result.
 pub(crate) fn run_session(
     backend: &dyn Backend,
@@ -221,10 +233,8 @@ pub(crate) fn run_session(
 ) -> Outcome {
     let _thread = backend.enter_thread(ThreadRole::Worker);
     let outcome = drive(backend, job, ctl, trace, events);
-    if !matches!(outcome, Outcome::Done(_)) && job.part.exists() {
-        if let Err(e) = std::fs::remove_file(&job.part) {
-            trace.push(format!("cannot remove {}: {e}", job.part.display()));
-        }
+    if !matches!(outcome, Outcome::Done(_)) {
+        remove_part(&job.part, trace);
     }
     trace.push(format!(
         "finalize bytes={} canceled={} partExists={}",

@@ -7,7 +7,7 @@ use shotik_core::{Error, Result};
 use windows::core::w;
 use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Media::MediaFoundation::{MFShutdown, MFStartup, MFSTARTUP_FULL, MF_VERSION};
-use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED};
+use windows::Win32::System::Com::{CoIncrementMTAUsage, CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED};
 use windows::Win32::System::Performance::{QueryPerformanceCounter, QueryPerformanceFrequency};
 use windows::Win32::System::Threading::{
     AvRevertMmThreadCharacteristics, AvSetMmThreadCharacteristicsW, GetCurrentThread, SetThreadPriority,
@@ -52,8 +52,21 @@ pub(crate) struct Apartment {
     _not_send: PhantomData<*const ()>,
 }
 
+/// The `windows` crate caches WinRT activation factories for the life of the process. When the last
+/// apartment thread of a session ends, COM unloads what it can and those pointers dangle: the second
+/// session with real capture crashed in the first call to Windows Graphics Capture. Holding the MTA
+/// open keeps the libraries loaded; it costs no thread.
+fn keep_mta_alive() {
+    static MTA: OnceLock<()> = OnceLock::new();
+    MTA.get_or_init(|| {
+        // SAFETY: the cookie is deliberately never given back, it lasts as long as the process.
+        let _ = unsafe { CoIncrementMTAUsage() };
+    });
+}
+
 impl Apartment {
     pub fn enter() -> Self {
+        keep_mta_alive();
         // SAFETY: paired with CoUninitialize in drop, on the same thread because the type is !Send.
         let hr = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
         Self { owned: hr.is_ok(), _not_send: PhantomData }
