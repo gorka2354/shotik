@@ -60,6 +60,7 @@ pub struct FileHistory {
     index: PathBuf,
     thumbs: PathBuf,
     settings: Arc<dyn SettingsStore>,
+    skipped: usize,
     items: Mutex<Vec<HistoryEntry>>,
     clock: Clock,
 }
@@ -79,16 +80,30 @@ impl FileHistory {
         clock: Clock,
     ) -> Result<Self> {
         let index = user_data.join("history.json");
-        let items = storage::read_json(&index)?
-            .and_then(|json| serde_json::from_value(json).ok())
-            .unwrap_or_default();
+        // One unreadable entry must cost that entry alone: an empty list here would erase the whole
+        // history on the next save.
+        let stored = match storage::read_json(&index)? {
+            Some(Value::Array(stored)) => stored,
+            _ => Vec::new(),
+        };
+        let total = stored.len();
+        let items: Vec<HistoryEntry> = stored
+            .into_iter()
+            .filter_map(|entry| serde_json::from_value(entry).ok())
+            .collect();
         Ok(Self {
             index,
             thumbs: user_data.join("thumbs"),
             settings,
+            skipped: total - items.len(),
             items: Mutex::new(items),
             clock,
         })
+    }
+
+    /// How many stored entries could not be read. The composition root logs this.
+    pub fn skipped_entries(&self) -> usize {
+        self.skipped
     }
 
     pub fn last(&self) -> Option<HistoryEntry> {

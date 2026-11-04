@@ -249,27 +249,76 @@ struct State {
 pub struct FileSettings {
     file: PathBuf,
     state: Mutex<State>,
+    ignored: Vec<String>,
 }
 
 impl FileSettings {
     pub fn new(user_data: &Path, defaults: Settings) -> Result<Self> {
         let file = user_data.join("settings.json");
-        let default_json = serde_json::to_value(&defaults)
+        let mut json = serde_json::to_value(&defaults)
             .map_err(|e| Error::msg(format!("cannot serialize settings: {e}")))?;
-        let json = deep_merge(
-            &default_json,
-            &storage::read_json(&file)?.unwrap_or(Value::Null),
-        );
-        // Malformed files (including invalid known field types) behave as missing files.
-        let (settings, json) = match serde_json::from_value(json.clone()) {
-            Ok(settings) => (settings, json),
-            Err(_) => (defaults, default_json),
-        };
+        // A field of the wrong type must cost that field alone. Treating the whole file as missing
+        // would overwrite the user's folder, hotkeys and keys on the next save, and the JS version
+        // accepted any type here.
+        let mut ignored = Vec::new();
+        if let Some(Value::Object(stored)) = storage::read_json(&file)? {
+            apply_valid_fields(&mut json, &[], &stored, &mut ignored);
+        }
+        let settings = serde_json::from_value(json.clone())
+            .map_err(|e| Error::msg(format!("settings do not fit their own model: {e}")))?;
         Ok(Self {
             file,
             state: Mutex::new(State { settings, json }),
+            ignored,
         })
     }
+
+    /// Dotted names of stored fields dropped for having the wrong type. Names only: values may be
+    /// credentials. The composition root logs these.
+    pub fn ignored_fields(&self) -> &[String] {
+        &self.ignored
+    }
+}
+
+/// Overlays `stored` on `root` with the deepMerge rules, one field at a time, keeping only what still
+/// deserializes into [`Settings`].
+fn apply_valid_fields(
+    root: &mut Value,
+    path: &[&str],
+    stored: &Map<String, Value>,
+    ignored: &mut Vec<String>,
+) {
+    for (key, value) in stored {
+        let mut field_path = path.to_vec();
+        field_path.push(key);
+        if let (Value::Object(nested), Some(Value::Object(_))) = (value, value_at(root, &field_path)) {
+            apply_valid_fields(root, &field_path, nested, ignored);
+            continue;
+        }
+        let mut candidate = root.clone();
+        set_value_at(&mut candidate, &field_path, value.clone());
+        if serde_json::from_value::<Settings>(candidate.clone()).is_ok() {
+            *root = candidate;
+        } else {
+            ignored.push(field_path.join("."));
+        }
+    }
+}
+
+fn value_at<'a>(root: &'a Value, path: &[&str]) -> Option<&'a Value> {
+    path.iter().try_fold(root, |value, key| value.get(*key))
+}
+
+fn set_value_at(root: &mut Value, path: &[&str], value: Value) {
+    let (last, parents) = path.split_last().expect("a field path is never empty");
+    let mut object = root;
+    for key in parents {
+        object = object.get_mut(*key).expect("the parent of a field exists");
+    }
+    object
+        .as_object_mut()
+        .expect("the parent of a field is an object")
+        .insert((*last).to_string(), value);
 }
 
 impl SettingsStore for FileSettings {
