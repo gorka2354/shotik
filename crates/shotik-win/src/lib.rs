@@ -13,5 +13,6 @@ pub mod autostart;
 pub mod ocr;
 pub mod selection;
 pub mod hotkeys;
+pub mod http;
 pub mod tray;
 pub mod single_instance;
