@@ -300,7 +300,7 @@ const toDip = (x, y) => { try { return screen.screenToDipPoint({ x, y }); } catc
 // reliance on flaky window blur). A press ON the bubble/popup is left alone —
 // that window handles its own click (activate / copy).
 function onMouseDown(ev) {
-  const pt = toDip(ev.x, ev.y);
+  const pt = ev.dip ? { x: ev.x, y: ev.y } : toDip(ev.x, ev.y); // the watcher reports physical px
   const outside = (w) => {
     if (!w || w.isDestroyed() || !w.isVisible()) return false;
     const b = w.getBounds();
@@ -899,7 +899,7 @@ function setupTestHandler() {
         return { text, cropped: !!rect, rect };
       }
       case 'sim-down': {
-        onMouseDown({ x: body.x, y: body.y });
+        onMouseDown({ x: body.x, y: body.y, dip: !!body.dip });
         await new Promise((r) => setTimeout(r, 40));
         const b = windows.getSelectionBubble(), p = windows.getTranslatePopup();
         return { bubble: !!(b && b.isVisible()), popup: !!(p && p.isVisible()) };

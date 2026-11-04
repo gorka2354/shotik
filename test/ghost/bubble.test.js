@@ -87,10 +87,10 @@ test('a click away hides the bubble; a click on it does not', async () => {
   await withApp({}, async ({ post }) => {
     const s = await post('selection-bubble', { text: 'hello', x: 900, y: 500 });
     const b = s.bounds;
-    const away = await post('sim-down', { x: b.x - 300, y: b.y - 300 });
+    const away = await post('sim-down', { x: b.x - 300, y: b.y - 300, dip: true });
     assert(away.bubble === false, 'bubble hidden after a click away');
     await post('selection-bubble', { text: 'hello2', x: 900, y: 500 });
-    const on = await post('sim-down', { x: b.x + 5, y: b.y + 5 });
+    const on = await post('sim-down', { x: b.x + 5, y: b.y + 5, dip: true });
     assert(on.bubble === true, 'bubble kept when the click is on it');
   });
 });
