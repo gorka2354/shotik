@@ -68,6 +68,7 @@ struct Script {
     mic_gate: Option<(Arc<Barrier>, Arc<Gate>)>,
     sink_error: Option<String>,
     finalize_gate: Option<Arc<Gate>>,
+    finalize_problem: Option<String>,
     write_error_after: Option<usize>,
     mic_lost_after: Option<u32>,
     panic_in_video_open: bool,
@@ -132,6 +133,7 @@ struct FakeSinkScript {
     error: Option<String>,
     finalize_gate: Option<Arc<Gate>>,
     write_error_after: Option<usize>,
+    finalize_problem: Option<String>,
 }
 
 impl FakeSinkScript {
@@ -178,12 +180,12 @@ impl MediaSink for FakeSink {
         self.writes as u64 * 10
     }
 
-    fn finalize(self: Box<Self>) -> Result<()> {
+    fn finalize(self: Box<Self>) -> Result<Option<String>> {
         if let Some(gate) = &self.script.finalize_gate {
             gate.wait();
         }
         self.log.finalized.fetch_add(1, Ordering::SeqCst);
-        Ok(())
+        Ok(self.script.finalize_problem.clone())
     }
 }
 
@@ -288,6 +290,7 @@ impl FakeBackend {
             error: self.script.sink_error.clone(),
             finalize_gate: self.script.finalize_gate.clone(),
             write_error_after: self.script.write_error_after,
+            finalize_problem: self.script.finalize_problem.clone(),
         }
     }
 
@@ -898,6 +901,16 @@ fn an_encoder_failure_midway_keeps_what_was_written_and_says_why() {
     assert_eq!(f.wait_error(), "the encoder failed");
     assert!(f.wait_done().file.exists());
     f.wait_idle();
+}
+
+#[test]
+fn an_encoder_failing_on_the_last_frames_keeps_the_file_and_says_why() {
+    let f = Fixture::new(Script { finalize_problem: Some("the last frames were lost".into()), ..Script::default() });
+    f.start_video(false, false).unwrap();
+    f.wait_running();
+    f.recorder.stop();
+    assert_eq!(f.wait_error(), "the last frames were lost");
+    assert!(f.wait_done().file.exists());
 }
 
 #[test]

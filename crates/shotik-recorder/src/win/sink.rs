@@ -364,16 +364,20 @@ impl MediaSink for MfSink {
         }
     }
 
-    fn finalize(self: Box<Self>) -> Result<()> {
+    fn finalize(self: Box<Self>) -> Result<Option<String>> {
         let mut this = *self;
+        let mut problem = None;
         if let (Some(encoder), Some(stream)) = (&mut this.encoder, this.video_stream) {
             let writer = &this.writer;
-            encoder.drain(&mut |compressed| {
+            // an encoder that fails here costs the last frames, not the recording
+            let drained = encoder.drain(&mut |compressed| {
                 // SAFETY: both are live; the writer takes its own reference.
                 unsafe { writer.WriteSample(stream, compressed) }.ctx("The video muxer failed")
-            })?;
+            });
+            problem = drained.err().map(|e| e.to_string());
         }
         // SAFETY: no other thread writes any more: the writer thread has ended.
-        unsafe { this.writer.Finalize() }.ctx("Cannot finish the recording file")
+        unsafe { this.writer.Finalize() }.ctx("Cannot finish the recording file")?;
+        Ok(problem)
     }
 }

@@ -116,8 +116,9 @@ pub(crate) trait MediaSink: Send {
     /// Interleaved stereo at 48 kHz.
     fn write_audio(&mut self, pcm: &[i16], pts: i64, duration: i64) -> Result<()>;
     fn bytes_written(&self) -> u64;
-    /// Completes the file. Dropping the sink instead abandons it.
-    fn finalize(self: Box<Self>) -> Result<()>;
+    /// Completes the file. `Some` when it is valid but something went wrong on the way, which the user
+    /// has to hear about. Dropping the sink instead abandons the file.
+    fn finalize(self: Box<Self>) -> Result<Option<String>>;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

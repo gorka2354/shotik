@@ -361,11 +361,12 @@ fn drive(backend: &dyn Backend, job: &Job, ctl: &Control, trace: &Trace, events:
     let bytes = sink.bytes_written();
     ctl.bytes.store(bytes, Ordering::Relaxed);
     let failure = ctl.failure.lock().unwrap().take();
-    if let Err(e) = sink.finalize() {
-        return Outcome::Failed(failure.unwrap_or_else(|| e.to_string()));
-    }
-    if let Some(message) = failure {
-        // What was written up to the failure is a valid file: keep it and say what happened.
+    let finished = match sink.finalize() {
+        Ok(problem) => problem,
+        Err(e) => return Outcome::Failed(failure.unwrap_or_else(|| e.to_string())),
+    };
+    // What was written up to a failure is a valid file: keep it and say what happened.
+    if let Some(message) = failure.or(finished) {
         events.problem(message);
     }
 
