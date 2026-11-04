@@ -17,6 +17,7 @@ cargo build --release -p shotik
 node test/live/run.js target/release/shotik.exe            # everything, with test routes, private profile
 node test/live/run.js target/release/shotik.exe --only tools,snap
 node test/live/selection.js target/release/shotik.exe      # production mode: selection watcher, bubble, translate
+node test/live/installed.js                                # the installed app: PrintScreen, the real tray icon
 ```
 
 `run.js` uses its own hotkeys (`Ctrl+Alt+Shift+F5` to `F11`), so it runs next to an installed Shotik. The
@@ -25,6 +26,10 @@ routes, on a private `%APPDATA%`, with the MCP server on port 7699. `microphone_
 sends a tone through it, which nobody hears. `microphone` records two seconds from the real default microphone,
 measures the level and deletes the file. Mixed-DPI checks need monitors of different scale.
 
-Not covered: a real click on the tray icon, because a new executable's icon starts hidden in the overflow area
-and `Shell_NotifyIconGetRect` then answers with the arrow's rectangle; the UAC secure desktop; exclusive
-fullscreen; HDR.
+`installed.js` runs on the user's real profile, so it only opens windows and closes them again: nothing is saved,
+copied or translated. Windows hides a new tray icon in a flyout, and `Shell_NotifyIconGetRect` then answers with
+the arrow's rectangle, so it opens the flyout and finds the icon through UI Automation.
+
+`russian_layout` switches the keyboard layout, which is global on current Windows, and switches it back.
+
+Not covered: the UAC secure desktop, exclusive fullscreen, HDR, Windows 10.
