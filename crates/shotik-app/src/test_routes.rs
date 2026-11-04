@@ -248,7 +248,20 @@ impl App {
                 Ok(json!(self.export_gif_blocking(id)))
             }
             "ui-state" => ui.ui_state(&target, index),
-            "ui-action" => ui.ui_action(&target, index, body.get("action").cloned().unwrap_or(Value::Null)),
+            "ui-action" => {
+                let action = body.get("action").cloned().unwrap_or(Value::Null);
+                if target == "bubble" && action.get("type").and_then(Value::as_str) == Some("pointer-down") {
+                    let point: PointF = action
+                        .get("point")
+                        .cloned()
+                        .and_then(|p| serde_json::from_value(p).ok())
+                        .ok_or_else(|| Error::msg("pointer-down needs \"point\" with x and y"))?;
+                    self.on_pointer_down_dip(point);
+                    wait(40);
+                    return Ok(json!({ "bubble": ui.selection_bubble_visible(), "popup": ui.translate_popup_visible() }));
+                }
+                ui.ui_action(&target, index, action)
+            }
             "capture-page" => {
                 let out = str_of(&body, "path")
                     .map_or_else(|| self.env.temp_dir.join("shotik-page.png"), Into::into);

@@ -135,7 +135,11 @@ impl App {
     /// Click-away dismiss: a press outside the bubble or popup hides it. A press ON them is left alone,
     /// that window handles its own click. Robust where window blur proved flaky.
     pub(crate) fn on_mouse_down(&self, phys: Point) {
-        let at = self.ports.displays.phys_to_dip(phys);
+        self.on_pointer_down_dip(self.ports.displays.phys_to_dip(phys));
+    }
+
+    /// The same logic from a global DIP point; test routes start here (TEST-ROUTES.md, `bubble`).
+    pub(crate) fn on_pointer_down_dip(&self, at: PointF) {
         let ui = &self.ports.ui;
         if ui.selection_bubble_visible() && !inside(ui.selection_bubble_bounds(), at) {
             ui.hide_selection_bubble();
