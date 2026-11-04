@@ -443,6 +443,10 @@ fn teardown(plan: Plan) {
     let Some(mut session) = SESSION.with(|cell| cell.borrow_mut().take()) else { return };
     set_bounds(Vec::clear);
     for window in &session.windows {
+        // Slint keeps one set of modifiers for the whole application and learns of a release only from a key
+        // event. A window that closes while a key is held, like Alt in Alt+F4, never hears it, and the next
+        // session would see Alt down and not snap to windows. Losing focus is what makes Slint forget them.
+        window.comp.window().dispatch_event(slint::platform::WindowEvent::WindowActiveChanged(false));
         if let Err(e) = window.comp.hide() {
             eprintln!("overlay: cannot hide a window: {e}");
         }

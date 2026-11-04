@@ -99,6 +99,34 @@ pub fn on_ui_wait<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) 
         .map_err(|_| Error::msg("the UI thread did not answer in 30 s"))
 }
 
+/// `win.focus()`: the keyboard goes to this window. Not winit's `focus_window`, which presses and releases a
+/// fake Alt key to get the foreground right: that input lands in whatever application has the keyboard, where
+/// Alt opens a menu. Sharing the foreground thread's input state for a moment gets the same right with no input.
+pub fn take_focus(hwnd: HWND) {
+    use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow,
+    };
+    // SAFETY: plain calls on a live window; the thread attachment is undone before returning.
+    unsafe {
+        if SetForegroundWindow(hwnd).as_bool() {
+            return;
+        }
+        let foreground = GetForegroundWindow();
+        let their_thread = GetWindowThreadProcessId(foreground, None);
+        let my_thread = GetCurrentThreadId();
+        let attached = their_thread != 0 && their_thread != my_thread && AttachThreadInput(my_thread, their_thread, true).as_bool();
+        let _ = BringWindowToTop(hwnd);
+        let taken = SetForegroundWindow(hwnd).as_bool();
+        if attached {
+            let _ = AttachThreadInput(my_thread, their_thread, false);
+        }
+        if !taken {
+            eprintln!("Windows refused the keyboard focus; a click on the window takes it");
+        }
+    }
+}
+
 pub fn hwnd_of(window: &slint::Window) -> Result<HWND> {
     let handle = window.window_handle();
     let handle = handle.window_handle().map_err(|e| Error::msg(format!("no native window yet: {e}")))?;
@@ -109,6 +137,59 @@ pub fn hwnd_of(window: &slint::Window) -> Result<HWND> {
 }
 
 const NO_ACTIVATE_SUBCLASS: usize = 0x5348_4f54;
+const DPI_SUBCLASS: usize = 0x5348_4f44;
+
+thread_local! {
+    /// The rectangle Windows suggested, while its `WM_DPICHANGED` is being handled further down the chain.
+    static DPI_RECT: std::cell::Cell<Option<windows::Win32::Foundation::RECT>> = const { std::cell::Cell::new(None) };
+}
+
+/// Winit answers `WM_DPICHANGED` with a rectangle of its own, moved so the cursor keeps its place in the title
+/// bar. That can put the window's centre back on the monitor it just left: Windows changes the DPI again, and
+/// its move loop scales the size each time, so the window grows while it is dragged. Windows' suggested
+/// rectangle is computed not to do that, and it is what the documentation and Chromium use. Winit still
+/// handles the message, because it reports the new scale; only the rectangle it applies is replaced.
+unsafe extern "system" fn dpi_subclass(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPARAM, _id: usize, _data: usize) -> LRESULT {
+    use windows::Win32::UI::WindowsAndMessaging::{SWP_NOMOVE, SWP_NOSIZE, WINDOWPOS, WM_DPICHANGED, WM_WINDOWPOSCHANGING};
+    // SAFETY: Win32 owns the message parameters for this call: for these messages lparam points to a RECT
+    // and a WINDOWPOS owned by the sender, and the rest is forwarded as received.
+    unsafe {
+        match message {
+            WM_DPICHANGED => {
+                DPI_RECT.set(Some(*(lparam.0 as *const windows::Win32::Foundation::RECT)));
+                let result = DefSubclassProc(hwnd, message, wparam, lparam);
+                DPI_RECT.set(None);
+                return result;
+            }
+            WM_WINDOWPOSCHANGING => {
+                if let Some(rect) = DPI_RECT.get() {
+                    let pos = &mut *(lparam.0 as *mut WINDOWPOS);
+                    if !pos.flags.contains(SWP_NOMOVE) {
+                        pos.x = rect.left;
+                        pos.y = rect.top;
+                    }
+                    if !pos.flags.contains(SWP_NOSIZE) {
+                        pos.cx = rect.right - rect.left;
+                        pos.cy = rect.bottom - rect.top;
+                    }
+                }
+            }
+            WM_NCDESTROY => {
+                let _ = RemoveWindowSubclass(hwnd, Some(dpi_subclass), DPI_SUBCLASS);
+            }
+            _ => {}
+        }
+        DefSubclassProc(hwnd, message, wparam, lparam)
+    }
+}
+
+/// For a window the user can move between monitors.
+pub fn follow_suggested_dpi_rect(hwnd: HWND) -> Result<()> {
+    // SAFETY: `hwnd` is a live window of this thread and the subclass proc outlives it.
+    unsafe { SetWindowSubclass(hwnd, Some(dpi_subclass), DPI_SUBCLASS, 0) }
+        .ok()
+        .map_err(|e| Error::msg(format!("cannot subclass a window for DPI changes: {e}")))
+}
 
 /// Winit recomputes the extended style when decorations or visibility change, which would drop
 /// no-activate and show the window in the taskbar. Keep them in the style transition itself.
@@ -560,7 +641,6 @@ pub fn drag_small(window: &slint::Window) -> Result<()> {
 
 /// The reference's focusable show path. Ghost mode stops before every OS focus call.
 pub fn activate_small(window: &slint::Window) -> Result<()> {
-    use slint::winit_030::WinitWindowAccessor;
     if env().ghost {
         return Ok(());
     }
@@ -569,9 +649,8 @@ pub fn activate_small(window: &slint::Window) -> Result<()> {
     if style & WS_EX_NOACTIVATE.0 != 0 {
         return Err(Error::msg("cannot activate a non-activating window"));
     }
-    window
-        .with_winit_window(|native| native.focus_window())
-        .ok_or_else(|| Error::msg("no native window to activate"))
+    take_focus(hwnd_of(window)?);
+    Ok(())
 }
 
 #[derive(Clone, Debug)]

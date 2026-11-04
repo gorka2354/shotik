@@ -17,7 +17,7 @@ use slint::{ComponentHandle, Image, ModelRc, SharedPixelBuffer, SharedString, Ve
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    GetMonitorInfoW, MonitorFromPoint, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTOPRIMARY,
 };
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
@@ -1217,14 +1217,10 @@ fn show_now() -> Result<()> {
         };
         let placement = VIEW
             .with_borrow(|view| view.as_ref().and_then(|view| view.placement))
-            .unwrap_or(Placement {
-                x: 0,
-                y: 60,
-                width: (1120.0 * scale) as u32,
-                height: (740.0 * scale) as u32,
-                rounded: true,
-                scale,
-                ..Default::default()
+            .unwrap_or_else(|| {
+                let (width, height) = ((1120.0 * scale) as u32, (740.0 * scale) as u32);
+                let (x, y) = if runtime::env().ghost { (0, 60) } else { centered_on_primary(width, height) };
+                Placement { x, y, width, height, rounded: true, scale, ..Default::default() }
             });
         if runtime::env().ghost {
             ui.window()
@@ -1264,8 +1260,7 @@ fn show_requested_now() -> Result<()> {
     show_now()?;
     if !runtime::env().ghost {
         let ui = VIEW.with_borrow(|view| view.as_ref().unwrap().ui.clone_strong());
-        ui.window()
-            .with_winit_window(|window| window.focus_window());
+        runtime::take_focus(runtime::hwnd_of(ui.window())?);
     }
     Ok(())
 }
@@ -1558,6 +1553,20 @@ const CHROME_SUBCLASS: usize = 0x5348_4d41;
 const CHROME_STYLE: WINDOW_STYLE =
     WINDOW_STYLE(WS_THICKFRAME.0 | WS_MAXIMIZEBOX.0 | WS_MINIMIZEBOX.0 | WS_SYSMENU.0);
 
+/// Where a `BrowserWindow` without a position opens: the middle of the primary display's work area.
+fn centered_on_primary(width: u32, height: u32) -> (i32, i32) {
+    let mut monitor = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+    // SAFETY: the point query takes no pointers, and `monitor` outlives the info call.
+    let work = unsafe {
+        GetMonitorInfoW(MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY), &mut monitor)
+            .as_bool()
+            .then_some(monitor.rcWork)
+    };
+    let Some(work) = work else { return (0, 0) };
+    let center = |start: i32, end: i32, size: u32| start + ((end - start) - size as i32).max(0) / 2;
+    (center(work.left, work.right, width), center(work.top, work.bottom, height))
+}
+
 fn install_chrome(window: &slint::Window) -> Result<()> {
     let hwnd = runtime::hwnd_of(window)?;
     // SAFETY: subclass and style apply only to this process's window on its UI thread.
@@ -1565,6 +1574,7 @@ fn install_chrome(window: &slint::Window) -> Result<()> {
         SetWindowSubclass(hwnd, Some(chrome_subclass), CHROME_SUBCLASS, 0)
             .ok()
             .map_err(|e| Error::msg(format!("cannot subclass the main window: {e}")))?;
+        runtime::follow_suggested_dpi_rect(hwnd)?;
         SetWindowLongPtrW(
             hwnd,
             GWL_STYLE,

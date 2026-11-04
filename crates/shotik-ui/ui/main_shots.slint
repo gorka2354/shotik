@@ -86,7 +86,7 @@ export component MainShotsPage inherits Rectangle {
     }
     if root.shots.length == 0: Rectangle {
         y: root.gallery-top + 90px; height: 190px; width: parent.width;
-        Card { x: (parent.width - 72px) / 2; width: 72px; height: 72px; border-radius: 18px;
+        Card { x: (parent.width - 72px) / 2; y: 0px; width: 72px; height: 72px; border-radius: 18px;
             Icon { x: 20px; y: 20px; width: 32px; height: 32px; name: "region"; ink: Theme.text-tertiary; }
         }
         Text { y: 92px; height: 24px; width: parent.width; text: root.empty-title; color: Theme.text; font-size: 16px; font-weight: 600; horizontal-alignment: center; }

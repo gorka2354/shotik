@@ -10,11 +10,10 @@ use shotik_core::{Error, Result};
 use windows::core::BOOL;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_CLOAK};
-use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, MapVirtualKeyW, MAPVK_VK_TO_VSC, VK_CONTROL, VK_RMENU, VK_SHIFT};
 use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, GetWindowLongPtrW, GetWindowThreadProcessId, SetForegroundWindow, SetWindowLongPtrW, BringWindowToTop,
+    GetWindowLongPtrW, SetWindowLongPtrW,
     GWL_EXSTYLE, HTCLIENT, SC_KEYMENU, STYLESTRUCT, SWP_NOMOVE, SWP_NOSIZE, WINDOWPOS, WM_KEYDOWN, WM_KEYUP, WM_NCDESTROY,
     WM_NCHITTEST, WM_PAINT, WM_STYLECHANGING, WM_SYSCOMMAND, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_WINDOWPOSCHANGING, WS_EX_APPWINDOW,
     WS_EX_TOOLWINDOW,
@@ -159,29 +158,5 @@ pub fn set_cloaked(hwnd: HWND, cloaked: bool) {
     };
     if let Err(e) = result {
         eprintln!("overlay: cannot {} the window: {e}", if cloaked { "cloak" } else { "uncloak" });
-    }
-}
-
-/// `win.focus()`: the keyboard goes to the overlay under the cursor. Not used in ghost mode.
-pub fn take_focus(hwnd: HWND) {
-    // SAFETY: plain calls on a live window; the thread attachment is undone before returning.
-    unsafe {
-        if SetForegroundWindow(hwnd).as_bool() {
-            return;
-        }
-        // Windows refuses when another process holds the foreground. Sharing its input queue for a
-        // moment makes this the same input state; no input is sent.
-        let foreground = GetForegroundWindow();
-        let their_thread = GetWindowThreadProcessId(foreground, None);
-        let my_thread = GetCurrentThreadId();
-        let attached = their_thread != 0 && their_thread != my_thread && AttachThreadInput(my_thread, their_thread, true).as_bool();
-        let _ = BringWindowToTop(hwnd);
-        let taken = SetForegroundWindow(hwnd).as_bool();
-        if attached {
-            let _ = AttachThreadInput(my_thread, their_thread, false);
-        }
-        if !taken {
-            eprintln!("overlay: Windows refused the keyboard focus; a click on the overlay takes it");
-        }
     }
 }

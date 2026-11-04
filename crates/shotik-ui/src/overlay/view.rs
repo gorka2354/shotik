@@ -348,7 +348,7 @@ impl OverlayWindow {
         self.state.ready = true;
         native::set_cloaked(hwnd, false);
         if focused && !ghost {
-            native::take_focus(hwnd);
+            runtime::take_focus(hwnd);
         }
         Ok(())
     }
