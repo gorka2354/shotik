@@ -317,7 +317,7 @@ impl Displays for WinDisplays {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use windows::Win32::Graphics::Gdi::MONITOR_DEFAULTTONEAREST;
 
@@ -423,6 +423,29 @@ mod tests {
         let err = monitor_handle(&gone).unwrap_err().to_string();
         assert!(err.contains("is gone"), "{err}");
         assert!(monitor_handle(&no_display()).is_err());
+    }
+
+    /// A thread set to DPI-unaware, the worst a caller could do: without our scope every number would be
+    /// virtualized to 96 DPI, and frames would come out the wrong size.
+    pub(crate) fn on_unaware_thread<T: Send>(f: impl FnOnce() -> T + Send) -> T {
+        use windows::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT_UNAWARE;
+        std::thread::scope(|scope| {
+            scope
+                .spawn(|| {
+                    // SAFETY: a predefined constant, on this short-lived thread only.
+                    unsafe { SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE) };
+                    f()
+                })
+                .join()
+                .unwrap()
+        })
+    }
+
+    #[test]
+    fn an_unaware_thread_gets_the_same_physical_numbers() {
+        let aware = WinDisplays::new().all();
+        let unaware = on_unaware_thread(|| WinDisplays::new().all());
+        assert_eq!(unaware, aware);
     }
 
     #[test]

@@ -298,6 +298,7 @@ dependencies = [
 name = "shotik-win"
 version = "2.0.0-alpha.0"
 dependencies = [
+ "serde_json",
  "shotik-core",
  "windows",
 ]

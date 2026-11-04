@@ -18,6 +18,7 @@ features = [
     "Graphics_Capture",
     "Graphics_DirectX",
     "Graphics_DirectX_Direct3D11",
+    "UI",
     "UI_ViewManagement",
     "Win32_Foundation",
     "Win32_Graphics_Direct3D",
@@ -46,3 +47,6 @@ features = [
     "Win32_UI_Shell_Common",
     "Win32_UI_WindowsAndMessaging",
 ]
+
+[dev-dependencies]
+serde_json.workspace = true
