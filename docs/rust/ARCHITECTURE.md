@@ -36,7 +36,9 @@ Port traits stay small. If a window or tool needs something new, add one method,
 
 ## Threads
 
-- **Main thread:** the UI event loop. On Windows it also owns the message pump that tray and hotkeys need.
+- **Main thread:** the UI event loop.
+- **Tray and hotkeys:** each owns a dedicated thread with its own message-only window and message loop,
+  so they need nothing from the UI toolkit and work while no window exists.
 - **Tokio runtime (few workers):** MCP and test HTTP server, orchestration, spawn_blocking for slow ports.
 - **Recorder threads:** capture and encode run on dedicated threads, never on the UI thread.
 

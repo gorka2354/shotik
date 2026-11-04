@@ -1,7 +1,8 @@
 'use strict';
 // Long-running memory check: is there a leak, and does it depend on activity?
 //
-//   node bench/soak.js --impl electron --exe <path> --hours 6 --out <file.jsonl>
+//   node bench/soak.js --impl electron --exe node_modules/electron/dist/electron.exe \
+//     --entry bench/soak-entry.js --hours 6 --out <file.jsonl>
 //
 // Two ghost instances with separate profiles run side by side. `active` takes a real overlay session
 // and a real screenshot every cycle; `idle` only sits there, like the app in the tray. Real frames
@@ -25,6 +26,7 @@ const HOURS = Number(arg('hours', 6));
 const CYCLE_MS = Number(arg('cycle', 60)) * 1000;
 const SAMPLE_MS = Number(arg('sample', 300)) * 1000;
 const OUT = path.resolve(arg('out', 'soak.jsonl'));
+const ENTRY = arg('entry') ? path.resolve(arg('entry')) : null;
 
 function empty(dir) {
   for (const f of fs.readdirSync(dir)) {
@@ -37,7 +39,8 @@ async function main() {
   const start = (name, port) => {
     const dir = path.join(tmp, name);
     fs.mkdirSync(path.join(dir, 'saved'), { recursive: true });
-    const app = launch({ exe: EXE, args: IMPL.args, cwd: path.dirname(EXE), port, env: { ...IMPL.env, APPDATA: dir } });
+    const args = ENTRY ? [ENTRY, ...IMPL.args] : IMPL.args;
+    const app = launch({ exe: EXE, args, cwd: path.dirname(EXE), port, env: { ...IMPL.env, SHOTIK_APPDATA: dir } });
     return { name, app, port, saved: path.join(dir, 'saved') };
   };
   const active = start('active', Number(arg('port', 7611)));
