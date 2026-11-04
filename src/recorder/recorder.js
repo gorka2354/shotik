@@ -67,7 +67,9 @@ function synthStream() {
 // Ghost recordings use different tones for the two inputs, never real devices
 // or speakers. Integration tests decode the saved file to verify both signals.
 async function synthAudio(frequency) {
-  const context = new AudioContext();
+  // The worst case on purpose: a device at 192 kHz, so tests catch a missing
+  // resample on any machine, whatever its own audio device runs at.
+  const context = new AudioContext({ sampleRate: 192000 });
   testAudioContexts.push(context);
   const oscillator = context.createOscillator();
   oscillator.frequency.value = frequency;
@@ -127,11 +129,12 @@ async function attachAudio() {
     ...(AUDIO ? srcStream.getAudioTracks() : []),
     ...(micStream ? micStream.getAudioTracks() : []),
   ];
-  if (tracks.length === 1) outStream.addTrack(tracks[0]);
-  else if (tracks.length > 1) {
+  if (tracks.length) {
     // MediaRecorder needs one mixed audio track. Adding two separate tracks
     // loses one input in some encoders/players. Do not monitor through speakers.
-    audioContext = new AudioContext();
+    // A fixed rate even for one input: the default device can run at 192 kHz and
+    // the AAC encoder takes at most 48, so recording would fail to start.
+    audioContext = new AudioContext({ sampleRate: 48000 });
     const destination = audioContext.createMediaStreamDestination();
     for (const track of tracks) audioContext.createMediaStreamSource(new MediaStream([track])).connect(destination);
     destination.stream.getAudioTracks().forEach((track) => outStream.addTrack(track));
