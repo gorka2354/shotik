@@ -1,5 +1,11 @@
 //! Freeze frame, selection, annotations, toolbar, Live Text.
 
+pub mod keys;
+pub mod layer;
+pub mod pixels;
+pub mod raster;
+pub mod state;
+
 use std::path::Path;
 
 use serde_json::Value;

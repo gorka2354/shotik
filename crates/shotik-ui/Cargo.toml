@@ -12,6 +12,9 @@ shotik-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 raw-window-handle = "0.6"
+# Annotation text and strokes burned into pixels. Already in the tree through Slint: same versions on purpose.
+parley = "=0.11.1"
+swash = "=0.2.10"
 # Pinned exactly: unstable-winit-030 is the integration point for raw window control and may change
 # in a minor release. Slint is used under its Royalty-free Desktop license: see docs/rust/ARCHITECTURE.md.
 slint = { version = "=1.18.1", default-features = false, features = [
