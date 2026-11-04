@@ -1,6 +1,7 @@
 //! `%TEMP%\shotik-bubble.log`: the real focus and clipboard behaviour of the bubble-to-translate path
 //! cannot be reproduced off-screen, so it is logged and the tail read after a live repro. Truncated on
-//! startup, so it never grows without bound.
+//! startup, so it never grows without bound. Lengths only, never the text itself: people select
+//! passwords and private messages.
 
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -30,9 +31,4 @@ impl Diagnostics {
     pub fn write_timing(&self, marks: &[String]) {
         let _ = fs::write(&self.timing_file, marks.join(" "));
     }
-}
-
-/// The first characters of a text for the log, on a character boundary.
-pub fn head(text: &str, chars: usize) -> String {
-    text.chars().take(chars).collect()
 }

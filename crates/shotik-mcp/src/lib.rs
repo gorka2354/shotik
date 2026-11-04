@@ -11,7 +11,7 @@ mod server;
 pub mod tools;
 pub mod window_capture;
 
-pub use server::{CallLogEntry, McpServer, ServerStatus, TestHandler, BODY_LIMIT};
+pub use server::{is_local_request, CallLogEntry, McpServer, ServerStatus, TestHandler, BODY_LIMIT};
 pub use shotik_core::ports::McpServices;
 pub use tools::{tool_definitions, McpTools, ToolDefinition};
 pub use window_capture::WindowCaptureOptions;

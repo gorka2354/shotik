@@ -36,6 +36,9 @@ is already connected to that address, so nothing may change for the client.
 - Protocol: `src/main/mcp.js`, exactly. GET is 405, DELETE is 200, batches work, notifications get 202,
   `initialize` echoes `protocolVersion` and returns `Mcp-Session-Id`, parse errors are -32700, unknown
   tools -32602. A tool error is a result with `isError: true` and text `Error: <message>`.
+- Requests whose `Host` is not a loopback name, or whose `Origin` is present and not loopback, get 403.
+  Binding to 127.0.0.1 does not stop a web page in the user's browser, and a page reaching this server
+  could read their screen. Clients outside a browser send no `Origin` and are unaffected.
 - Tools: `registerMcpTools` in `src/main/main.js`, with identical names, descriptions, input schemas and
   reply texts: `take_screenshot`, `take_screenshot_region`, `list_windows`, `capture_window`,
   `ask_user_to_select_region`, `get_last_screenshot`, `list_screenshots`, `list_recordings`,

@@ -171,6 +171,9 @@ pub struct HttpResponse {
 }
 
 /// Transport for translation, so translation logic is testable without a network.
+///
+/// Errors must not contain the URL or body: the query holds the text being translated, and error
+/// messages reach logs and toasts.
 pub trait Http: Send + Sync {
     fn send(&self, request: HttpRequest<'_>) -> Result<HttpResponse>;
 }

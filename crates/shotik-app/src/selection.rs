@@ -9,7 +9,6 @@ use shotik_core::ports::{SelectionEvent, TranslatePopup};
 use shotik_core::{Display, Frame, Point, PointF, Rect, Result};
 
 use crate::actions::text_toast;
-use crate::diagnostics::head;
 use crate::App;
 
 impl App {
@@ -116,12 +115,12 @@ impl App {
             return;
         }
         if self.state().last_translated.as_deref() == Some(text) {
-            self.diag.log(&format!("detect: \"{}\" == lastTranslated, skip", head(text, 40)));
+            self.diag.log("detect: same as lastTranslated, skip");
             return;
         }
         self.state().pending_selection = Some(text.to_string());
         let at = self.ports.displays.phys_to_dip(Point { x, y });
-        self.diag.log(&format!("detect: \"{}\" ({} ch) -> bubble", head(text, 40), text.chars().count()));
+        self.diag.log(&format!("detect: {} ch -> bubble", text.chars().count()));
         self.ports.ui.show_selection_bubble(at);
     }
 
@@ -188,7 +187,7 @@ impl App {
         self.state().ocr_busy = false;
         match result {
             Ok(text) => {
-                self.diag.log(&format!("gesture -> \"{}\"", head(&text, 40)));
+                self.diag.log(&format!("gesture -> {} ch", text.chars().count()));
                 if text.is_empty() || self.state().last_translated.as_deref() == Some(text.as_str()) {
                     return;
                 }
@@ -230,7 +229,7 @@ impl App {
         self.ports.ui.hide_selection_bubble();
         match pending {
             Some(text) => {
-                self.diag.log(&format!("activate: translating \"{}\"", head(&text, 40)));
+                self.diag.log(&format!("activate: translating {} ch", text.chars().count()));
                 self.state().last_translated = Some(text.clone());
                 self.spawn(move |app| app.translate_to_popup(&text));
             }

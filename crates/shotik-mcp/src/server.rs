@@ -256,7 +256,40 @@ impl RequestState {
     }
 }
 
+/// Binding to 127.0.0.1 keeps other machines out, not web pages in the user's own browser: a page can
+/// POST here, and through DNS rebinding read the reply, which would hand any site a screenshot. Only
+/// loopback hosts and origins pass. MCP clients outside a browser send no Origin at all.
+pub fn is_local_request(host: Option<&str>, origin: Option<&str>) -> bool {
+    let host_ok = host.is_some_and(|host| is_loopback_name(strip_port(host)));
+    let origin_ok = origin.is_none_or(|origin| {
+        ["http://", "https://"]
+            .iter()
+            .find_map(|scheme| origin.strip_prefix(scheme))
+            .is_some_and(|authority| is_loopback_name(strip_port(authority)))
+    });
+    host_ok && origin_ok
+}
+
+fn strip_port(authority: &str) -> &str {
+    match authority.strip_prefix('[') {
+        Some(rest) => rest.split(']').next().unwrap_or(""),
+        None => authority.split(':').next().unwrap_or(""),
+    }
+}
+
+fn is_loopback_name(name: &str) -> bool {
+    name.eq_ignore_ascii_case("localhost") || name == "127.0.0.1" || name == "::1"
+}
+
 async fn request_listener(State(state): State<Arc<RequestState>>, request: Request) -> Response {
+    let local = {
+        let headers = request.headers();
+        let text = |name| headers.get(name).and_then(|v: &HeaderValue| v.to_str().ok());
+        is_local_request(text(header::HOST), text(header::ORIGIN))
+    };
+    if !local {
+        return json_response(StatusCode::FORBIDDEN, json!({"error": "forbidden"}));
+    }
     let path = request.uri().path().to_owned();
     if let Some(handler) = state
         .test_handler
