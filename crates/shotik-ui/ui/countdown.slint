@@ -3,6 +3,11 @@ import { Theme } from "theme.slint";
 
 export component Countdown inherits Window {
     no-frame: true;
-    background: Theme.window-bg;
+    preferred-width: 180px; preferred-height: 180px;
+    background: #14141a;
     default-font-family: Theme.font;
+    in property <int> number: 3;
+    Rectangle { border-radius: 12px; border-width: 3px; border-color: #ff4d4d; background: transparent; }
+    Text { text: root.number; font-size: 96px; font-weight: 800; color: #ffffff;
+        horizontal-alignment: center; vertical-alignment: center; }
 }

@@ -3,6 +3,22 @@ import { Theme } from "theme.slint";
 
 export component Bubble inherits Window {
     no-frame: true;
-    background: Theme.window-bg;
+    preferred-width: 60px; preferred-height: 60px;
+    background: transparent;
     default-font-family: Theme.font;
+    callback activate();
+    callback keepalive();
+    Rectangle {
+        x: 14px; y: 14px; width: 32px; height: 32px; border-radius: 16px;
+        background: Theme.dark ? (touch.has-hover ? #38383e : #2b2b30) : (touch.has-hover ? #f0f0f0 : #ffffff);
+        border-width: 1px; border-color: Theme.dark ? #ffffff24 : #0000001a;
+        Path { x: 7px; y: 7px; width: 18px; height: 18px; viewbox-width: 24; viewbox-height: 24;
+            commands: "M4 5h7 M7 5v.5C7 9 5.5 12 3 13 M5 9c0 2 2 3.5 5 4.5 M12 20l4-9 4 9 M13.5 17h5";
+            fill: transparent; stroke: Theme.accent; stroke-width: 1.9px; }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.activate(); }
+        changed has-hover => { if (self.has-hover) { root.keepalive(); } }
+    }
 }
