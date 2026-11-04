@@ -94,16 +94,13 @@ function readBody(req) {
 // browser: a page can POST here, and through DNS rebinding read the reply, which
 // would hand any site a screenshot. Only loopback hosts and origins pass. MCP
 // clients outside a browser send no Origin at all.
-const hostName = (authority) => {
-  if (authority.startsWith('[')) return authority.slice(1).split(']')[0];
-  return authority.split(':')[0];
-};
-const isLoopback = (name) => name.toLowerCase() === 'localhost' || name === '127.0.0.1' || name === '::1';
+// The whole value must match: a prefix check would pass http://localhost:1@evil.example.
+const LOOPBACK_AUTHORITY = /^(localhost|127\.0\.0\.1|\[::1\])(:\d{1,5})?$/i;
 function isLocalRequest(host, origin) {
-  if (!host || !isLoopback(hostName(host))) return false;
+  if (typeof host !== 'string' || !LOOPBACK_AUTHORITY.test(host)) return false;
   if (origin === undefined || origin === null) return true;
-  const m = /^https?:\/\/(.+)$/.exec(origin);
-  return !!m && isLoopback(hostName(m[1]));
+  const m = /^https?:\/\/(.+)$/i.exec(origin); // repeated headers arrive joined and fail here
+  return !!m && LOOPBACK_AUTHORITY.test(m[1]);
 }
 
 async function requestListener(req, res) {

@@ -11,7 +11,8 @@ test('only loopback hosts pass', () => {
   for (const host of ['127.0.0.1:7464', 'localhost:7464', 'LOCALHOST:7464', '[::1]:7464', '127.0.0.1', 'localhost']) {
     assert(mcp.isLocalRequest(host), host);
   }
-  for (const host of ['evil.example:7464', 'evil.example', '127.0.0.1.evil.example', 'localhost.evil.example:7464', '', '[::2]:7464', undefined]) {
+  for (const host of ['evil.example:7464', 'evil.example', '127.0.0.1.evil.example', 'localhost.evil.example:7464', '', '[::2]:7464', undefined,
+    '127.0.0.1:80@evil.example', 'localhost@evil.example', 'localhost:x', 'localhost:80:80', 'localhost.', '127.0.0.1, evil.example']) {
     assert(!mcp.isLocalRequest(host), String(host));
   }
 });
@@ -21,7 +22,8 @@ test('an origin must be loopback too', () => {
   for (const origin of ['http://localhost:3000', 'http://127.0.0.1:6274', 'https://localhost', 'http://[::1]:8080']) {
     assert(mcp.isLocalRequest(host, origin), origin);
   }
-  for (const origin of ['http://evil.example', 'https://evil.example:7464', 'http://localhost.evil.example', 'http://127.0.0.1.evil.example', 'null', 'file://', 'chrome-extension://abc', '']) {
+  for (const origin of ['http://evil.example', 'https://evil.example:7464', 'http://localhost.evil.example', 'http://127.0.0.1.evil.example', 'null', 'file://', 'chrome-extension://abc', '',
+    'http://localhost:1@evil.example', 'http://localhost@evil.example', 'http://localhost/evil', 'http://localhost:6274, http://evil.example', 'http://localhost.']) {
     assert(!mcp.isLocalRequest(host, origin), origin);
   }
 });
@@ -44,5 +46,8 @@ test('the server refuses a page and serves a local client', async () => {
     eq(await statusOf(port, `Host: 127.0.0.1:${port}\r\n`), 200);
     eq(await statusOf(port, `Host: evil.example:${port}\r\nOrigin: http://evil.example:${port}\r\n`), 403);
     eq(await statusOf(port, `Host: 127.0.0.1:${port}\r\nOrigin: https://evil.example\r\n`), 403);
+    eq(await statusOf(port, `Host: 127.0.0.1:${port}\r\nOrigin: http://localhost:1@evil.example\r\n`), 403);
+    eq(await statusOf(port, `Host: 127.0.0.1:${port}\r\nOrigin: http://localhost:6274\r\nOrigin: http://evil.example\r\n`), 403);
+    eq(await statusOf(port, 'Host: 127.0.0.1:80@evil.example\r\n'), 403);
   } finally { await mcp.stop(); }
 });
