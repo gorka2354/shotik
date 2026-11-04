@@ -14,6 +14,7 @@ mod mix;
 mod names;
 mod recorder;
 mod region;
+mod resample;
 mod session;
 mod synth;
 mod trace;

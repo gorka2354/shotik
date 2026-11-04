@@ -61,15 +61,17 @@ impl AudioOpenKind {
     }
 
     /// Windows' answer when opening a device. A chosen device that is gone is what Chromium calls
-    /// overconstrained: the application shows the same message for both.
+    /// overconstrained: the application shows the same message for both. An id Windows cannot even
+    /// parse belongs here too: settings from the Electron build hold Chromium's hashed device ids.
     #[cfg_attr(not(windows), allow(dead_code))]
     pub fn from_hresult(hr: i32, exact_device: bool) -> Self {
         const E_ACCESSDENIED: u32 = 0x8007_0005;
+        const E_INVALIDARG: u32 = 0x8007_0057;
         const E_NOTFOUND: u32 = 0x8007_0490;
         const AUDCLNT_E_DEVICE_INVALIDATED: u32 = 0x8889_0004;
         match hr as u32 {
             E_ACCESSDENIED => Self::NotAllowed,
-            E_NOTFOUND | AUDCLNT_E_DEVICE_INVALIDATED if exact_device => Self::Overconstrained,
+            E_NOTFOUND | E_INVALIDARG | AUDCLNT_E_DEVICE_INVALIDATED if exact_device => Self::Overconstrained,
             E_NOTFOUND | AUDCLNT_E_DEVICE_INVALIDATED => Self::NotFound,
             _ => Self::NotReadable,
         }
@@ -178,6 +180,7 @@ mod tests {
         assert_eq!(AudioOpenKind::from_hresult(hr(0x8007_0490), false).name(), "NotFoundError");
         assert_eq!(AudioOpenKind::from_hresult(hr(0x8007_0490), true).name(), "OverconstrainedError");
         assert_eq!(AudioOpenKind::from_hresult(hr(0x8889_0004), true).name(), "OverconstrainedError");
+        assert_eq!(AudioOpenKind::from_hresult(hr(0x8007_0057), true).name(), "OverconstrainedError");
         assert_eq!(AudioOpenKind::from_hresult(hr(0x8889_000A), false).name(), "NotReadableError");
         assert_eq!(AudioOpenKind::from_hresult(hr(0x8000_4005), true).name(), "NotReadableError");
         assert_eq!(AudioOpenKind::Empty.name(), "Error");

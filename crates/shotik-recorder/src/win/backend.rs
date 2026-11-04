@@ -24,6 +24,13 @@ use crate::trace::Trace;
 /// The synthetic source has no monitor to clip to.
 const SYNTH_CANVAS: u32 = 16384;
 
+fn device_line(what: &str, input: &WasapiInput) -> String {
+    match input.device_format() {
+        Some(format) => format!("{what}, {format}, resampled to 48000 Hz stereo"),
+        None => what.to_string(),
+    }
+}
+
 /// Outlives everything a session opens.
 struct SessionGuard {
     _media: MediaFoundation,
@@ -99,7 +106,7 @@ impl Backend for WinBackend {
         match &self.capture {
             CaptureMode::Real { .. } => {
                 let input = WasapiInput::open(Endpoint::Loopback)?;
-                trace.push("system audio: loopback of the default output");
+                trace.push(device_line("system audio: loopback of the default output", &input));
                 Ok(Box::new(input))
             }
             CaptureMode::Synthetic(options) => {
@@ -117,7 +124,7 @@ impl Backend for WinBackend {
         match &self.capture {
             CaptureMode::Real { .. } => {
                 let input = WasapiInput::open(Endpoint::Microphone(device.clone()))?;
-                trace.push("microphone: capture opened");
+                trace.push(device_line("microphone: capture opened", &input));
                 Ok(Box::new(input))
             }
             CaptureMode::Synthetic(options) => {
