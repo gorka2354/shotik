@@ -1,0 +1,166 @@
+[
+  {
+    "name": "take_screenshot",
+    "description": "Take a screenshot of one display right now and return it as an image. IMPORTANT: without display_id it captures the display currently under the mouse cursor (which moves between calls) — pass display_id from list_displays whenever you care which monitor you get. Set full_resolution=true only when you need to read small text. To capture one window (even if covered by others), use capture_window instead.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "display_id": {
+          "type": "number",
+          "description": "Display id from list_displays (optional; default = display under the mouse cursor)"
+        },
+        "full_resolution": {
+          "type": "boolean",
+          "description": "Return native resolution instead of the downscaled version"
+        }
+      }
+    }
+  },
+  {
+    "name": "take_screenshot_region",
+    "description": "Screenshot a rectangle of the screen. Coordinates are GLOBAL virtual-desktop DIP — exactly the space list_displays bounds use, so any monitor (including negative origins) works directly. A region spanning several monitors is clipped to the one holding its largest part (the reply says what was actually captured).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "number",
+          "description": "Global virtual-desktop X (DIP, may be negative)"
+        },
+        "y": {
+          "type": "number",
+          "description": "Global virtual-desktop Y (DIP, may be negative)"
+        },
+        "width": {
+          "type": "number"
+        },
+        "height": {
+          "type": "number"
+        },
+        "display_id": {
+          "type": "number",
+          "description": "Optional: force this display (coordinates stay global)"
+        },
+        "full_resolution": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ]
+    }
+  },
+  {
+    "name": "list_windows",
+    "description": "List the user's open top-level windows: id, title, app, bounds (global DIP), display_id, minimized. Use the id or title with capture_window. On macOS only id and title are available (bounds/display_id are null).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "capture_window",
+    "description": "Capture ONE window's own surface by id (from list_windows) or title substring. Works even when the window is covered by other windows, off-screen or on any monitor — unlike take_screenshot, which grabs the visible framebuffer. Minimized windows cannot be captured (ask the user to restore them). Window ids are ephemeral (the OS recycles them): take them from a FRESH list_windows call, and pass title together with window_id as a staleness guard.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "window_id": {
+          "type": [
+            "number",
+            "string"
+          ],
+          "description": "Window id from list_windows (preferred — unambiguous; a number on Windows, a string on macOS)"
+        },
+        "title": {
+          "type": "string",
+          "description": "Case-insensitive window title substring (used when window_id is absent)"
+        },
+        "full_resolution": {
+          "type": "boolean",
+          "description": "Return native resolution instead of the downscaled version"
+        }
+      }
+    }
+  },
+  {
+    "name": "ask_user_to_select_region",
+    "description": "Open the interactive selection overlay so the USER can mark the exact area to show you. Use when you need the user to point at something. Waits up to 2 minutes.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "get_last_screenshot",
+    "description": "Return the most recent screenshot the user took with Shotik.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "full_resolution": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  {
+    "name": "list_screenshots",
+    "description": "List recent screenshots from Shotik history (paths, sizes, timestamps). Recordings: list_recordings.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "number",
+          "description": "Max entries, default 10"
+        }
+      }
+    }
+  },
+  {
+    "name": "list_recordings",
+    "description": "List recent recordings made with Shotik, newest first: audio (calls, voice notes; .m4a) and screen video. Returns file paths with kind, duration and size, so you can transcribe or analyze them. Shotik itself does not transcribe; for speech-to-text extract mono 16 kHz audio, e.g. `ffmpeg -i <file> -ac 1 -ar 16000 out.wav`.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "number",
+          "description": "Max entries, default 10, at most 50"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "audio",
+            "video"
+          ],
+          "description": "Only audio recordings or only screen videos"
+        }
+      }
+    }
+  },
+  {
+    "name": "get_last_recording",
+    "description": "Return the most recent Shotik recording (file path, kind, duration, size, time). Use kind \"audio\" for the last recorded call. The file is not inlined — read or transcribe it from the path.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "audio",
+            "video"
+          ],
+          "description": "Only the last audio recording or only the last screen video"
+        }
+      }
+    }
+  },
+  {
+    "name": "list_displays",
+    "description": "List the user's displays: id, bounds (DIP coordinates), scale factor, primary flag.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  }
+]
