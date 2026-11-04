@@ -97,6 +97,8 @@ test('mcp: capture_window with a bogus target explains itself', async () => {
 });
 
 test('mcp: capture_window uses the fallback when PrintWindow dies', async () => {
+  // The fallback is Graphics Capture, which needs a composed desktop: a build server's session has none.
+  if (process.env.CI) return;
   // Chromium's window capturer EXCLUDES the app's own windows, so the fallback
   // needs an external target: an off-screen WinForms window we spawn ourselves.
   const app = makeApp({ env: { SHOTIK_WINCAP_FAIL: '1' } });
