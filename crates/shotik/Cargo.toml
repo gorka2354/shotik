@@ -14,3 +14,6 @@ shotik-fake.workspace = true
 shotik-ui.workspace = true
 shotik-win.workspace = true
 tokio = { version = "1", features = ["rt-multi-thread", "time"] }
+
+[build-dependencies]
+winresource = "0.1"
