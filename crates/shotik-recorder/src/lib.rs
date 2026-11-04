@@ -8,6 +8,8 @@
 mod backend;
 mod clock;
 mod convert;
+#[cfg(windows)]
+mod devices;
 mod engine;
 mod gif_export;
 mod mix;
@@ -24,6 +26,8 @@ mod recorder_tests;
 #[cfg(windows)]
 mod win;
 
+#[cfg(windows)]
+pub use devices::WinAudioDevices;
 pub use gif_export::export_gif;
 pub use recorder::{CaptureMode, CountdownHook, Recorder, RecorderConfig};
 pub use synth::{Marker, SilentStretches, SynthOptions};

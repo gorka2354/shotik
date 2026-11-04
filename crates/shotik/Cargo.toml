@@ -11,6 +11,7 @@ repository.workspace = true
 shotik-app.workspace = true
 shotik-core.workspace = true
 shotik-fake.workspace = true
+shotik-recorder.workspace = true
 shotik-ui.workspace = true
 shotik-win.workspace = true
 tokio = { version = "1", features = ["rt-multi-thread", "time"] }

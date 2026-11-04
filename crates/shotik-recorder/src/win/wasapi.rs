@@ -4,14 +4,17 @@
 use std::thread;
 use std::time::Duration;
 
+use shotik_core::ports::AudioDevice;
 use shotik_core::{Error, Result};
-use windows::core::HSTRING;
+use windows::core::{Interface, HSTRING};
+use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
 use windows::Win32::Media::Audio::{
-    eCapture, eConsole, eRender, IAudioCaptureClient, IAudioClient, IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator,
-    AUDCLNT_BUFFERFLAGS_SILENT, AUDCLNT_BUFFERFLAGS_TIMESTAMP_ERROR, AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK,
+    eCapture, eConsole, eRender, AudioCategory_Communications, AudioClientProperties, IAudioCaptureClient, IAudioClient,
+    IAudioClient2, IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator, AUDCLNT_BUFFERFLAGS_SILENT,
+    AUDCLNT_BUFFERFLAGS_TIMESTAMP_ERROR, AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK, AUDCLNT_STREAMOPTIONS_NONE,
     DEVICE_STATE_ACTIVE, WAVEFORMATEX,
 };
-use windows::Win32::System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_ALL};
+use windows::Win32::System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_ALL, STGM_READ};
 
 use super::com::{hr_error, qpc_ticks};
 use crate::backend::{AudioInput, AudioOpenError, AudioOpenKind, AudioPacket, MicDevice};
@@ -92,6 +95,59 @@ fn device_for(endpoint: &Endpoint) -> std::result::Result<IMMDevice, AudioOpenEr
     }
 }
 
+/// The Communications category asks Windows for the echo cancellation, noise suppression and gain control
+/// the device's driver offers, which is what getUserMedia asked of Chromium: on a call, the microphone
+/// should not hear the speakers. A driver without those effects records as is, so a refusal is not an error.
+fn request_voice_processing(client: &IAudioClient) {
+    let Ok(client2) = client.cast::<IAudioClient2>() else { return };
+    let properties = AudioClientProperties {
+        cbSize: std::mem::size_of::<AudioClientProperties>() as u32,
+        bIsOffload: false.into(),
+        eCategory: AudioCategory_Communications,
+        Options: AUDCLNT_STREAMOPTIONS_NONE,
+    };
+    // SAFETY: a call on a live client, before Initialize as the API requires; it copies the structure.
+    let _ = unsafe { client2.SetClientProperties(&properties) };
+}
+
+/// The active microphones, for the settings page. Ids are the ones `Endpoint::Microphone` opens. Listing
+/// reads names only; it does not open a device or light the microphone indicator.
+pub(crate) fn list_microphones() -> Result<Vec<AudioDevice>> {
+    // SAFETY: plain object creation; the caller's thread is in the MTA.
+    let enumerator: IMMDeviceEnumerator =
+        unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) }.map_err(|e| hr_error("MMDeviceEnumerator", &e))?;
+    // SAFETY: calls on live objects.
+    let devices = unsafe { enumerator.EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE) }.map_err(|e| hr_error("list microphones", &e))?;
+    // SAFETY: as above.
+    let count = unsafe { devices.GetCount() }.map_err(|e| hr_error("count microphones", &e))?;
+    let mut out = Vec::with_capacity(count as usize);
+    for index in 0..count {
+        // SAFETY: the index is in range.
+        let device = unsafe { devices.Item(index) }.map_err(|e| hr_error("read a microphone", &e))?;
+        // SAFETY: on success the string is valid until freed; it is copied, then freed once.
+        let id = unsafe {
+            let raw = device.GetId().map_err(|e| hr_error("read a microphone id", &e))?;
+            let id = raw.to_string();
+            CoTaskMemFree(Some(raw.as_ptr().cast()));
+            id.map_err(|e| Error::msg(format!("a microphone id is not text: {e}")))?
+        };
+        // A missing name must not hide the device: the id still selects it.
+        let name = friendly_name(&device).unwrap_or_else(|| id.clone());
+        out.push(AudioDevice { id, name });
+    }
+    Ok(out)
+}
+
+fn friendly_name(device: &IMMDevice) -> Option<String> {
+    // SAFETY: calls on live objects; the PROPVARIANT owns its string until dropped.
+    unsafe {
+        let store = device.OpenPropertyStore(STGM_READ).ok()?;
+        let value = store.GetValue(&PKEY_Device_FriendlyName).ok()?;
+        let name = value.to_string();
+        (!name.is_empty()).then_some(name)
+    }
+}
+
 fn open_stream(endpoint: &Endpoint) -> std::result::Result<Stream, AudioOpenError> {
     let exact = matches!(endpoint, Endpoint::Microphone(MicDevice::Exact(_)));
     let fail = |what: &str, e: windows::core::Error| open_error(AudioOpenKind::from_hresult(e.code().0, exact), what, &e);
@@ -99,6 +155,9 @@ fn open_stream(endpoint: &Endpoint) -> std::result::Result<Stream, AudioOpenErro
     // SAFETY: a call on a live object; it returns its own reference.
     let client: IAudioClient = unsafe { device.Activate(CLSCTX_ALL, None) }.map_err(|e| fail("Activate", e))?;
     let flags = if matches!(endpoint, Endpoint::Loopback) { AUDCLNT_STREAMFLAGS_LOOPBACK } else { 0 };
+    if matches!(endpoint, Endpoint::Microphone(_)) {
+        request_voice_processing(&client);
+    }
     let (raw_format, format) = mix_format(&client).map_err(|e| fail("IAudioClient::GetMixFormat", e))?;
     let format = format.map_err(|detail| {
         // SAFETY: the pointer came from GetMixFormat and nothing uses it after this.

@@ -3,12 +3,12 @@
 //! usable from any MTA thread, which is what makes the `unsafe impl Send` in these modules sound.
 
 pub(crate) mod backend;
-mod com;
+pub(crate) mod com;
 mod d3d;
 mod encoder;
 pub(crate) mod gif_decode;
 mod sink;
 mod source;
 mod synth_audio;
-mod wasapi;
+pub(crate) mod wasapi;
 mod wgc;

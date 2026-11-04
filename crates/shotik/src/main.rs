@@ -1,8 +1,6 @@
 //! Shotik binary: the composition root. Picks real or fake ports, starts everything, nothing else.
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 
-mod pending;
-
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -12,6 +10,7 @@ use shotik_core::history::FileHistory;
 use shotik_core::ports::{Callback, ScreenCapture, Tray, TrayItem, Hotkeys, HotkeyAction, HotkeyBinding, HotkeyError, SelectionEvent, SelectionWatcher};
 use shotik_core::settings::{defaults, FileSettings};
 use shotik_core::{Error, Result};
+use shotik_recorder::{CaptureMode, Recorder, RecorderConfig, WinAudioDevices};
 use shotik_ui::{Ui, UiEnv};
 use shotik_win::single_instance::{acquire, Launch};
 
@@ -105,11 +104,16 @@ fn run(temp: &std::path::Path) -> Result<()> {
     // The clipboard of a test run stays out of the user's clipboard history.
     let clipboard = if test_mode { shotik_win::clipboard::WinClipboard::excluded_from_history() } else { shotik_win::clipboard::WinClipboard::new() };
 
+    let displays = Arc::new(shotik_win::displays::WinDisplays::new());
+    let mut recorder_config = RecorderConfig::new(CaptureMode::from_flags(test_mode, real_capture, displays.clone()));
+    recorder_config.temp_dir = temp.to_path_buf();
+    let recorder = Arc::new(Recorder::new(recorder_config)?);
+
     let ui_port: Arc<Ui> = Arc::new(ui);
     let ports = Ports {
         settings,
         history,
-        displays: Arc::new(shotik_win::displays::WinDisplays::new()),
+        displays,
         capture,
         windows: Arc::new(shotik_win::window_source::WinWindowSource::new()),
         clipboard: Arc::new(clipboard),
@@ -122,10 +126,10 @@ fn run(temp: &std::path::Path) -> Result<()> {
         theme: Arc::new(shotik_win::theme::WinTheme::new()),
         autostart: Arc::new(shotik_win::autostart::WinAutostart::new()),
         selection,
-        audio_devices: Arc::new(pending::NoAudioDevices),
-        recorder: Arc::new(pending::NoRecorder),
+        audio_devices: Arc::new(WinAudioDevices),
+        recorder,
         ui: ui_port.clone(),
-        export_gif: Arc::new(|_video| Err(Error::msg("GIF export is not built into this version yet"))),
+        export_gif: Arc::new(|video| shotik_recorder::export_gif(video, 12, 640)),
         quit: Arc::new(Ui::quit),
     };
 
