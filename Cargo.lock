@@ -3875,6 +3875,10 @@ version = "2.0.0-alpha.0"
 dependencies = [
  "shotik-app",
  "shotik-core",
+ "shotik-fake",
+ "shotik-ui",
+ "shotik-win",
+ "tokio",
 ]
 
 [[package]]

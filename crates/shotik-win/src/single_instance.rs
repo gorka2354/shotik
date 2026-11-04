@@ -60,7 +60,19 @@ pub fn acquire(
     argv: &[OsString],
     forwarded: Callback<Vec<OsString>>,
 ) -> Result<Launch> {
-    acquire_named(if test_mode { "test" } else { "app" }, argv, forwarded)
+    // A test lock per profile: test instances with private profiles run side by side, as they did
+    // under Electron, where the lock followed userData.
+    let scope = if test_mode {
+        let profile = std::env::var_os("APPDATA").unwrap_or_default();
+        let mut hash = 0xcbf29ce484222325u64;
+        for unit in std::os::windows::ffi::OsStrExt::encode_wide(profile.as_os_str()) {
+            hash = (hash ^ u64::from(unit)).wrapping_mul(0x100000001b3);
+        }
+        format!("test-{hash:016x}")
+    } else {
+        "app".to_string()
+    };
+    acquire_named(&scope, argv, forwarded)
 }
 
 fn native_error(e: windows::core::Error) -> Error {
