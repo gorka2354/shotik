@@ -799,6 +799,15 @@ fn encode(bytes: &[u8]) -> String {
 }
 
 #[test]
+fn recording_diagnostics_never_invent_success() {
+    let r = rig("diagnostics");
+    let empty = r.app.test_route("ui-state", json!({ "target": "rec-controls" })).unwrap();
+    assert!(empty["diagnostics"]["audioCodec"].is_null());
+    assert_eq!(empty["diagnostics"]["indexed"], false);
+    assert!(empty["diagnostics"]["screenVideoTracks"].is_null());
+}
+
+#[test]
 fn cli_capture_mode_reads_both_spellings() {
     let args = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
     assert_eq!(cli_capture_mode(&args(&["x", "--capture", "full"])).as_deref(), Some("full"));

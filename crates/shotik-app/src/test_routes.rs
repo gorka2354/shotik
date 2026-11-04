@@ -247,6 +247,12 @@ impl App {
                 let id = str_of(&body, "id").ok_or_else(|| Error::msg("export-gif needs \"id\""))?;
                 Ok(json!(self.export_gif_blocking(id)))
             }
+            "ui-state" if target == "rec-controls" => {
+                // Readable after a recording ends and when ghost mode built no controls (TEST-ROUTES.md).
+                let mut state = ui.ui_state(&target, index).unwrap_or_else(|_| json!({ "meters": [] }));
+                state["diagnostics"] = rec_diagnostics(&self.ports.recorder.status().trace);
+                Ok(state)
+            }
             "ui-state" => ui.ui_state(&target, index),
             "ui-action" => {
                 let action = body.get("action").cloned().unwrap_or(Value::Null);
@@ -369,6 +375,23 @@ impl App {
         }
         Ok(reply)
     }
+}
+
+/// What really happened in the latest recording, read from the recorder's trace: never a default that
+/// looks like success.
+fn rec_diagnostics(trace: &[String]) -> Value {
+    let tracks = |key: &str| {
+        trace.iter().rev().find(|line| line.starts_with("got source stream")).and_then(|line| {
+            let value = line.split(key).nth(1)?;
+            value.split_whitespace().next()?.parse::<u32>().ok()
+        })
+    };
+    json!({
+        "audioCodec": trace.iter().any(|l| l.starts_with("recorder.start audio/mp4;codecs=mp4a.40.2")).then_some("aac"),
+        "indexed": trace.iter().any(|l| l.starts_with("index ok")),
+        "screenVideoTracks": tracks("vtracks="),
+        "screenAudioTracks": tracks("atracks="),
+    })
 }
 
 fn decode_base64(text: &str) -> Result<Vec<u8>> {
