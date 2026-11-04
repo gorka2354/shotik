@@ -1,0 +1,66 @@
+import { Theme } from "theme.slint";
+import { Button, Switch, ComboBox, TextInput, Card } from "fluent.slint";
+
+export struct MainSetting { key: string, label: string, sub: string, placeholder: string, kind: string, value: string, checked: bool, options: [string], values: [string], index: int }
+export struct MainSection { title: string, rows: [MainSetting], offset: float, extent: float }
+
+export component MainSettingsPage inherits Rectangle {
+    in property <[MainSection]> sections;
+    in property <string> warning;
+    in property <string> focused-hotkey;
+    out property <bool> region-focused: region.has-focus;
+    callback changed-setting(string, string);
+    callback hotkey-focus(string, bool);
+    callback focus-first();
+    callback blur-first();
+    public function focus-region() { root.focus-first(); }
+    public function blur-region() { root.blur-first(); }
+    height: sections.length > 0 ? 48px + (sections[sections.length - 1].offset + sections[sections.length - 1].extent) * 1px : 48px;
+    for section[si] in root.sections: Card {
+        y: 48px + section.offset * 1px; width: parent.width; height: section.extent * 1px;
+        Text { x: 18px; y: 14px; height: 20px; text: section.title; color: Theme.text; font-size: 14px; font-weight: 600; }
+        for row[ri] in section.rows: Rectangle {
+            x: 18px; y: 40px + ri * 57px; height: 57px; width: parent.width - 36px;
+            Rectangle { x: 0px; y: 0px; width: parent.width; height: 1px; background: Theme.main-stroke; }
+            Text { x: 0px; y: 10px; height: 19px; width: parent.width - (row.kind == "switch" ? 66px : row.key == "recording.microphoneDeviceId" ? 276px : 208px);
+                text: row.label; color: Theme.text; font-size: 13.5px; overflow: elide; }
+            Text { x: 0px; y: 30px; height: 17px; width: parent.width - (row.kind == "switch" ? 66px : row.key == "recording.microphoneDeviceId" ? 276px : 208px);
+                text: row.sub; color: Theme.text-secondary; font-size: 12px; overflow: elide; }
+            if row.kind == "switch": Switch { x: parent.width - 40px; y: 19px; checked: row.checked; label: row.label;
+                toggled(value) => { root.changed-setting(row.key, value ? "true" : "false"); } }
+            if row.kind == "combo": ComboBox { x: parent.width - self.width; y: 11px;
+                width: row.key == "recording.microphoneDeviceId" ? 260px : 150px; model: row.options; current-index: row.index; label: row.label;
+                selected(index) => { root.changed-setting(row.key, row.values[index]); } }
+            if row.kind == "button": Button { x: parent.width - self.width; y: 14px; width: max(66px,self.preferred-width); small: true; text: row.value;
+                clicked => { root.changed-setting(row.key, ""); } }
+            if row.kind == "input" || row.kind == "password": TextInput {
+                x: parent.width - self.width; y: 13px; width: row.kind == "password" ? 200px : 110px;
+                text: row.value; password: row.kind == "password"; mono: true; centered: row.kind != "password"; label: row.label;
+                placeholder: row.placeholder;
+                committed(value) => { if value != row.value { root.changed-setting(row.key, value); } }
+            }
+            // Keep region outside the repeater's conditional subtree so the test route can focus it.
+            if row.kind == "hotkey" && row.key != "hotkeys.region": TextInput {
+                x: parent.width - 190px; y: 13px; width: 190px; read-only: true; mono: true; centered: true; label: row.label;
+                recording: root.focused-hotkey == row.key;
+                text: self.recording ? "" : row.value; placeholder: row.placeholder;
+                focus-changed(focused) => { root.hotkey-focus(row.key, focused); }
+            }
+        }
+    }
+    region := TextInput {
+        x: parent.width - 208px; y: 101px; width: 190px; height: 32px;
+        read-only: true; mono: true; centered: true;
+        label: root.sections[0].rows[0].label;
+        text: root.focused-hotkey == "hotkeys.region" ? "" : root.sections[0].rows[0].value;
+        placeholder: root.sections[0].rows[0].placeholder;
+        recording: root.focused-hotkey == "hotkeys.region";
+        focus-changed(focused) => { root.hotkey-focus("hotkeys.region", focused); }
+    }
+    focus-first => { region.focus(); }
+    blur-first => { region.blur(); }
+    if root.warning != "": Text {
+        x: 18px; y: 48px + root.sections[0].extent * 1px - 31px; height: 22px; width: parent.width - 36px;
+        text: root.warning; color: #b58900; font-size: 12px; overflow: elide;
+    }
+}

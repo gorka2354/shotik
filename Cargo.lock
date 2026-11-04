@@ -3946,6 +3946,7 @@ dependencies = [
 name = "shotik-ui"
 version = "2.0.0-alpha.0"
 dependencies = [
+ "chrono",
  "image",
  "parley",
  "raw-window-handle",

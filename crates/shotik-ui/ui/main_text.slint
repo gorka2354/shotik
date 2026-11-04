@@ -1,0 +1,60 @@
+import { Theme } from "theme.slint";
+import { Card, Button, PrimaryButton, ComboBox, TextInput as InputField } from "fluent.slint";
+
+export component MainTextPage inherits Rectangle {
+    in property <string> input;
+    in property <string> result;
+    in property <string> meta;
+    in property <bool> loading;
+    in property <bool> result-visible;
+    in property <int> target;
+    in property <[string]> languages;
+    in property <string> translate-hotkey;
+    in property <string> text-hotkey;
+    in property <bool> copied;
+    pure callback lookup(string) -> string;
+    callback edited(string);
+    callback selected(int);
+    callback translate();
+    callback copy();
+    height: ways.y + ways.height;
+    quick := Card {
+        y: 48px; width: parent.width;
+        height: root.result-visible ? output.y + output.height + 51px : 187px;
+        Text { x: 18px; y: 14px; height: 20px; text: root.lookup("txtQuickTitle"); color: Theme.text; font-size: 14px; font-weight: 600; }
+        InputField { x: 18px; y: 40px; width: parent.width - 36px; height: 87px; multiline: true;
+            text: root.input; placeholder: root.lookup("txtInputPh"); label: root.lookup("txtQuickTitle");
+            edited(value) => { root.edited(value); } translate => { root.translate(); }
+        }
+        Text { x: 18px; y: 137px; height: 36px; text: root.lookup("txtAuto") + " →"; color: Theme.text-tertiary; font-size: 12.5px; vertical-alignment: center; }
+        ComboBox { x: 74px; y: 137px; model: root.languages; current-index: root.target; label: root.lookup("trTarget"); selected(index) => { root.selected(index); } }
+        PrimaryButton { x: parent.width - self.width - 18px; y: 139px; width: max(81px,self.preferred-width); text: root.lookup("txtTranslateBtn"); clicked => { root.translate(); } }
+        output := Rectangle {
+            visible: root.result-visible; x: 18px; y: 185px; width: parent.width - 36px;
+            height: max(48px, result-text.preferred-height + 24px);
+            background: Theme.accent.with-alpha(0.07); border-color: Theme.accent.with-alpha(0.2); border-width: 1px; border-radius: 5px;
+            result-text := TextInput { x: 14px; y: 12px; width: parent.width - 28px; height: self.preferred-height;
+                text: root.result; color: root.loading ? Theme.text-tertiary : Theme.text; font-size: 14.5px; font-italic: root.loading; wrap: word-wrap;
+                single-line: false; read-only: true; selection-background-color: Theme.accent; selection-foreground-color: Theme.accent-text; }
+        }
+        Text { visible: root.result-visible; x: 18px; y: output.y + output.height + 8px; height: 28px;
+            text: root.meta; color: Theme.text-tertiary; font-family: "Cascadia Mono"; font-size: 11.5px; vertical-alignment: center; }
+        Button { visible: root.result-visible; x: parent.width - self.width - 18px; y: output.y + output.height + 8px; width: max(52px,self.preferred-width);
+            small: true; text: root.lookup(root.copied ? "copied" : "txtCopyBtn"); clicked => { root.copy(); } }
+    }
+    ways := Card {
+        y: quick.y + quick.height + 12px; width: parent.width; height: 164px;
+        Text { x: 18px; y: 14px; height: 20px; text: root.lookup("txtWaysTitle"); color: Theme.text; font-size: 14px; font-weight: 600; }
+        Rectangle { x: 18px; y: 42px; width: parent.width - 36px; height: 22px;
+            lead := Text { x: 0px; y: 0px; height: 22px; text: root.lookup("txtWay1"); color: Theme.text; font-size: 13px; font-weight: 600; }
+            Text { x: lead.preferred-width + 4px; y: 0px; height: 22px; text: "— " + root.lookup("txtWay1Sub"); color: Theme.text-secondary; font-size: 13px; }
+        }
+        for key[i] in [root.translate-hotkey, root.text-hotkey]: Rectangle {
+            x: 18px; y: 70px + i * 26px; height: 20px; width: kbd.preferred-width + 14px; border-radius: 4px;
+            background: Theme.main-code; border-color: Theme.main-stroke; border-width: 1px;
+            kbd := Text { text: key; color: Theme.text; font-family: "Cascadia Mono"; font-size: 11.5px; vertical-alignment: center; horizontal-alignment: center; }
+            Text { x: parent.width + 8px; height: 20px; text: "— " + root.lookup(i == 0 ? "txtWay2" : "txtWay3"); color: Theme.text-secondary; font-size: 13px; vertical-alignment: center; }
+        }
+        Text { x: 18px; y: 130px; height: 20px; width: parent.width - 36px; text: root.lookup("txtWaysNote"); color: Theme.text-secondary; font-size: 12.5px; overflow: elide; }
+    }
+}

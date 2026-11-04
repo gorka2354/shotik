@@ -12,6 +12,7 @@ shotik-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 raw-window-handle = "0.6"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 # Annotation text and strokes burned into pixels. Already in the tree through Slint: same versions on purpose.
 parley = "=0.11.1"
@@ -38,6 +39,8 @@ windows = { version = "0.62", features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Threading",
 ] }
 
 [dev-dependencies]

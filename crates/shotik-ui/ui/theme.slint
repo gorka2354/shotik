@@ -19,4 +19,12 @@ export global Theme {
     out property <length> radius: 8px;
     out property <length> radius-small: 4px;
     out property <string> font: "Segoe UI";
+
+    // Main-window tokens from app.css; other windows keep their existing palette.
+    out property <color> main-layer: dark ? #ffffff0d : #ffffffb8;
+    out property <color> main-stroke: dark ? #ffffff12 : #00000010;
+    out property <color> main-stroke-strong: dark ? #ffffff22 : #00000021;
+    out property <color> main-code: dark ? #00000047 : #0000000b;
+    out property <color> text-tertiary: dark ? #ffffff73 : #00000073;
+    out property <string> main-font: "Segoe UI Variable Text";
 }
