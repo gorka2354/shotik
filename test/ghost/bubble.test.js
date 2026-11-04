@@ -2,14 +2,13 @@
 // Ghost integration for the auto-translate selection bubble. Drives the same
 // code paths the real watcher would, over HTTP. Each exported test gets a fresh
 // app (so state can't leak between cases).
-const { makeApp } = require('./harness');
+const { makeApp } = require('./adapter');
 const { test, assert, eq } = require('../tiny');
 
-const PORT = 7495;
 
 // helper: run a body with a booted app, always tear down
 async function withApp(env, body) {
-  const app = makeApp({ port: PORT, env });
+  const app = makeApp({ env });
   try { await app.waitReady(); await body(app); }
   finally { await app.stop(); }
 }
@@ -31,15 +30,13 @@ test('bubble does NOT appear for an empty / whitespace selection', async () => {
 });
 
 test('clicking the bubble translates and shows the popup with the text', async () => {
-  await withApp({}, async ({ post }) => {
+  await withApp({}, async ({ post, uiState }) => {
     await post('selection-bubble', { text: 'hello', x: 900, y: 500 });
     const a = await post('bubble-activate', {});
     assert(a.popup === true, 'popup opened');
-    const c = await post('exec-js', { target: 'tp', code:
-      'JSON.stringify({o:document.getElementById("orig").textContent,t:document.getElementById("trans").textContent})' });
-    const parsed = JSON.parse(c);
-    eq(parsed.o, 'hello', 'original preserved');
-    assert(parsed.t.includes('hello'), 'stub translation contains the text, got ' + parsed.t);
+    const popup = await uiState('tp');
+    eq(popup.original, 'hello', 'original preserved');
+    assert(popup.translated.includes('hello'), 'stub translation contains the text, got ' + popup.translated);
   });
 });
 
@@ -47,13 +44,12 @@ test('clicking the bubble translates and shows the popup with the text', async (
 // (The watcher can emit a transient clear when focus flickers; the click still
 // has to translate.) This is the "button vanished, nothing happened" bug.
 test('clear before activate still translates (clear-race regression)', async () => {
-  await withApp({}, async ({ post }) => {
+  await withApp({}, async ({ post, uiState }) => {
     await post('selection-bubble', { text: 'world', x: 900, y: 500 });
     await post('inject-clear', {});            // real clear path (hides bubble, keeps text)
     const a = await post('bubble-activate', {}); // a click that raced with the clear
     assert(a.popup === true, 'popup still opens after a racing clear');
-    const c = await post('exec-js', { target: 'tp', code: 'document.getElementById("orig").textContent' });
-    eq(c, 'world', 'the pre-clear selection text survived');
+    eq((await uiState('tp')).original, 'world', 'the pre-clear selection text survived');
   });
 });
 
@@ -84,24 +80,25 @@ test('popup auto-hides a while after the result (no blur needed)', async () => {
 // Click-away dismiss (the "it stays after I deselect" complaint): a press that
 // isn't on the bubble hides it; a press on it is left alone (that's the click).
 test('a click away hides the bubble; a click on it does not', async () => {
-  await withApp({}, async ({ post }) => {
+  await withApp({}, async ({ post, pointerDownDip }) => {
     const s = await post('selection-bubble', { text: 'hello', x: 900, y: 500 });
     const b = s.bounds;
-    const away = await post('sim-down', { x: b.x - 300, y: b.y - 300 });
+    // Window bounds are DIP; the watcher event must carry physical pixels.
+    const away = await pointerDownDip({ x: b.x - 300, y: b.y - 300 });
     assert(away.bubble === false, 'bubble hidden after a click away');
     await post('selection-bubble', { text: 'hello2', x: 900, y: 500 });
-    const on = await post('sim-down', { x: b.x + 5, y: b.y + 5 });
+    const on = await pointerDownDip({ x: b.x + 5, y: b.y + 5 });
     assert(on.bubble === true, 'bubble kept when the click is on it');
   });
 });
 
 test('a click away hides the translate popup', async () => {
-  await withApp({}, async ({ post }) => {
+  await withApp({}, async ({ post, pointerDownDip }) => {
     await post('selection-bubble', { text: 'hello', x: 900, y: 500 });
     await post('bubble-activate', {});
     const before = await post('tp-visible', {});
     assert(before.popupVisible === true, 'popup is up');
-    const d = await post('sim-down', { x: 100, y: 100 });
+    const d = await pointerDownDip({ x: 100, y: 100 });
     assert(d.popup === false, 'popup hidden after a click away');
   });
 });
