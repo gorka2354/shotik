@@ -233,7 +233,7 @@ async function translateTextToPopup(text) {
   windows.showTranslatePopup({ loading: true, original: text, loadingText: t('txtTranslating') });
   try {
     const res = await translate.translate(text);
-    blog(`translate: ok source=${res.source} provider=${res.provider} out="${String(res.text).slice(0, 40)}"`);
+    blog(`translate: ok source=${res.source} provider=${res.provider} (${String(res.text).length} ch)`);
     windows.updateTranslatePopup({ original: text, translated: res.text, source: res.source, target });
     lastProcessed = { action: 'translate-selection', file: null, ts: Date.now() };
   } catch (e) {
@@ -267,7 +267,8 @@ let selWatcher = null;
 let pendingSelection = null; // { text } captured for the currently shown bubble
 let lastTranslated = null;   // suppress re-popping the bubble for text we just translated
 
-// Lightweight diagnostics for the whole bubble→translate path — the real focus/
+// Lightweight diagnostics for the whole bubble→translate path. Never the text
+// itself: people select passwords and private messages. The real focus/
 // clipboard behaviour can't be reproduced off-screen, so log it and read the
 // tail after a live repro. Truncates on startup so it never grows unbounded.
 const BUBBLE_LOG = path.join(app.getPath('temp'), 'shotik-bubble.log');
@@ -279,11 +280,11 @@ function blog(msg) {
 function onSelectionDetected(ev) {
   const text = String(ev.text || '').trim();
   if (!text) return;
-  if (text === lastTranslated) { blog(`detect: "${text.slice(0, 40)}" == lastTranslated, skip`); return; }
+  if (text === lastTranslated) { blog('detect: same as lastTranslated, skip'); return; }
   pendingSelection = { text };
   let pt = { x: ev.x || 0, y: ev.y || 0 };
   try { pt = screen.screenToDipPoint({ x: ev.x, y: ev.y }); } catch (_) {} // physical px → DIP
-  blog(`detect: "${text.slice(0, 40)}" (${text.length} ch) → bubble @ ${Math.round(pt.x)},${Math.round(pt.y)}`);
+  blog(`detect: ${text.length} ch → bubble @ ${Math.round(pt.x)},${Math.round(pt.y)}`);
   windows.showSelectionBubble({ x: pt.x, y: pt.y });
 }
 
@@ -361,7 +362,7 @@ async function onGesture(ev) {
   ocrBusy = true;
   try {
     const text = await ocrSelectionRegion(disp, rect, { x: (gx1 + gx2) / 2, y: (gy1 + gy2) / 2 });
-    blog(`gesture → "${text.slice(0, 40)}"`);
+    blog(`gesture → ${text.length} ch`);
     if (!text || text === lastTranslated) return;
     pendingSelection = { text };
     windows.showSelectionBubble({ x: p2.x, y: p2.y });
@@ -383,7 +384,7 @@ async function onGestureDbl(ev) {
   ocrBusy = true;
   try {
     const text = await ocrSelectionRegion(disp, rect, p);
-    blog(`dblclick → "${text}"`);
+    blog(`dblclick → ${text.length} ch`);
     if (!text || text === lastTranslated) return;
     pendingSelection = { text };
     windows.showSelectionBubble({ x: p.x, y: p.y });
@@ -416,7 +417,7 @@ function startSelectionWatcher() {
   rl.on('line', (line) => {
     line = line.trim();
     if (!line) return;
-    let ev; try { ev = JSON.parse(line); } catch (_) { blog('watcher line unparsed: ' + line.slice(0, 60)); return; }
+    let ev; try { ev = JSON.parse(line); } catch (_) { blog(`watcher line unparsed: ${line.length} ch`); return; }
     if (ev.down) { onMouseDown(ev); return; }
     if (ev.clear) { clearSelectionBubble(); return; }
     if (ev.gesture) { onGesture(ev); return; }
@@ -439,7 +440,7 @@ ipcMain.on('bubble:activate', () => {
   pendingSelection = null;
   windows.hideSelectionBubble();
   if (sel && sel.text) {
-    blog(`activate: translating "${sel.text.slice(0, 40)}"`);
+    blog(`activate: translating ${sel.text.length} ch`);
     lastTranslated = sel.text;
     translateTextToPopup(sel.text);
   } else {
