@@ -300,6 +300,7 @@ impl WindowSource for WinWindowSource {
 /// A window at x=22000 for tests and the stability example: off every monitor, at the bottom of the
 /// z-order, never active, with no taskbar button (`WS_EX_NOACTIVATE`). See `test/ghost/testwin.ps1` for
 /// why it must be shown explicitly: a process started hidden hands that state to its first window.
+#[cfg(any(test, feature = "tools"))]
 #[doc(hidden)]
 pub mod test_support {
     use super::*;

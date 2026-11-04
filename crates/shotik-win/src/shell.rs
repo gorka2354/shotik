@@ -118,8 +118,7 @@ fn escape_external(text: &str) -> String {
             && i + 2 < bytes.len()
             && bytes[i + 1].is_ascii_hexdigit()
             && bytes[i + 2].is_ascii_hexdigit();
-        let needs_escape = c < 0x20
-            || c >= 0x7F
+        let needs_escape = !(0x20..0x7F).contains(&c)
             || matches!(c, b' ' | b'"' | b'%' | b'<' | b'>' | b'\\' | b'^' | b'`' | b'{' | b'|' | b'}');
         if needs_escape && !keep_escape {
             out.push_str(&format!("%{c:02X}"));

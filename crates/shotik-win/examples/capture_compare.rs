@@ -4,7 +4,7 @@
 //! are printed. No window is created and no input is sent. Build it in release:
 //!
 //! ```text
-//! cargo build --release -p shotik-win --example capture_compare
+//! cargo build --release -p shotik-win --example capture_compare --features tools
 //! capture_compare info                       monitors, adapters, HDR, rotation, what is in front
 //! capture_compare latency [warm] [cold]      latency and correctness per method and monitor
 //! capture_compare stability <method> [grabs] [gap_ms]   handles and private bytes across many grabs

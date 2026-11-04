@@ -1,5 +1,6 @@
 //! Prints the display layout and theme as JSON, to compare with what Electron reports on the same
 //! machine: `screen.getAllDisplays()`, `systemPreferences.getAccentColor()`. Geometry only.
+//! `cargo run -p shotik-win --example display_dump --features tools -- 1,1 7,13`
 
 use shotik_core::geom::{Point, PointF, Rect};
 use shotik_core::ports::{Displays, ThemeSource};

@@ -7,6 +7,18 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+# The measuring tools in examples/, and the test window they share with the unit tests.
+tools = []
+
+[[example]]
+name = "capture_compare"
+required-features = ["tools"]
+
+[[example]]
+name = "display_dump"
+required-features = ["tools"]
+
 [dependencies]
 shotik-core.workspace = true
 
