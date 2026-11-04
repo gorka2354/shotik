@@ -73,6 +73,12 @@ fn check_seek(file: &Path, duration: f64) {
     let seek_to = (duration * 0.75 * 10.0).round() / 10.0;
     let mf = media_foundation(file, seek_to);
     println!("Media Foundation: {mf}");
+    // Windows' player opens a file with sound only when there is a device to play it on, and a build server
+    // has none. ffprobe has checked the file by then; this part runs on every machine with sound.
+    if std::env::var_os("CI").is_some() && mf["state"] == "None" {
+        println!("no audio device on this CI machine: seeking not checked");
+        return;
+    }
     assert_eq!(mf["canSeek"], true, "{mf}");
     assert!((mf["durationSec"].as_f64().unwrap() - duration).abs() < 0.2, "{mf} vs {duration}");
     assert!((mf["positionAfterSeek"].as_f64().unwrap() - seek_to).abs() < 0.3, "{mf} vs {seek_to}");
