@@ -1,0 +1,11 @@
+[package]
+name = "shotik-recorder"
+description = "Video and audio capture, encoding and muxing; GIF export."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+shotik-core.workspace = true

@@ -1,0 +1,15 @@
+[package]
+name = "shotik-core"
+description = "Domain types, port traits and pure logic of Shotik. No OS calls, no UI, no async runtime."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+fast_image_resize = "5"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

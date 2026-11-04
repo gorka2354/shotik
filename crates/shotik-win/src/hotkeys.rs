@@ -1,0 +1,1 @@
+//! Global hotkeys. Implements `Hotkeys`.

@@ -1,0 +1,11 @@
+[package]
+name = "shotik-ui"
+description = "All windows. Each window is pure state plus a view."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+shotik-core.workspace = true

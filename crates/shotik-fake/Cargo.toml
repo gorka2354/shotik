@@ -1,0 +1,11 @@
+[package]
+name = "shotik-fake"
+description = "Fake implementations of the ports, for tests and ghost mode."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+shotik-core.workspace = true

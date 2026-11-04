@@ -1,0 +1,11 @@
+[package]
+name = "shotik-app"
+description = "Orchestration: triggers, overlay results, selection logic, tray menu."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+shotik-core.workspace = true

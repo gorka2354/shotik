@@ -1,0 +1,12 @@
+[package]
+name = "shotik"
+description = "Shotik binary: composition root."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+shotik-core.workspace = true
+shotik-app.workspace = true
