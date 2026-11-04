@@ -328,17 +328,21 @@ impl App {
             .iter()
             .map(|d| json!({ "id": d.id, "bounds": d.bounds, "workArea": d.work_area }))
             .collect();
+        // Ask the UI thread first: it takes the state lock to record the overlay's marks, so waiting for it
+        // while holding that lock stalls both for the 30 s of `on_ui_wait`.
+        let (overlay_open, overlay_bounds, main_visible) = (ui.overlay_is_open(), ui.overlay_bounds(), ui.main_visible());
+        let mcp = self.mcp_status();
         let state = self.state();
         json!({
-            "overlayOpen": ui.overlay_is_open(),
-            "overlayCount": ui.overlay_bounds().len(),
-            "overlayBounds": ui.overlay_bounds(),
+            "overlayOpen": overlay_open,
+            "overlayCount": overlay_bounds.len(),
+            "overlayBounds": overlay_bounds,
             "displays": displays,
-            "mainVisible": ui.main_visible(),
+            "mainVisible": main_visible,
             "lastProcessed": state.last_processed,
             "hotkeyErrors": state.hotkey_errors,
             "hotkeysSuspended": state.hotkeys_suspended,
-            "mcp": self.mcp_status(),
+            "mcp": mcp,
         })
     }
 

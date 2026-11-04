@@ -195,6 +195,12 @@ rectangle. `viewport` is local DIP extent; `image` is the physical source size.
 `textMode` indicates Live Text; `wordCount` counts recognized word boxes;
 `annotationCount` counts committed annotations.
 
+The snapshot also has `tool`, `color`, `size`, `redoCount`, `counterNext`, `hoverRect`, `cursor`,
+`selectedWords`, `selectedText`, `flash`, `optionsVisible`, `textToolbarVisible`, `editorOpen`, `editorText`,
+`badgeVisible`, `magnifierVisible`, `dims` and `translate`; see `snapshot` in
+`crates/shotik-ui/src/overlay/state.rs`. Besides the actions below, `ui-action` takes any `Action` of that
+file as JSON, which is what `crates/shotik-ui/examples/overlay_preview.rs` drives.
+
 | `action` JSON | Effect |
 |---|---|
 | `{"type":"select","rect":{"x":240,"y":140,"w":1100,"h":640}}` | Select this local-DIP rectangle, enter `selected` mode and lay out the normal toolbar. Convert to image pixels in state. |

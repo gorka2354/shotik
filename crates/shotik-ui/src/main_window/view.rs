@@ -1735,6 +1735,13 @@ mod tests {
             std::process::id(),
             Local::now().timestamp_millis()
         ));
+        struct RemoveOnDrop(std::path::PathBuf);
+        impl Drop for RemoveOnDrop {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let _cleanup = RemoveOnDrop(root.clone());
         let host = super::super::fixtures::PreviewHost::new(&root).unwrap();
         runtime::init(crate::UiEnv {
             ghost: true,
