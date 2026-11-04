@@ -8,6 +8,10 @@
 //! The clipboard is a global lock, so nothing slow happens while holding it: PNG encoding and memory
 //! allocation are done before opening, and the owner window lives only for the write. Destroying it
 //! leaves the data in place, and no window stays around for other applications to block on.
+//!
+//! What is on the clipboard was written by any application, so it is untrusted input. A DIB is decoded here in
+//! safe Rust, every size is checked with checked arithmetic before anything is allocated or read, and whatever
+//! this code does not decode itself, such as RLE or embedded JPEG, is refused with an error.
 
 use std::time::{Duration, Instant};
 
@@ -16,7 +20,7 @@ use shotik_core::frame::Frame;
 use shotik_core::ports::Clipboard;
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL, HWND};
-use windows::Win32::Graphics::Gdi::{SetDIBitsToDevice, BITMAPINFO, BITMAPINFOHEADER, BI_BITFIELDS, BI_RGB, DIB_RGB_COLORS};
+use windows::Win32::Graphics::Gdi::{BI_BITFIELDS, BI_RGB};
 use windows::Win32::System::DataExchange::{
     CloseClipboard, EmptyClipboard, EnumClipboardFormats, GetClipboardData, GetClipboardFormatNameW,
     GetOpenClipboardWindow, IsClipboardFormatAvailable, OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
@@ -27,15 +31,14 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DestroyWindow, GetWindowThreadProcessId, HWND_MESSAGE, WINDOW_EX_STYLE, WINDOW_STYLE,
 };
 
-use crate::capture::d3d::force_opaque;
-use crate::capture::gdi::Canvas;
 use crate::displays::{from_wide_buf, wide, win_err};
 
 /// How long to wait for another application to let go. It usually holds the lock for microseconds; a
 /// clipboard manager or remote desktop can take longer. Long enough for those, short enough to report.
 const OPEN_BUDGET: Duration = Duration::from_millis(1000);
-/// The largest decoded image we accept: a 16K frame. A larger DIB is either garbage or will not fit.
-const MAX_IMAGE_BYTES: u64 = 1 << 30;
+/// The largest decoded image we accept, the same limit the PNG decoder applies. A small DIB can claim a huge
+/// image: at one bit per pixel, 16 MB of input decodes to 512 MB.
+const MAX_IMAGE_BYTES: u64 = 512 * 1024 * 1024;
 
 fn format_id(name: PCWSTR) -> u32 {
     // SAFETY: `name` is a NUL-terminated literal. The system returns the same id for the same name.
@@ -178,7 +181,8 @@ impl Drop for GlobalMem {
 /// The bytes of a clipboard format. None when it is absent or not memory-based.
 fn read_format(format: u32) -> Result<Option<Vec<u8>>> {
     // SAFETY: the clipboard is open by the caller. The handle is owned by the clipboard and stays valid
-    // until it closes, and it is locked only for the copy.
+    // until it closes, and it is locked only for the copy. `GlobalSize` is the real size of the block whatever
+    // the data claims inside it, and for a format that is not memory-based it returns 0, which ends here.
     unsafe {
         let Ok(handle) = GetClipboardData(format) else {
             return Ok(None);
@@ -204,23 +208,17 @@ fn read_format(format: u32) -> Result<Option<Vec<u8>>> {
 /// but some classic applications draw them upside down.
 fn dib_from_frame(frame: &Frame) -> Vec<u8> {
     let (w, h) = (frame.width() as usize, frame.height() as usize);
-    let header = BITMAPINFOHEADER {
-        biSize: size_of::<BITMAPINFOHEADER>() as u32,
-        biWidth: w as i32,
-        biHeight: h as i32,
-        biPlanes: 1,
-        biBitCount: 32,
-        biCompression: BI_RGB.0,
-        biSizeImage: (w * h * 4) as u32,
-        ..Default::default()
-    };
-    let mut out = Vec::with_capacity(size_of::<BITMAPINFOHEADER>() + w * h * 4);
-    // SAFETY: BITMAPINFOHEADER is plain data with no padding, viewed as bytes for the copy.
-    out.extend_from_slice(unsafe {
-        std::slice::from_raw_parts(std::ptr::from_ref(&header).cast::<u8>(), size_of::<BITMAPINFOHEADER>())
-    });
-    let stride = w * 4;
-    for row in frame.bgra().chunks_exact(stride).rev() {
+    let size = w * h * 4;
+    let mut out = Vec::with_capacity(BITMAPINFOHEADER_SIZE + size);
+    out.extend_from_slice(&(BITMAPINFOHEADER_SIZE as u32).to_le_bytes()); // biSize
+    out.extend_from_slice(&(w as i32).to_le_bytes()); // biWidth
+    out.extend_from_slice(&(h as i32).to_le_bytes()); // biHeight: positive means bottom-up
+    out.extend_from_slice(&1u16.to_le_bytes()); // biPlanes
+    out.extend_from_slice(&32u16.to_le_bytes()); // biBitCount
+    out.extend_from_slice(&BI_RGB.0.to_le_bytes()); // biCompression
+    out.extend_from_slice(&u32::try_from(size).unwrap_or(0).to_le_bytes()); // biSizeImage: 0 is valid for BI_RGB
+    out.extend_from_slice(&[0; 16]); // resolution and colour counts
+    for row in frame.bgra().chunks_exact(w * 4).rev() {
         out.extend_from_slice(row);
     }
     out
@@ -253,108 +251,236 @@ fn fix_alpha(bgra: &mut [u8]) {
     }
 }
 
-fn read_u32(b: &[u8], at: usize) -> u32 {
-    u32::from_le_bytes([b[at], b[at + 1], b[at + 2], b[at + 3]])
+const BITMAPINFOHEADER_SIZE: usize = 40;
+/// The header sizes Windows defines beyond `BITMAPCOREHEADER`, which the clipboard does not carry:
+/// `BITMAPINFOHEADER`, V2, V3, V4 and V5.
+const DIB_HEADER_SIZES: [usize; 5] = [BITMAPINFOHEADER_SIZE, 52, 56, 108, 124];
+
+fn le_u16(b: &[u8], at: usize) -> Option<u16> {
+    let bytes = b.get(at..at.checked_add(2)?)?;
+    Some(u16::from_le_bytes(bytes.try_into().ok()?))
 }
 
-/// Any DIB to a frame. Plain 32-bit data is read directly, keeping its alpha. Everything else (palettes,
-/// 16 and 24 bits, RLE, unusual masks) goes through GDI, as in Chromium, and comes out opaque.
-fn frame_from_dib(dib: &[u8]) -> Result<Frame> {
-    const BITMAPINFOHEADER_SIZE: usize = 40;
-    let bad = |what: &str| Error::msg(format!("the clipboard image is damaged: {what}"));
-    if dib.len() < BITMAPINFOHEADER_SIZE {
-        return Err(bad("too short for a header"));
+fn le_u32(b: &[u8], at: usize) -> Option<u32> {
+    let bytes = b.get(at..at.checked_add(4)?)?;
+    Some(u32::from_le_bytes(bytes.try_into().ok()?))
+}
+
+fn damaged(what: &str) -> Error {
+    Error::msg(format!("the clipboard image is damaged: {what}"))
+}
+
+/// Colour masks of a `BI_BITFIELDS` DIB, or the implicit ones of a 16-bit `BI_RGB` one.
+#[derive(Clone, Copy)]
+struct Masks {
+    red: u32,
+    green: u32,
+    blue: u32,
+    /// 0 when the image has no alpha mask.
+    alpha: u32,
+}
+
+impl Masks {
+    /// The layout of plain 32-bit data, where a pixel's bytes already are BGRA.
+    fn are_bgra(&self) -> bool {
+        (self.red, self.green, self.blue) == (0x00FF_0000, 0x0000_FF00, 0x0000_00FF)
     }
-    let header_size = read_u32(dib, 0) as usize;
-    if header_size < BITMAPINFOHEADER_SIZE || header_size > dib.len() {
-        return Err(bad("wrong header size"));
-    }
-    let width = read_u32(dib, 4) as i32;
-    let height = read_u32(dib, 8) as i32;
-    let bits = u16::from_le_bytes([dib[14], dib[15]]);
-    let compression = read_u32(dib, 16);
-    let colors_used = read_u32(dib, 32) as usize;
-    if width <= 0 || height == 0 {
-        return Err(bad("empty dimensions"));
-    }
-    let (w, h) = (width as u64, u64::from(height.unsigned_abs()));
-    if w * h * 4 > MAX_IMAGE_BYTES {
-        return Err(Error::msg(format!("the clipboard image is too large: {w}x{h}")));
-    }
-    let palette = match bits {
-        1 | 4 | 8 => {
-            let entries = if colors_used != 0 { colors_used } else { 1 << bits };
-            entries * 4
+
+    fn check(&self) -> Result<()> {
+        if self.red | self.green | self.blue == 0 {
+            return Err(damaged("the colour masks are empty"));
         }
-        16 | 24 | 32 => colors_used * 4,
-        _ => return Err(bad(&format!("{bits} bits per pixel"))),
-    };
-    // A 40-byte header with bit fields has the three masks right after it; larger headers contain them.
-    let masks = if compression == BI_BITFIELDS.0 && header_size == BITMAPINFOHEADER_SIZE { 12 } else { 0 };
-    let data = header_size + masks + palette;
-    if data > dib.len() {
-        return Err(bad("the color table runs past the end"));
-    }
-    let mask_at = |i: usize| read_u32(dib, BITMAPINFOHEADER_SIZE + i * 4);
-    let standard_masks = compression == BI_RGB.0
-        || (compression == BI_BITFIELDS.0
-            && dib.len() >= BITMAPINFOHEADER_SIZE + 12
-            && (mask_at(0), mask_at(1), mask_at(2)) == (0x00FF_0000, 0x0000_FF00, 0x0000_00FF));
-    if bits == 32 && standard_masks {
-        let stride = w as usize * 4;
-        let total = stride * h as usize;
-        let pixels = dib.get(data..data + total).ok_or_else(|| bad("the pixel data is truncated"))?;
-        let mut out = Vec::with_capacity(total);
-        if height > 0 {
-            for row in pixels.chunks_exact(stride).rev() {
-                out.extend_from_slice(row);
+        for mask in [self.red, self.green, self.blue, self.alpha] {
+            let run = mask.checked_shr(mask.trailing_zeros()).unwrap_or(0);
+            if run & run.wrapping_add(1) != 0 {
+                return Err(damaged("a colour mask is not one run of bits"));
             }
-        } else {
-            out.extend_from_slice(pixels);
         }
-        fix_alpha(&mut out);
-        return Frame::new(w as u32, h as u32, out);
+        Ok(())
     }
-    const BI_JPEG: u32 = 4;
-    const BI_PNG: u32 = 5;
-    if compression == BI_JPEG || compression == BI_PNG {
-        return Err(bad("embedded JPEG or PNG is not supported"));
-    }
-    if compression == BI_RGB.0 {
-        let stride = (w as usize * usize::from(bits)).div_ceil(32) * 4;
-        if data + stride * h as usize > dib.len() {
-            return Err(bad("the pixel data is truncated"));
-        }
-    }
-    frame_from_dib_via_gdi(dib, data, w as i32, h as i32)
 }
 
-fn frame_from_dib_via_gdi(dib: &[u8], data: usize, w: i32, h: i32) -> Result<Frame> {
-    let canvas = Canvas::new(w, h)?;
-    // SAFETY: the source pointers stay inside `dib`, whose layout the caller checked, and the canvas is the
-    // size being copied.
-    let lines = unsafe {
-        SetDIBitsToDevice(
-            canvas.dc(),
-            0,
-            0,
-            w as u32,
-            h as u32,
-            0,
-            0,
-            0,
-            h as u32,
-            dib.as_ptr().add(data).cast(),
-            dib.as_ptr().cast::<BITMAPINFO>(),
-            DIB_RGB_COLORS,
-        )
-    };
-    if lines == 0 {
-        return Err(Error::msg("GDI could not read the clipboard image"));
+/// One channel of a pixel, scaled to 8 bits. A zero mask means the channel is absent.
+fn channel(pixel: u32, mask: u32) -> u8 {
+    if mask == 0 {
+        return 0;
     }
-    let mut out = canvas.pixels().to_vec();
-    // GDI leaves alpha at 0 for sources without alpha.
-    force_opaque(&mut out);
+    let shift = mask.trailing_zeros();
+    let max = u64::from(mask >> shift);
+    let value = u64::from((pixel & mask) >> shift);
+    ((value * 255 + max / 2) / max) as u8
+}
+
+/// A checked description of a DIB: everything in it has been validated against the length of the buffer.
+struct DibLayout {
+    width: usize,
+    height: usize,
+    top_down: bool,
+    bits: u16,
+    stride: usize,
+    /// Where the pixels start in the buffer. `stride * height` bytes from here are in bounds.
+    data: usize,
+    /// The colour table: a range of the buffer, in bounds, with whole 4-byte entries.
+    palette: std::ops::Range<usize>,
+    masks: Option<Masks>,
+}
+
+/// Validates a DIB before anything else touches it. It accepts `BI_RGB` at 1, 4, 8, 16, 24 and 32 bits, and
+/// `BI_BITFIELDS` at 16 and 32, top-down or bottom-up. Everything else is an error, including RLE, whose length
+/// cannot be known without decoding it. Arithmetic is on `u64` and checked, so no header can wrap it around.
+fn parse_dib(dib: &[u8]) -> Result<DibLayout> {
+    let header_size = le_u32(dib, 0).ok_or_else(|| damaged("too short for a header"))? as usize;
+    if !DIB_HEADER_SIZES.contains(&header_size) {
+        return Err(damaged("unknown header size"));
+    }
+    if dib.len() < header_size {
+        return Err(damaged("too short for its header"));
+    }
+    // All of these are inside the 40 bytes that were just checked to be there.
+    let field = |at| le_u32(dib, at).ok_or_else(|| damaged("too short for a header"));
+    let width = field(4)? as i32;
+    let height = field(8)? as i32;
+    let planes = le_u16(dib, 12).ok_or_else(|| damaged("too short for a header"))?;
+    let bits = le_u16(dib, 14).ok_or_else(|| damaged("too short for a header"))?;
+    let compression = field(16)?;
+    let colors_used = u64::from(field(32)?);
+
+    // A negative height means top-down, and that is the only negative value that means anything.
+    if width <= 0 || height == 0 {
+        return Err(damaged("empty dimensions"));
+    }
+    if planes != 1 {
+        return Err(damaged("it does not have exactly one plane"));
+    }
+    let bitfields = compression == BI_BITFIELDS.0;
+    if !bitfields && compression != BI_RGB.0 {
+        return Err(Error::msg(format!("the clipboard image uses unsupported compression {compression}")));
+    }
+    let depth_ok = match bits {
+        1 | 4 | 8 | 24 => !bitfields,
+        16 | 32 => true,
+        _ => false,
+    };
+    if !depth_ok {
+        return Err(damaged(&format!("{bits} bits per pixel with compression {compression}")));
+    }
+
+    let (w, h) = (u64::from(width as u32), u64::from(height.unsigned_abs()));
+    let too_large = || Error::msg(format!("the clipboard image is too large: {w}x{h}"));
+    let decoded = w.checked_mul(h).and_then(|pixels| pixels.checked_mul(4)).ok_or_else(too_large)?;
+    if decoded > MAX_IMAGE_BYTES {
+        return Err(too_large());
+    }
+    let stride = w.checked_mul(u64::from(bits)).ok_or_else(too_large)?.div_ceil(32) * 4;
+    let pixel_bytes = stride.checked_mul(h).ok_or_else(too_large)?;
+
+    let masks = if bitfields {
+        // Inside the header from V2 on, right after it for a plain BITMAPINFOHEADER.
+        let mask = |at| le_u32(dib, at).ok_or_else(|| damaged("the colour masks run past the end"));
+        let alpha = if header_size >= 56 { mask(52)? } else { 0 };
+        let masks = Masks { red: mask(40)?, green: mask(44)?, blue: mask(48)?, alpha };
+        masks.check()?;
+        Some(masks)
+    } else if bits == 16 {
+        Some(Masks { red: 0x7C00, green: 0x03E0, blue: 0x001F, alpha: 0 })
+    } else {
+        None
+    };
+    let masks_after_header: u64 = if bitfields && header_size == BITMAPINFOHEADER_SIZE { 12 } else { 0 };
+
+    let entries = if bits <= 8 {
+        let all = 1u64 << bits;
+        match colors_used {
+            0 => all,
+            used if used <= all => used,
+            _ => return Err(damaged("more colours than the depth allows")),
+        }
+    } else {
+        // Optional at higher depths, but it still sits in front of the pixels when present.
+        colors_used
+    };
+    let palette_start = header_size as u64 + masks_after_header;
+    let palette_end = entries.checked_mul(4).and_then(|bytes| palette_start.checked_add(bytes));
+    let palette_end = palette_end.ok_or_else(|| damaged("the colour table does not fit"))?;
+    let end = palette_end.checked_add(pixel_bytes).ok_or_else(too_large)?;
+    if palette_end > dib.len() as u64 {
+        return Err(damaged("the colour table runs past the end"));
+    }
+    if end > dib.len() as u64 {
+        return Err(damaged("the pixel data is truncated"));
+    }
+    // All below `dib.len()`, so they fit a usize.
+    Ok(DibLayout {
+        width: w as usize,
+        height: h as usize,
+        top_down: height < 0,
+        bits,
+        stride: stride as usize,
+        data: palette_end as usize,
+        palette: palette_start as usize..palette_end as usize,
+        masks,
+    })
+}
+
+/// One row through a colour table. A DIB can claim fewer colours than its depth allows and still use the
+/// indexes beyond them, which is damage and not black.
+fn decode_indexed_row(src: &[u8], bits: u16, palette: &[u8], dst: &mut [u8]) -> Result<()> {
+    for (x, px) in dst.chunks_exact_mut(4).enumerate() {
+        let index = match bits {
+            8 => src[x],
+            4 => (src[x / 2] >> if x % 2 == 0 { 4 } else { 0 }) & 0x0F,
+            _ => (src[x / 8] >> (7 - x % 8)) & 0x01,
+        };
+        let entry = usize::from(index) * 4;
+        let color = palette.get(entry..entry + 3).ok_or_else(|| damaged("a pixel uses a colour that is not in its table"))?;
+        px.copy_from_slice(&[color[0], color[1], color[2], 255]);
+    }
+    Ok(())
+}
+
+/// Any DIB `parse_dib` accepts to a frame, without leaving safe Rust.
+fn frame_from_dib(dib: &[u8]) -> Result<Frame> {
+    let layout = parse_dib(dib)?;
+    let (w, h, stride) = (layout.width, layout.height, layout.stride);
+    let pixels = dib.get(layout.data..layout.data + stride * h).ok_or_else(|| damaged("the pixel data is truncated"))?;
+    let palette = dib.get(layout.palette.clone()).ok_or_else(|| damaged("the colour table runs past the end"))?;
+
+    // Plain 32-bit data keeps its alpha. Everything else is opaque unless it has a real alpha mask.
+    let plain_32 = layout.bits == 32 && layout.masks.is_none_or(|m| m.are_bgra());
+    let has_alpha = plain_32 || layout.masks.is_some_and(|m| m.alpha != 0);
+
+    let mut out = vec![0u8; w * h * 4];
+    for (y, dst) in out.chunks_exact_mut(w * 4).enumerate() {
+        let row = if layout.top_down { y } else { h - 1 - y };
+        let src = &pixels[row * stride..(row + 1) * stride];
+        match (layout.bits, layout.masks) {
+            (32, _) if plain_32 => dst.copy_from_slice(&src[..w * 4]),
+            (32, Some(m)) => {
+                for (px, d) in src.chunks_exact(4).zip(dst.chunks_exact_mut(4)) {
+                    let v = u32::from_le_bytes([px[0], px[1], px[2], px[3]]);
+                    let alpha = if m.alpha == 0 { 255 } else { channel(v, m.alpha) };
+                    d.copy_from_slice(&[channel(v, m.blue), channel(v, m.green), channel(v, m.red), alpha]);
+                }
+            }
+            (24, _) => {
+                for (px, d) in src.chunks_exact(3).zip(dst.chunks_exact_mut(4)) {
+                    d.copy_from_slice(&[px[0], px[1], px[2], 255]);
+                }
+            }
+            (16, Some(m)) => {
+                for (px, d) in src.chunks_exact(2).zip(dst.chunks_exact_mut(4)) {
+                    let v = u32::from(u16::from_le_bytes([px[0], px[1]]));
+                    d.copy_from_slice(&[channel(v, m.blue), channel(v, m.green), channel(v, m.red), 255]);
+                }
+            }
+            (1 | 4 | 8, _) => decode_indexed_row(src, layout.bits, palette, dst)?,
+            // `parse_dib` admits no other combination.
+            _ => return Err(damaged("an unexpected pixel format")),
+        }
+    }
+    if has_alpha {
+        fix_alpha(&mut out);
+    }
     Frame::new(w as u32, h as u32, out)
 }
 
@@ -622,11 +748,12 @@ mod tests {
     #[test]
     fn a_dib_is_bottom_up_with_a_plain_header() {
         let dib = dib_from_frame(&sample());
-        assert_eq!(read_u32(&dib, 0), 40);
-        assert_eq!(read_u32(&dib, 4), 3);
-        assert_eq!(read_u32(&dib, 8), 2, "positive height: bottom-up");
-        assert_eq!(u16::from_le_bytes([dib[14], dib[15]]), 32);
-        assert_eq!(read_u32(&dib, 16), BI_RGB.0);
+        assert_eq!(le_u32(&dib, 0), Some(40));
+        assert_eq!(le_u32(&dib, 4), Some(3));
+        assert_eq!(le_u32(&dib, 8), Some(2), "positive height: bottom-up");
+        assert_eq!(le_u16(&dib, 12), Some(1));
+        assert_eq!(le_u16(&dib, 14), Some(32));
+        assert_eq!(le_u32(&dib, 16), Some(BI_RGB.0));
         assert_eq!(dib.len(), 40 + 3 * 2 * 4);
         assert_eq!(&dib[40..44], &[255, 255, 255, 255], "the bottom row comes first");
         assert_eq!(&dib[52..56], &[255, 0, 0, 255], "then the top row");
@@ -651,6 +778,36 @@ mod tests {
         v.extend_from_slice(&colors.to_le_bytes());
         v.extend_from_slice(&0u32.to_le_bytes());
         v
+    }
+
+    fn with_masks(mut dib: Vec<u8>, masks: [u32; 3]) -> Vec<u8> {
+        for mask in masks {
+            dib.extend_from_slice(&mask.to_le_bytes());
+        }
+        dib
+    }
+
+    /// A valid DIB of each kind the decoder accepts, for the truncation and mutation tests.
+    fn valid_dibs() -> Vec<Vec<u8>> {
+        let mut plain32 = header(2, 2, 32, BI_RGB.0, 0);
+        plain32.extend_from_slice(&[1; 16]);
+        let mut top_down = header(2, -2, 32, BI_RGB.0, 0);
+        top_down.extend_from_slice(&[2; 16]);
+        let mut bgr = header(2, 2, 24, BI_RGB.0, 0);
+        bgr.extend_from_slice(&[3; 16]);
+        let mut rgb555 = header(2, 2, 16, BI_RGB.0, 0);
+        rgb555.extend_from_slice(&[4; 8]);
+        let mut fields32 = with_masks(header(2, 2, 32, BI_BITFIELDS.0, 0), [0xFF, 0xFF00, 0xFF_0000]);
+        fields32.extend_from_slice(&[5; 16]);
+        let mut fields16 = with_masks(header(2, 2, 16, BI_BITFIELDS.0, 0), [0xF800, 0x07E0, 0x001F]);
+        fields16.extend_from_slice(&[6; 8]);
+        let mut indexed8 = header(2, 2, 8, BI_RGB.0, 2);
+        indexed8.extend_from_slice(&[9, 9, 9, 0, 8, 8, 8, 0, 0, 1, 0, 0, 1, 0, 0, 0]);
+        let mut indexed4 = header(2, 2, 4, BI_RGB.0, 2);
+        indexed4.extend_from_slice(&[9, 9, 9, 0, 8, 8, 8, 0, 0x01, 0, 0, 0, 0x10, 0, 0, 0]);
+        let mut indexed1 = header(2, 2, 1, BI_RGB.0, 0);
+        indexed1.extend_from_slice(&[9, 9, 9, 0, 8, 8, 8, 0, 0x40, 0, 0, 0, 0x80, 0, 0, 0]);
+        vec![plain32, top_down, bgr, rgb555, fields32, fields16, indexed8, indexed4, indexed1]
     }
 
     #[test]
@@ -679,50 +836,241 @@ mod tests {
     }
 
     #[test]
-    fn a_24_bit_dib_goes_through_gdi_and_comes_out_opaque() {
+    fn a_24_bit_dib_skips_row_padding_and_comes_out_opaque() {
         let mut dib = header(2, 1, 24, BI_RGB.0, 0);
         dib.extend_from_slice(&[1, 2, 3, 4, 5, 6, 0, 0]); // Two pixels and two bytes of row padding.
         assert_eq!(frame_from_dib(&dib).unwrap().bgra(), &[1, 2, 3, 255, 4, 5, 6, 255]);
     }
 
     #[test]
-    fn an_8_bit_palette_dib_goes_through_gdi() {
-        let mut dib = header(2, 1, 8, BI_RGB.0, 2);
-        dib.extend_from_slice(&[10, 20, 30, 0, 40, 50, 60, 0]); // Palette.
-        dib.extend_from_slice(&[1, 0, 0, 0]); // Indices with row padding.
-        assert_eq!(frame_from_dib(&dib).unwrap().bgra(), &[40, 50, 60, 255, 10, 20, 30, 255]);
+    fn a_16_bit_dib_is_555_by_default_and_follows_its_masks() {
+        let mut plain = header(1, 1, 16, BI_RGB.0, 0);
+        plain.extend_from_slice(&[0xFF, 0x7F, 0, 0]); // White in 5-5-5.
+        assert_eq!(frame_from_dib(&plain).unwrap().bgra(), &[255, 255, 255, 255]);
+
+        let mut plain = header(1, 1, 16, BI_RGB.0, 0);
+        plain.extend_from_slice(&[0x00, 0x7C, 0, 0]); // Pure red in 5-5-5.
+        assert_eq!(frame_from_dib(&plain).unwrap().bgra(), &[0, 0, 255, 255]);
+
+        let mut fields = with_masks(header(1, 1, 16, BI_BITFIELDS.0, 0), [0xF800, 0x07E0, 0x001F]);
+        fields.extend_from_slice(&[0xE0, 0x07, 0, 0]); // Pure green in 5-6-5.
+        assert_eq!(frame_from_dib(&fields).unwrap().bgra(), &[0, 255, 0, 255]);
     }
 
     #[test]
-    fn standard_bit_fields_keep_their_data_and_others_go_through_gdi() {
-        let mut dib = header(1, 1, 32, BI_BITFIELDS.0, 0);
-        for mask in [0x00FF_0000u32, 0x0000_FF00, 0x0000_00FF] {
-            dib.extend_from_slice(&mask.to_le_bytes());
-        }
+    fn indexed_dibs_read_through_their_table() {
+        let mut eight = header(2, 1, 8, BI_RGB.0, 2);
+        eight.extend_from_slice(&[10, 20, 30, 0, 40, 50, 60, 0]); // The table.
+        eight.extend_from_slice(&[1, 0, 0, 0]); // Indexes with row padding.
+        assert_eq!(frame_from_dib(&eight).unwrap().bgra(), &[40, 50, 60, 255, 10, 20, 30, 255]);
+
+        let mut four = header(2, 1, 4, BI_RGB.0, 2);
+        four.extend_from_slice(&[10, 20, 30, 0, 40, 50, 60, 0]);
+        four.extend_from_slice(&[0x10, 0, 0, 0]);
+        assert_eq!(frame_from_dib(&four).unwrap().bgra(), &[40, 50, 60, 255, 10, 20, 30, 255]);
+
+        let mut one = header(2, 1, 1, BI_RGB.0, 0);
+        one.extend_from_slice(&[10, 20, 30, 0, 40, 50, 60, 0]);
+        one.extend_from_slice(&[0x80, 0, 0, 0]);
+        assert_eq!(frame_from_dib(&one).unwrap().bgra(), &[40, 50, 60, 255, 10, 20, 30, 255]);
+    }
+
+    #[test]
+    fn a_colour_table_in_front_of_true_colour_pixels_is_skipped() {
+        let mut dib = header(1, 1, 24, BI_RGB.0, 2);
+        dib.extend_from_slice(&[9; 8]); // An optional table the pixels do not use.
+        dib.extend_from_slice(&[1, 2, 3, 0]);
+        assert_eq!(frame_from_dib(&dib).unwrap().bgra(), &[1, 2, 3, 255]);
+    }
+
+    #[test]
+    fn bit_fields_follow_their_masks() {
+        let standard = with_masks(header(1, 1, 32, BI_BITFIELDS.0, 0), [0x00FF_0000, 0x0000_FF00, 0x0000_00FF]);
+        let mut dib = standard;
         dib.extend_from_slice(&[10, 20, 30, 255]);
-        assert_eq!(frame_from_dib(&dib).unwrap().bgra(), &[10, 20, 30, 255]);
+        assert_eq!(frame_from_dib(&dib).unwrap().bgra(), &[10, 20, 30, 255], "the data is BGRA already");
 
-        let mut swapped = header(1, 1, 32, BI_BITFIELDS.0, 0);
-        for mask in [0x0000_00FFu32, 0x0000_FF00, 0x00FF_0000] {
-            swapped.extend_from_slice(&mask.to_le_bytes());
-        }
-        swapped.extend_from_slice(&[10, 20, 30, 255]);
-        assert_eq!(frame_from_dib(&swapped).unwrap().bgra(), &[30, 20, 10, 255], "red and blue trade places");
+        let swapped = with_masks(header(1, 1, 32, BI_BITFIELDS.0, 0), [0x0000_00FF, 0x0000_FF00, 0x00FF_0000]);
+        let mut dib = swapped;
+        dib.extend_from_slice(&[10, 20, 30, 77]);
+        assert_eq!(frame_from_dib(&dib).unwrap().bgra(), &[30, 20, 10, 255], "red and blue trade places, no alpha mask");
     }
 
     #[test]
-    fn damaged_dibs_are_errors_not_panics() {
+    fn a_v5_header_keeps_its_masks_inside() {
+        let mut dib = vec![0u8; 124];
+        dib[0..4].copy_from_slice(&124u32.to_le_bytes());
+        dib[4..8].copy_from_slice(&1i32.to_le_bytes());
+        dib[8..12].copy_from_slice(&1i32.to_le_bytes());
+        dib[12..14].copy_from_slice(&1u16.to_le_bytes());
+        dib[14..16].copy_from_slice(&32u16.to_le_bytes());
+        dib[16..20].copy_from_slice(&BI_BITFIELDS.0.to_le_bytes());
+        dib[40..44].copy_from_slice(&0x0000_00FFu32.to_le_bytes());
+        dib[44..48].copy_from_slice(&0x0000_FF00u32.to_le_bytes());
+        dib[48..52].copy_from_slice(&0x00FF_0000u32.to_le_bytes());
+        dib[52..56].copy_from_slice(&0xFF00_0000u32.to_le_bytes());
+        dib.extend_from_slice(&[10, 20, 30, 255]);
+        assert_eq!(frame_from_dib(&dib).unwrap().bgra(), &[30, 20, 10, 255]);
+    }
+
+    fn error_of(dib: &[u8]) -> String {
+        frame_from_dib(dib).err().expect("must be refused").to_string()
+    }
+
+    #[test]
+    fn every_truncation_of_a_valid_dib_is_an_error() {
+        for dib in valid_dibs() {
+            frame_from_dib(&dib).expect("the complete DIB is valid");
+            for len in 0..dib.len() {
+                assert!(frame_from_dib(&dib[..len]).is_err(), "{len} of {} bytes", dib.len());
+            }
+        }
+    }
+
+    #[test]
+    fn dimensions_that_overflow_or_make_no_sense_are_errors() {
+        for (w, h) in [
+            (i32::MAX, i32::MAX),
+            (i32::MAX, i32::MIN),
+            (i32::MAX, 1),
+            (1, i32::MAX),
+            (1, i32::MIN),
+            (1 << 20, 1 << 20),
+            (1 << 16, 1 << 16),
+        ] {
+            for bits in [1u16, 4, 8, 16, 24, 32] {
+                assert!(error_of(&header(w, h, bits, BI_RGB.0, 0)).contains("too large"), "{w}x{h} at {bits}");
+            }
+        }
+        for (w, h) in [(0, 1), (1, 0), (0, 0), (-1, 1), (-1, -1), (i32::MIN, 1)] {
+            assert!(error_of(&header(w, h, 32, BI_RGB.0, 0)).contains("empty dimensions"), "{w}x{h}");
+        }
+    }
+
+    #[test]
+    fn a_header_claiming_more_pixels_than_are_there_is_an_error() {
+        for (bits, compression) in [(1u16, BI_RGB.0), (4, BI_RGB.0), (8, BI_RGB.0), (16, BI_RGB.0), (24, BI_RGB.0), (32, BI_RGB.0)] {
+            let dib = header(100, 100, bits, compression, 0);
+            assert!(frame_from_dib(&dib).is_err(), "{bits} bits");
+        }
+        let dib = with_masks(header(100, 100, 32, BI_BITFIELDS.0, 0), [0xFF, 0xFF00, 0xFF_0000]);
+        assert!(error_of(&dib).contains("truncated"));
+        let dib = with_masks(header(100, 100, 16, BI_BITFIELDS.0, 0), [0xF800, 0x07E0, 0x001F]);
+        assert!(error_of(&dib).contains("truncated"));
+    }
+
+    #[test]
+    fn every_other_compression_is_refused_before_anything_is_read() {
+        // RLE8, RLE4, JPEG, PNG, the alpha bit fields of Windows CE, CMYK and nonsense.
+        for compression in [1u32, 2, 4, 5, 6, 11, 12, 13, 0x7FFF_FFFF, u32::MAX] {
+            for bits in [1u16, 4, 8, 16, 24, 32] {
+                // Far more pixels than bytes: the old path handed these to GDI without a size check.
+                let mut dib = header(4096, 4096, bits, compression, 0);
+                dib.extend_from_slice(&[0xAB; 64]);
+                assert!(error_of(&dib).contains("unsupported compression"), "compression {compression} at {bits}");
+            }
+        }
+    }
+
+    #[test]
+    fn bit_fields_are_refused_at_depths_they_do_not_exist_for() {
+        for bits in [1u16, 4, 8, 24] {
+            let mut dib = with_masks(header(1, 1, bits, BI_BITFIELDS.0, 0), [0xFF, 0xFF00, 0xFF_0000]);
+            dib.extend_from_slice(&[0; 16]);
+            assert!(frame_from_dib(&dib).is_err(), "{bits} bits");
+        }
+        for bits in [0u16, 2, 7, 15, 31, 33, 64, u16::MAX] {
+            let mut dib = header(1, 1, bits, BI_RGB.0, 0);
+            dib.extend_from_slice(&[0; 64]);
+            assert!(frame_from_dib(&dib).is_err(), "{bits} bits");
+        }
+    }
+
+    #[test]
+    fn colour_tables_that_cannot_be_true_are_errors() {
+        // More colours than the depth has.
+        assert!(error_of(&header(1, 1, 8, BI_RGB.0, 257)).contains("more colours"));
+        assert!(error_of(&header(1, 1, 1, BI_RGB.0, 3)).contains("more colours"));
+        // A count large enough to wrap a 32-bit size, at a depth where the table is optional.
+        assert!(frame_from_dib(&header(1, 1, 24, BI_RGB.0, u32::MAX)).is_err());
+        assert!(frame_from_dib(&header(1, 1, 32, BI_RGB.0, 0x4000_0000)).is_err());
+        // A table that runs past the end.
+        assert!(error_of(&header(1, 1, 8, BI_RGB.0, 2)).contains("colour table"));
+        // Indexes beyond the table, inside the depth.
+        let mut dib = header(1, 1, 8, BI_RGB.0, 1);
+        dib.extend_from_slice(&[1, 2, 3, 0, 200, 0, 0, 0]);
+        assert!(error_of(&dib).contains("not in its table"));
+    }
+
+    #[test]
+    fn colour_masks_that_cannot_be_true_are_errors() {
+        let check = |masks: [u32; 3]| {
+            let mut dib = with_masks(header(1, 1, 32, BI_BITFIELDS.0, 0), masks);
+            dib.extend_from_slice(&[0; 4]);
+            error_of(&dib)
+        };
+        assert!(check([0, 0, 0]).contains("empty"));
+        assert!(check([0b101, 0xFF00, 0xFF_0000]).contains("one run of bits"));
+        // Masks that run past the end of the buffer.
+        let mut short = header(1, 1, 32, BI_BITFIELDS.0, 0);
+        short.extend_from_slice(&[0xFF, 0, 0, 0]);
+        assert!(error_of(&short).contains("masks run past the end"));
+    }
+
+    #[test]
+    fn broken_headers_are_errors() {
         assert!(frame_from_dib(&[]).is_err());
         assert!(frame_from_dib(&[1, 2, 3]).is_err());
-        assert!(frame_from_dib(&header(0, 1, 32, BI_RGB.0, 0)).is_err());
-        assert!(frame_from_dib(&header(1, 0, 32, BI_RGB.0, 0)).is_err());
-        assert!(frame_from_dib(&header(100, 100, 32, BI_RGB.0, 0)).is_err(), "no pixels");
-        assert!(frame_from_dib(&header(100, 100, 24, BI_RGB.0, 0)).is_err(), "no pixels");
-        assert!(frame_from_dib(&header(1, 1, 7, BI_RGB.0, 0)).is_err(), "impossible depth");
-        assert!(frame_from_dib(&header(1, 1, 8, BI_RGB.0, 1 << 20)).is_err(), "palette past the end");
-        assert!(frame_from_dib(&header(1, 1, 24, 4, 0)).is_err(), "embedded JPEG");
-        let huge = frame_from_dib(&header(1 << 20, 1 << 20, 32, BI_RGB.0, 0)).unwrap_err().to_string();
-        assert!(huge.contains("too large"), "{huge}");
+        for size in [0u32, 12, 39, 41, 51, 53, 107, 125, 1 << 20, u32::MAX] {
+            let mut dib = header(1, 1, 32, BI_RGB.0, 0);
+            dib[0..4].copy_from_slice(&size.to_le_bytes());
+            dib.extend_from_slice(&[0; 256]);
+            assert!(error_of(&dib).contains("unknown header size"), "header of {size} bytes");
+        }
+        // A real header size, longer than the buffer.
+        let mut short = header(1, 1, 32, BI_RGB.0, 0);
+        short[0..4].copy_from_slice(&124u32.to_le_bytes());
+        assert!(error_of(&short).contains("too short"));
+        let mut planes = header(1, 1, 32, BI_RGB.0, 0);
+        planes[12..14].copy_from_slice(&2u16.to_le_bytes());
+        planes.extend_from_slice(&[0; 4]);
+        assert!(error_of(&planes).contains("plane"));
+    }
+
+    /// The decoder takes bytes from any application: garbage must come back as an error or a frame of exactly the
+    /// size it claims, and never a panic. Deterministic, so a failure can be replayed.
+    #[test]
+    fn random_and_mutated_input_never_panics() {
+        let mut state = 0x9E37_79B9_7F4A_7C15_u64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let check = |input: &[u8]| {
+            if let Ok(frame) = frame_from_dib(input) {
+                assert_eq!(frame.bgra().len() as u64, u64::from(frame.width()) * u64::from(frame.height()) * 4);
+            }
+        };
+        for _ in 0..20_000 {
+            let len = (next() % 200) as usize;
+            let bytes: Vec<u8> = (0..len).map(|_| next() as u8).collect();
+            check(&bytes);
+        }
+        let seeds = valid_dibs();
+        for _ in 0..60_000 {
+            let mut dib = seeds[(next() % seeds.len() as u64) as usize].clone();
+            for _ in 0..=(next() % 4) {
+                // Mostly the header, where the sizes live.
+                let at = (next() % dib.len().min(60) as u64) as usize;
+                dib[at] = next() as u8;
+            }
+            if next() % 3 == 0 {
+                dib.truncate((next() % (dib.len() as u64 + 1)) as usize);
+            }
+            check(&dib);
+        }
     }
 
     #[test]
