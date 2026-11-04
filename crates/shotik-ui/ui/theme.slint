@@ -1,0 +1,22 @@
+// Colours and metrics of the Fluent look, from src/app/app.css, src/overlay/overlay.css and the other
+// stylesheets. The system theme and accent colour arrive from Rust. Every window sets `dark` and `accent`
+// through crate::runtime::apply_theme; no window hard-codes a colour that depends on them.
+export global Theme {
+    in property <bool> dark: true;
+    in property <color> accent: #0067C0;
+    /// Text on an accent background: dark on a light accent, as the JS computes it.
+    in property <color> accent-text: #ffffff;
+
+    out property <color> window-bg: dark ? #202020 : #f3f3f3;
+    out property <color> card-bg: dark ? #2b2b2b : #fbfbfb;
+    out property <color> card-border: dark ? #ffffff14 : #0000000f;
+    out property <color> text: dark ? #ffffff : #1b1b1b;
+    out property <color> text-secondary: dark ? #ffffffa8 : #0000009e;
+    out property <color> hover: dark ? #ffffff14 : #0000000a;
+    out property <color> pressed: dark ? #ffffff0d : #00000006;
+    out property <color> divider: dark ? #ffffff14 : #00000012;
+
+    out property <length> radius: 8px;
+    out property <length> radius-small: 4px;
+    out property <string> font: "Segoe UI";
+}

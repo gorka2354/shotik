@@ -1,0 +1,8 @@
+// Freeze frame, selection, annotations, toolbar, Live Text. Reference: src/overlay/.
+import { Theme } from "theme.slint";
+
+export component Overlay inherits Window {
+    no-frame: true;
+    background: Theme.window-bg;
+    default-font-family: Theme.font;
+}

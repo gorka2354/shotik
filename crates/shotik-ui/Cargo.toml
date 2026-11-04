@@ -9,3 +9,29 @@ repository.workspace = true
 
 [dependencies]
 shotik-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+raw-window-handle = "0.6"
+# Pinned exactly: unstable-winit-030 is the integration point for raw window control and may change
+# in a minor release. Slint is used under its Royalty-free Desktop license: see docs/rust/ARCHITECTURE.md.
+slint = { version = "=1.18.1", default-features = false, features = [
+    "std",
+    "compat-1-18",
+    "backend-winit",
+    "renderer-software",
+    "software-renderer-path",
+    "accessibility",
+    "raw-window-handle-06",
+    "unstable-winit-030",
+] }
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[build-dependencies]
+slint-build = "=1.18.1"

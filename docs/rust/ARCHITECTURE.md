@@ -44,6 +44,20 @@ Port traits stay small. If a window or tool needs something new, add one method,
 
 Other threads talk to the UI only through `UiPort`, which posts to the event loop.
 
+## UI toolkit: Slint on the software renderer
+
+Chosen from two prototypes on this machine (`spikes/` reports, numbers for a 3840x2160 window):
+
+| | Slint software | egui on DX12 | egui on glow |
+|---|---|---|---|
+| Private memory 10 s after closing all windows | 3.5 MB | 10.7 MB | 91 MB |
+| Private memory with three overlays open | 165 MB | 412 MB | 372 MB |
+| Command to first frame, new window, first in process | 47 ms | 341 ms | 1272 ms |
+| Command to first frame, new window, warm | 30 ms | 335 ms | 65 ms |
+| GPU device | none | one per window | one per window |
+
+No GPU device is the deciding point: a resident app holds no GPU memory, does not compete with a game, and cannot hit this machine's driver leak, which loses a Section and a Mutant whenever a D3D device that captured is released. Declarative markup is also close to the HTML and CSS being ported. Prices: no soft shadow, so windows use DWM rounded corners and the native shadow instead of drawing their own; std-widgets cannot take the accent colour, so buttons and switches are our own components; drawing a 4K frame takes about 15 ms. Slint is used under its Royalty-free Desktop license: the project stays MIT, and a Made with Slint badge goes on the README and the download page. Windows are created on demand, so tray state holds no surfaces.
+
 ## UI: pure state plus view
 
 Every window is split in two so that logic is testable without a window and the UI toolkit stays
