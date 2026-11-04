@@ -504,9 +504,10 @@ pub type MarkSink = Callback<&'static str>;
 /// Everything other threads may ask of the UI. Calls post to the event loop and return at once.
 pub trait UiPort: Send + Sync {
     /// Opens a session. `done` fires once, with the user's choice. Displays arrive through
-    /// `overlay_add_display`, the one under the cursor first.
-    fn overlay_begin(&self, mode: OverlayMode, marks: MarkSink, done: Once<OverlayOutcome>) -> Result<()>;
-    fn overlay_add_display(&self, display: Display, frame: Frame, focused: bool) -> Result<()>;
+    /// `overlay_add_display`, the one under the cursor first, with the id this returns: a capture can
+    /// outlive its session, and its frame must not land in the next one.
+    fn overlay_begin(&self, mode: OverlayMode, marks: MarkSink, done: Once<OverlayOutcome>) -> Result<u64>;
+    fn overlay_add_display(&self, session: u64, display: Display, frame: Frame, focused: bool) -> Result<()>;
     /// Hover-snap rectangles, physical pixels, topmost first. May arrive after the windows.
     fn overlay_set_window_rects(&self, rects: Vec<Rect>);
     fn overlay_cancel(&self);

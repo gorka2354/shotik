@@ -392,6 +392,11 @@ fn drive(backend: &dyn Backend, job: &Job, ctl: &Control, trace: &Trace, events:
             }
         }
     };
+    // Moving to another disk is a copy, and it takes as long as the recording is large.
+    if ctl.is_canceled() {
+        let _ = std::fs::remove_file(&file);
+        return Outcome::Canceled;
+    }
     let (width, height) = match &job.target {
         RecordTarget::Region { rect_dip, .. } => (rect_dip.width.max(0) as u32, rect_dip.height.max(0) as u32),
         RecordTarget::AudioOnly => (0, 0),

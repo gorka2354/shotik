@@ -27,22 +27,20 @@ impl App {
 
         let app = self.clone();
         let marks: MarkSink = Arc::new(move |label| app.overlay_mark(label, started));
-        let session = {
-            let mut state = self.state();
-            state.overlay_timing.clear();
-            state.overlay_session += 1;
-            state.overlay_session
-        };
-        if let Err(e) = ui.overlay_begin(
+        self.state().overlay_timing.clear();
+        let session = match ui.overlay_begin(
             mode,
             marks.clone(),
             Box::new(move |outcome| {
                 let _ = done_tx.send(outcome);
             }),
         ) {
-            self.capture_failed(&e.to_string());
-            return OverlayResult::Cancelled;
-        }
+            Ok(session) => session,
+            Err(e) => {
+                self.capture_failed(&e.to_string());
+                return OverlayResult::Cancelled;
+            }
+        };
 
         // Hover-snap rectangles arrive when they arrive: the overlay must not wait for them.
         self.spawn(|app| app.ports.ui.overlay_set_window_rects(app.snap_rects()));
@@ -52,7 +50,7 @@ impl App {
         match self.ports.capture.grab(&cursor) {
             Ok(frame) => {
                 marks("grab");
-                if let Err(e) = ui.overlay_add_display(cursor.clone(), frame, true) {
+                if let Err(e) = ui.overlay_add_display(session, cursor.clone(), frame, true) {
                     ui.overlay_cancel();
                     self.capture_failed(&e.to_string());
                 }
@@ -64,10 +62,8 @@ impl App {
         }
         for display in self.ports.displays.all().into_iter().filter(|d| d.id != cursor.id) {
             self.spawn(move |app| match app.ports.capture.grab(&display) {
-                // The session this frame was taken for was cancelled and another one is open.
-                Ok(_) if app.state().overlay_session != session => {}
                 Ok(frame) => {
-                    if let Err(e) = app.ports.ui.overlay_add_display(display, frame, false) {
+                    if let Err(e) = app.ports.ui.overlay_add_display(session, display, frame, false) {
                         app.diag.log(&format!("overlay display failed: {e}"));
                     }
                 }

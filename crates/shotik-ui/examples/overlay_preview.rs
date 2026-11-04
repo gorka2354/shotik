@@ -310,15 +310,16 @@ fn wait_paint(since: u64) -> (u64, f64) {
 fn open(ui: &Ui, mode: OverlayMode, frame: &Frame) -> (Marks, mpsc::Receiver<OverlayOutcome>) {
     let marks = Marks::new();
     let (tx, rx) = mpsc::channel();
-    ui.overlay_begin(
-        mode,
-        marks.sink.clone(),
-        Box::new(move |outcome| {
-            tx.send(outcome).expect("the preview waits for the outcome");
-        }),
-    )
-    .expect("begin");
-    ui.overlay_add_display(primary(), frame.clone(), true).expect("add display");
+    let session = ui
+        .overlay_begin(
+            mode,
+            marks.sink.clone(),
+            Box::new(move |outcome| {
+                tx.send(outcome).expect("the preview waits for the outcome");
+            }),
+        )
+        .expect("begin");
+    ui.overlay_add_display(session, primary(), frame.clone(), true).expect("add display");
     marks.wait("show");
     (marks, rx)
 }
@@ -799,14 +800,14 @@ fn language_and_theme(ui: &Ui, host: &PreviewHost, frame: &Frame, out: &Path, ch
 fn sessions(ui: &Ui, frame: &Frame, second_frame: &Frame, third_frame: &Frame, checks: &mut Checks) {
     let marks = Marks::new();
     let (tx, rx) = mpsc::channel();
-    ui.overlay_begin(OverlayMode::Normal, marks.sink.clone(), Box::new(move |o| tx.send(o).expect("receiver"))).expect("begin");
+    let session = ui.overlay_begin(OverlayMode::Normal, marks.sink.clone(), Box::new(move |o| tx.send(o).expect("receiver"))).expect("begin");
     checks.ok(
         ui.overlay_begin(OverlayMode::Normal, marks.sink.clone(), Box::new(|_| panic!("a refused session must not fire"))).is_err(),
         "only one session at a time",
     );
-    ui.overlay_add_display(primary(), frame.clone(), true).expect("add");
-    ui.overlay_add_display(second(), second_frame.clone(), false).expect("add");
-    ui.overlay_add_display(third(), third_frame.clone(), false).expect("add");
+    ui.overlay_add_display(session, primary(), frame.clone(), true).expect("add");
+    ui.overlay_add_display(session, second(), second_frame.clone(), false).expect("add");
+    ui.overlay_add_display(session, third(), third_frame.clone(), false).expect("add");
     marks.wait("show");
     let deadline = Instant::now() + Duration::from_secs(5);
     while ui.overlay_bounds().len() < 3 {
@@ -840,12 +841,12 @@ fn sessions(ui: &Ui, frame: &Frame, second_frame: &Frame, third_frame: &Frame, c
     // Ends before its frame arrives.
     let marks = Marks::new();
     let (tx, rx) = mpsc::channel();
-    ui.overlay_begin(OverlayMode::Normal, marks.sink.clone(), Box::new(move |o| tx.send(o).expect("receiver"))).expect("begin");
+    let session = ui.overlay_begin(OverlayMode::Normal, marks.sink.clone(), Box::new(move |o| tx.send(o).expect("receiver"))).expect("begin");
     ui.overlay_cancel();
-    ui.overlay_add_display(primary(), frame.clone(), true).expect("a late frame is not an error");
+    ui.overlay_add_display(session, primary(), frame.clone(), true).expect("a late frame is not an error");
     wait_closed(ui);
     checks.ok(rx.recv_timeout(Duration::from_secs(5)) == Ok(OverlayOutcome::Cancelled), "cancel before the first frame");
-    ui.overlay_add_display(primary(), frame.clone(), true).expect("a frame after the end is not an error");
+    ui.overlay_add_display(session, primary(), frame.clone(), true).expect("a frame after the end is not an error");
     checks.ok(!ui.overlay_is_open(), "no session after a stray frame");
 }
 
@@ -881,13 +882,13 @@ fn bench_show(ui: &Ui, frame: &Frame, checks: &mut Checks) {
         let marks = Marks::new();
         let (tx, rx) = mpsc::channel();
         let begin = Instant::now();
-        ui.overlay_begin(OverlayMode::Normal, marks.sink.clone(), Box::new(move |o| tx.send(o).expect("receiver"))).expect("begin");
+        let session = ui.overlay_begin(OverlayMode::Normal, marks.sink.clone(), Box::new(move |o| tx.send(o).expect("receiver"))).expect("begin");
         if wait_for_spare {
             // A real grab takes tens of milliseconds, and the window is being made meanwhile.
             std::thread::sleep(Duration::from_millis(30));
         }
         let add = Instant::now();
-        ui.overlay_add_display(primary(), frame.clone(), true).expect("add");
+        ui.overlay_add_display(session, primary(), frame.clone(), true).expect("add");
         let returned = add.elapsed().as_secs_f64() * 1000.0;
         let show = marks.wait("show");
         let painted = marks.wait("painted");
@@ -1102,8 +1103,8 @@ fn run(ui: &Ui, host: &PreviewHost, out: &Path, bench_only: bool) -> Vec<String>
     drop(base);
     let marks = Marks::new();
     let (tx, rx) = mpsc::channel();
-    ui.overlay_begin(OverlayMode::Normal, marks.sink.clone(), Box::new(move |o| tx.send(o).expect("receiver"))).expect("begin");
-    ui.overlay_add_display(primary(), frame, true).expect("add");
+    let session = ui.overlay_begin(OverlayMode::Normal, marks.sink.clone(), Box::new(move |o| tx.send(o).expect("receiver"))).expect("begin");
+    ui.overlay_add_display(session, primary(), frame, true).expect("add");
     marks.wait("show");
     println!("private with one 4K overlay open, nothing else holding pixels: {:.1} MB", private_mb());
     ui.overlay_cancel();
@@ -1129,9 +1130,9 @@ fn real_path_offscreen(ui: &Ui, out: &Path) -> Vec<String> {
     let display = Display { id: 7, bounds, work_area: bounds, scale_factor: 1.0, physical_bounds: bounds, primary: false };
     let marks = Marks::new();
     let (tx, rx) = mpsc::channel();
-    ui.overlay_begin(OverlayMode::Normal, marks.sink.clone(), Box::new(move |o| tx.send(o).expect("receiver"))).expect("begin");
+    let session = ui.overlay_begin(OverlayMode::Normal, marks.sink.clone(), Box::new(move |o| tx.send(o).expect("receiver"))).expect("begin");
     // Not focused: the one thing this path may not do from here is call SetForegroundWindow.
-    ui.overlay_add_display(display, frame, false).expect("add");
+    ui.overlay_add_display(session, display, frame, false).expect("add");
     let deadline = Instant::now() + Duration::from_secs(10);
     while ui.overlay_bounds().is_empty() {
         assert!(Instant::now() < deadline, "the window never opened");

@@ -100,7 +100,7 @@ fn new_slot(session: u64) -> Result<Slot> {
 }
 
 /// Opens a session. On error `done` is dropped unfired and the caller has the error.
-pub fn begin(mode: OverlayMode, marks: MarkSink, done: Once<OverlayOutcome>) -> Result<()> {
+pub fn begin(mode: OverlayMode, marks: MarkSink, done: Once<OverlayOutcome>) -> Result<u64> {
     if OPEN.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
         return Err(Error::msg("Selection overlay is already open"));
     }
@@ -132,19 +132,19 @@ pub fn begin(mode: OverlayMode, marks: MarkSink, done: Once<OverlayOutcome>) -> 
         OPEN.store(false, Ordering::SeqCst);
         return Err(Error::msg(format!("the UI event loop is gone: {e}")));
     }
-    Ok(())
+    Ok(id)
 }
 
-/// Converts on the caller's thread, then posts. A frame arriving after the session ended is dropped: the
+/// Converts on the caller's thread, then posts. A frame arriving after its session ended is dropped: the
 /// user cancelled while another monitor was still being captured, and that is not an error.
-pub fn add_display(display: Display, frame: Frame, focused: bool) -> Result<()> {
+pub fn add_display(session_id: u64, display: Display, frame: Frame, focused: bool) -> Result<()> {
     if !is_open() {
         return Ok(());
     }
     let frame = PreparedFrame::new(frame)?;
     on_ui(move || {
         let added = with_session(|session| -> Result<()> {
-            if session.ending {
+            if session.id != session_id || session.ending {
                 return Ok(());
             }
             // The spare was made for the display under the cursor.

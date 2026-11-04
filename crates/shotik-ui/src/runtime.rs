@@ -102,28 +102,39 @@ pub fn on_ui_wait<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) 
 /// `win.focus()`: the keyboard goes to this window. Not winit's `focus_window`, which presses and releases a
 /// fake Alt key to get the foreground right: that input lands in whatever application has the keyboard, where
 /// Alt opens a menu. Sharing the foreground thread's input state for a moment gets the same right with no input.
+/// That sharing can block while the other application hangs, so it happens on a thread of its own: the worst
+/// case is a window without the keyboard, and a click takes it.
 pub fn take_focus(hwnd: HWND) {
     use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
     use windows::Win32::UI::WindowsAndMessaging::{
         BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow,
     };
-    // SAFETY: plain calls on a live window; the thread attachment is undone before returning.
-    unsafe {
-        if SetForegroundWindow(hwnd).as_bool() {
-            return;
+    // SAFETY: a plain call on a live window.
+    if unsafe { SetForegroundWindow(hwnd) }.as_bool() {
+        return;
+    }
+    let raw = hwnd.0 as isize;
+    let spawned = std::thread::Builder::new().name("shotik-focus".into()).spawn(move || {
+        let hwnd = HWND(raw as *mut _);
+        // SAFETY: plain calls; a window that closed meanwhile only makes them fail. The attachment is undone
+        // before the thread ends.
+        unsafe {
+            let foreground = GetForegroundWindow();
+            let their_thread = GetWindowThreadProcessId(foreground, None);
+            let my_thread = GetCurrentThreadId();
+            let attached = their_thread != 0 && AttachThreadInput(my_thread, their_thread, true).as_bool();
+            let _ = BringWindowToTop(hwnd);
+            let taken = SetForegroundWindow(hwnd).as_bool();
+            if attached {
+                let _ = AttachThreadInput(my_thread, their_thread, false);
+            }
+            if !taken {
+                eprintln!("Windows refused the keyboard focus; a click on the window takes it");
+            }
         }
-        let foreground = GetForegroundWindow();
-        let their_thread = GetWindowThreadProcessId(foreground, None);
-        let my_thread = GetCurrentThreadId();
-        let attached = their_thread != 0 && their_thread != my_thread && AttachThreadInput(my_thread, their_thread, true).as_bool();
-        let _ = BringWindowToTop(hwnd);
-        let taken = SetForegroundWindow(hwnd).as_bool();
-        if attached {
-            let _ = AttachThreadInput(my_thread, their_thread, false);
-        }
-        if !taken {
-            eprintln!("Windows refused the keyboard focus; a click on the window takes it");
-        }
+    });
+    if let Err(e) = spawned {
+        eprintln!("cannot start the focus thread: {e}");
     }
 }
 

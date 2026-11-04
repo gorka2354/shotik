@@ -73,11 +73,11 @@ fn unknown_target(target: &str) -> Error {
 }
 
 impl UiPort for Ui {
-    fn overlay_begin(&self, mode: OverlayMode, marks: MarkSink, done: Once<OverlayOutcome>) -> Result<()> {
+    fn overlay_begin(&self, mode: OverlayMode, marks: MarkSink, done: Once<OverlayOutcome>) -> Result<u64> {
         overlay::begin(mode, marks, done)
     }
-    fn overlay_add_display(&self, display: Display, frame: Frame, focused: bool) -> Result<()> {
-        overlay::add_display(display, frame, focused)
+    fn overlay_add_display(&self, session: u64, display: Display, frame: Frame, focused: bool) -> Result<()> {
+        overlay::add_display(session, display, frame, focused)
     }
     fn overlay_set_window_rects(&self, rects: Vec<Rect>) {
         overlay::set_window_rects(rects);

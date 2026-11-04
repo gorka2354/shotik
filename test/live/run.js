@@ -740,6 +740,34 @@ const sections = {
     await P('settings-set', { patch: { audioRecording: { systemAudio: true, microphone: false }, recording: { microphoneDeviceId: 'default' } } });
   },
 
+  async focus_without_input() {
+    // The way Claude opens the overlay: no key press reached this process, so Windows locks the foreground.
+    const form = asList((await call('windows', { pid: mine.pid })).windows)[0];
+    await L.click([mine.pid], form.x + form.w - 60, form.y + form.h - 40);
+    await sleep(300);
+    const m = formMonitor;
+    await L.move(cx(m), m.y + 40);
+    await sleep(100);
+    P('trigger', { mode: 'region' }).catch(() => {});
+    const opened = await until(async () => {
+      const st = await P('state');
+      if (st.overlayCount !== monitors.length) return false;
+      return (await call('fg')).pid === app.pid;
+    }, 3000, 30);
+    L.check('an overlay opened with no key press gets the keyboard', opened, (await call('fg')).cls);
+    await closeOverlay();
+    await sleep(200);
+    await L.click([mine.pid], form.x + form.w - 60, form.y + form.h - 40);
+    await sleep(300);
+    await P('show-main');
+    const shown = await until(async () => { const f = await call('fg'); return f.pid === app.pid && f.w > 800; }, 2500, 40);
+    L.check('so does the main window', shown, (await call('fg')).cls);
+    const fgNow = await call('fg');
+    if (fgNow.pid === app.pid) await L.key(app.pid, VK.alt, VK.f4);
+    await until(async () => !(await P('state')).mainVisible, 1500);
+    await sleep(200);
+  },
+
   async overlay_keys() {
     const m = monitors.find((x) => !x.primary) || monitors[0];
     // F takes the whole screen.

@@ -44,15 +44,20 @@ fn find_named(root: &Path, name: &str) -> Option<PathBuf> {
 }
 
 fn tool(name: &str) -> PathBuf {
+    let on_path = std::env::var_os("PATH").into_iter().flat_map(|paths| std::env::split_paths(&paths).collect::<Vec<_>>());
+    if let Some(found) = on_path.map(|dir| dir.join(name)).find(|file| file.is_file()) {
+        return found;
+    }
     let packages = PathBuf::from(std::env::var("LOCALAPPDATA").unwrap()).join("Microsoft/WinGet/Packages");
     let mut dirs: Vec<PathBuf> = fs::read_dir(&packages)
-        .unwrap_or_else(|e| panic!("{}: {e}", packages.display()))
+        .into_iter()
+        .flatten()
         .flatten()
         .map(|entry| entry.path())
         .filter(|path| path.file_name().is_some_and(|f| f.to_string_lossy().starts_with("Gyan.FFmpeg")))
         .collect();
     dirs.sort();
-    dirs.iter().find_map(|dir| find_named(dir, name)).unwrap_or_else(|| panic!("{name} not found under {}", packages.display()))
+    dirs.iter().find_map(|dir| find_named(dir, name)).unwrap_or_else(|| panic!("{name} is neither on PATH nor under {}", packages.display()))
 }
 
 fn ffprobe_path() -> &'static Path {

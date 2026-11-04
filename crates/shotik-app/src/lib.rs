@@ -91,8 +91,6 @@ struct State {
     ocr_busy: bool,
     /// Marks of the last overlay, `name=ms`.
     overlay_timing: Vec<String>,
-    /// Which overlay session the background captures belong to.
-    overlay_session: u64,
     /// Set from the first moment of a start until the recorder has the session (the countdown takes
     /// 2 s): a second start then must not open a second file, and stop calls the start off.
     rec_starting: Option<Arc<std::sync::atomic::AtomicBool>>,

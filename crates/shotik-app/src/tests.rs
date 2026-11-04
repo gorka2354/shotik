@@ -305,19 +305,25 @@ struct FakeUi {
     rec_windows_closed: Mutex<u32>,
     main_shown: Mutex<u32>,
     overlay_open: Mutex<bool>,
+    overlay_session: Mutex<u64>,
     overlay_answer: Mutex<Option<OverlayOutcome>>,
     overlay_displays: Mutex<Vec<(u64, bool)>>,
     pending_done: Mutex<Option<Once<OverlayOutcome>>>,
     marks: Mutex<Option<MarkSink>>,
 }
 impl UiPort for FakeUi {
-    fn overlay_begin(&self, _mode: OverlayMode, marks: MarkSink, done: Once<OverlayOutcome>) -> Result<()> {
+    fn overlay_begin(&self, _mode: OverlayMode, marks: MarkSink, done: Once<OverlayOutcome>) -> Result<u64> {
         *self.overlay_open.lock().unwrap() = true;
         *self.marks.lock().unwrap() = Some(marks);
         *self.pending_done.lock().unwrap() = Some(done);
-        Ok(())
+        let mut session = self.overlay_session.lock().unwrap();
+        *session += 1;
+        Ok(*session)
     }
-    fn overlay_add_display(&self, display: Display, _frame: Frame, focused: bool) -> Result<()> {
+    fn overlay_add_display(&self, session: u64, display: Display, _frame: Frame, focused: bool) -> Result<()> {
+        if session != *self.overlay_session.lock().unwrap() {
+            return Ok(()); // as the real one does: a frame of an earlier session is dropped
+        }
         self.overlay_displays.lock().unwrap().push((display.id, focused));
         if focused {
             if let Some(marks) = self.marks.lock().unwrap().as_ref() {
@@ -756,43 +762,39 @@ fn losing_an_audio_input_keeps_the_controls_of_the_recording_that_goes_on() {
 }
 
 #[test]
-fn a_late_frame_of_a_cancelled_overlay_stays_out_of_the_next_session() {
+fn each_frame_carries_the_session_it_was_captured_for() {
     use std::sync::atomic::Ordering::SeqCst;
     let r = rig("late-frame");
     r.displays.two.store(true, SeqCst);
     *r.capture.closed.lock().unwrap() = true;
     *r.ui.overlay_answer.lock().unwrap() = Some(OverlayOutcome::Cancelled);
     assert!(matches!(r.app.run_overlay(OverlayMode::Normal), crate::overlay::OverlayResult::Cancelled));
-    for _ in 0..500 {
-        if r.capture.waiting.load(SeqCst) == 1 {
-            break;
+    let wait_for = |count: usize| {
+        for _ in 0..500 {
+            if r.capture.waiting.load(SeqCst) == count {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(2));
         }
-        std::thread::sleep(std::time::Duration::from_millis(2));
-    }
-    assert_eq!(r.capture.waiting.load(SeqCst), 1, "the first session's capture is on its way");
-
+        assert_eq!(r.capture.waiting.load(SeqCst), count, "captures on their way");
+    };
+    wait_for(1);
     let second = {
         let app = r.app.clone();
         std::thread::spawn(move || app.run_overlay(OverlayMode::Normal))
     };
-    for _ in 0..500 {
-        if r.capture.waiting.load(SeqCst) == 2 {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(2));
-    }
-    assert_eq!(r.capture.waiting.load(SeqCst), 2, "and so is the second session's");
+    wait_for(2);
     *r.capture.closed.lock().unwrap() = false;
     r.capture.opened.notify_all();
+    let count = || r.ui.overlay_displays.lock().unwrap().iter().filter(|(id, _)| *id == second_display().id).count();
     for _ in 0..500 {
-        if r.ui.overlay_displays.lock().unwrap().iter().any(|(id, _)| *id == second_display().id) {
+        if count() > 0 {
             break;
         }
-        std::thread::sleep(std::time::Duration::from_millis(2));
+        std::thread::sleep(Duration::from_millis(2));
     }
-    std::thread::sleep(std::time::Duration::from_millis(50));
-    let second_monitor = r.ui.overlay_displays.lock().unwrap().iter().filter(|(id, _)| *id == second_display().id).count();
-    assert_eq!(second_monitor, 1, "one window for the second monitor, not one more with the old frame");
+    std::thread::sleep(Duration::from_millis(50));
+    assert_eq!(count(), 1, "one window for the second monitor, not one more with the old frame");
     r.app.ports.ui.overlay_cancel();
     second.join().unwrap();
 }

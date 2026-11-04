@@ -303,10 +303,10 @@ pub struct FakeUi {
     pub events: Mutex<Vec<MainEvent>>,
 }
 impl UiPort for FakeUi {
-    fn overlay_begin(&self, _: OverlayMode, _: MarkSink, _: Once<OverlayOutcome>) -> Result<()> {
-        Ok(())
+    fn overlay_begin(&self, _: OverlayMode, _: MarkSink, _: Once<OverlayOutcome>) -> Result<u64> {
+        Ok(1)
     }
-    fn overlay_add_display(&self, _: Display, _: Frame, _: bool) -> Result<()> {
+    fn overlay_add_display(&self, _: u64, _: Display, _: Frame, _: bool) -> Result<()> {
         Ok(())
     }
     fn overlay_set_window_rects(&self, _: Vec<Rect>) {}

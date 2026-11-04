@@ -95,7 +95,7 @@ class Live {
   /** Stops everything if input arrived that this script did not send. */
   async guard() {
     const t = await this.probe.call('tick');
-    const expected = Math.max(this.baseline, this.lastInjected + 500);
+    const expected = Math.max(this.baseline, this.lastInjected + 150);
     if (t.lastInput > expected) throw new UserBack(`input ${t.lastInput - this.lastInjected} ms after the last injected one`);
   }
 
@@ -131,6 +131,12 @@ class Live {
     return w;
   }
 
+  /** The last check before a button goes down: the cursor is where the target was checked. */
+  async assertCursor(x, y) {
+    const c = await this.probe.call('cursor');
+    if (Math.abs(c.x - x) > 2 || Math.abs(c.y - y) > 2) throw new UserBack(`the cursor is at ${c.x},${c.y}, it was sent to ${x},${y}`);
+  }
+
   async click(pids, x, y, { button = 'left', twice = false } = {}) {
     await this.assertTarget(pids, x, y);
     await this.move(x, y);
@@ -139,6 +145,7 @@ class Live {
     const [d, u] = button === 'left' ? [LDOWN, LUP] : [RDOWN, RUP];
     for (let i = 0; i < (twice ? 2 : 1); i++) {
       await this.guard();
+      await this.assertCursor(x, y);
       this.mark(await this.probe.call('btn', { flags: d }));
       await sleep(25);
       this.mark(await this.probe.call('btn', { flags: u }));
@@ -152,6 +159,7 @@ class Live {
     await sleep(60);
     await this.assertTarget(pids, x0, y0);
     await this.guard();
+    await this.assertCursor(x0, y0);
     this.mark(await this.probe.call('btn', { flags: LDOWN }));
     this.buttonDown = true;
     try {

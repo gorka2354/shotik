@@ -27,12 +27,18 @@ jobs:
           rustup default 1.97.1
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: What the recording tests need
+        shell: powershell
+        run: |
+          choco install ffmpeg -y --no-progress
+          Import-Module ServerManager
+          if ((Get-WindowsFeature Server-Media-Foundation).InstallState -ne 'Installed') {
+            Install-WindowsFeature Server-Media-Foundation | Out-Null
+          }
       - name: Rust tests
         run: cargo test --workspace --locked
       - name: Build
         run: cargo build --release -p shotik --locked
-      - name: Media tools for the contract tests
-        run: choco install ffmpeg -y --no-progress
       - name: Contract tests
         run: node test/run-tests.js
       - name: Version must match the tag
