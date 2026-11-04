@@ -2,7 +2,7 @@
 //! Reference: the auto-translate section of `src/main/main.js`.
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use shotik_core::highlight::{find_highlight_rect, HighlightOptions};
 use shotik_core::ports::{SelectionEvent, TranslatePopup};
@@ -25,8 +25,17 @@ impl App {
                 self.diag.log(&format!("synthetic copy failed: {e}"));
             }
         }
-        std::thread::sleep(Duration::from_millis(60));
-        let text = clipboard.read_text().unwrap_or_default().trim().to_string();
+        // The application answers Ctrl+C in its own time. The clipboard was just cleared, so any text is the
+        // answer, and with nothing selected the wait is all there is to it.
+        let patience = Duration::from_millis(if test { 60 } else { 800 });
+        let waiting = Instant::now();
+        let text = loop {
+            let text = clipboard.read_text().unwrap_or_default().trim().to_string();
+            if !text.is_empty() || waiting.elapsed() >= patience {
+                break text;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        };
         if !test {
             let restored = match &saved_image {
                 Some(image) => clipboard.write_image(image),

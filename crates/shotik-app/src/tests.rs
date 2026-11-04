@@ -223,6 +223,8 @@ impl Autostart for FakeAutostart {
 struct FakeSelection {
     started: Mutex<u32>,
     stopped: Mutex<u32>,
+    /// An application that answers Ctrl+C after a while.
+    copy_answer: Mutex<Option<(Arc<FakeClipboard>, String)>>,
 }
 impl SelectionWatcher for FakeSelection {
     fn start(&self, _events: Callback<SelectionEvent>) -> Result<()> {
@@ -233,6 +235,12 @@ impl SelectionWatcher for FakeSelection {
         *self.stopped.lock().unwrap() += 1;
     }
     fn send_copy(&self) -> Result<()> {
+        if let Some((clipboard, text)) = self.copy_answer.lock().unwrap().take() {
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(300));
+                *clipboard.text.lock().unwrap() = text;
+            });
+        }
         Ok(())
     }
 }
@@ -656,6 +664,16 @@ fn the_same_selection_does_not_raise_the_bubble_again_until_cleared() {
     r.app.clear_selection_bubble();
     r.app.on_selection_detected("hello", 1, 1);
     assert!(*r.ui.bubble.lock().unwrap(), "cleared, so it may rise again");
+}
+
+#[test]
+fn the_translate_hotkey_waits_for_a_slow_application_and_restores_the_clipboard() {
+    let r = rig_with("slow-copy", true, false);
+    *r.clipboard.text.lock().unwrap() = "what the user had".into();
+    *r.selection.copy_answer.lock().unwrap() = Some((r.clipboard.clone(), "selected words".into()));
+    r.app.trigger_translate_selection();
+    assert_eq!(r.ui.popups.lock().unwrap()[0].original, "selected words");
+    assert_eq!(*r.clipboard.text.lock().unwrap(), "what the user had");
 }
 
 #[test]

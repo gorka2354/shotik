@@ -262,6 +262,7 @@ impl SelectionWatcher for WindowsSelectionWatcher {
     }
 
     fn send_copy(&self) -> Result<()> {
+        wait_for_modifiers_up();
         let inputs = copy_inputs();
         let sent = unsafe { SendInput(&inputs, size_of::<INPUT>() as i32) };
         if sent != inputs.len() as u32 {
@@ -280,6 +281,24 @@ impl SelectionWatcher for WindowsSelectionWatcher {
         }
         thread::sleep(Duration::from_millis(90));
         Ok(())
+    }
+}
+
+/// The hotkey that brought us here is usually still held. With Ctrl+Alt down the application would see
+/// Ctrl+Alt+C and copy nothing. The JS version never met this: starting its copy script took longer than the
+/// user's fingers. A key held for longer than this goes in as it is, because waiting forever helps nobody.
+fn wait_for_modifiers_up() {
+    const MOST: Duration = Duration::from_millis(800);
+    let started = Instant::now();
+    while started.elapsed() < MOST {
+        let held = [VK_MENU, VK_SHIFT, VK_CONTROL, VK_LWIN, VK_RWIN]
+            .iter()
+            // SAFETY: a plain query of the keyboard state.
+            .any(|key| unsafe { GetAsyncKeyState(i32::from(key.0)) } < 0);
+        if !held {
+            return;
+        }
+        thread::sleep(Duration::from_millis(10));
     }
 }
 

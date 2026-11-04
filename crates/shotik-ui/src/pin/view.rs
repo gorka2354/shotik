@@ -202,6 +202,7 @@ pub fn show(request: PinRequest) {
             runtime::after_native(window, move |_| {
                 with_pin(id, |pin| {
                     runtime::show_small(pin.window.window(), pin.state.bounds, &pin.display, true, false, false)?;
+                    runtime::follow_suggested_dpi_rect(runtime::hwnd_of(pin.window.window())?)?;
                     runtime::activate_small(pin.window.window())?;
                     pin.state.ready = true;
                     Ok(())
