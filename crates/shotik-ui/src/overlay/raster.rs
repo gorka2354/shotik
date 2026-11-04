@@ -141,8 +141,9 @@ pub struct TextRun {
     /// Colour glyphs (emoji): RGBA premultiplied, same placement rules.
     colored: Vec<ColorGlyph>,
     pub advance: f64,
-    pub ascent: f64,
-    pub descent: f64,
+    /// Em box above and below the alphabetic baseline: what Blink's `textBaseline = 'top'` and `'middle'` use.
+    pub em_ascent: f64,
+    pub em_descent: f64,
 }
 
 struct ColorGlyph {
@@ -206,16 +207,22 @@ impl TextEngine {
             color: bool,
         }
         let mut placed: Vec<Placed> = Vec::new();
-        let (mut advance, mut ascent, mut descent) = (0.0_f64, 0.0_f64, 0.0_f64);
+        let mut advance = 0.0_f64;
+        let mut em: Option<(f64, f64)> = None;
         for line in layout.lines() {
             for item in line.items() {
                 let PositionedLayoutItem::GlyphRun(glyph_run) = item else { continue };
                 let run = glyph_run.run();
                 advance = advance.max(f64::from(glyph_run.offset() + glyph_run.advance()));
-                ascent = ascent.max(f64::from(run.metrics().ascent));
-                descent = descent.max(f64::from(run.metrics().descent));
                 let font = run.font();
                 let Some(font_ref) = FontRef::from_index(font.data.as_ref(), font.index as usize) else { continue };
+                if em.is_none() {
+                    // The first font is what the canvas calls its primary font.
+                    em = Some(em_box(font_ref.data, font_ref.offset, f64::from(px)).unwrap_or_else(|| {
+                        let metrics = run.metrics();
+                        split_em(f64::from(metrics.ascent), f64::from(metrics.descent), f64::from(px))
+                    }));
+                }
                 let synthesis = run.synthesis();
                 let mut scaler = self
                     .scale
@@ -278,13 +285,37 @@ impl TextEngine {
                 }
             }
         }
-        TextRun { left, top, width, height, mask, colored, advance, ascent, descent }
+        let (em_ascent, em_descent) = em.unwrap_or((f64::from(px), 0.0));
+        TextRun { left, top, width, height, mask, colored, advance, em_ascent, em_descent }
     }
 }
 
-/// `ctx.font`'s ascent the way Blink uses it for `textBaseline`.
-fn rounded(metric: f64) -> f64 {
-    js_round(metric)
+/// Divides one em in the ratio of an ascent and a descent: `NormalizedTypoAscentAndDescent` in Blink.
+fn split_em(ascent: f64, descent: f64, px: f64) -> (f64, f64) {
+    let total = ascent + descent;
+    if total <= 0.0 {
+        return (px, 0.0);
+    }
+    let above = (px * ascent / total * 64.0).round() / 64.0;
+    (above, px - above)
+}
+
+/// The em box of a font at a size, from `sTypoAscender` and `sTypoDescender` in its OS/2 table.
+fn em_box(data: &[u8], directory: u32, px: f64) -> Option<(f64, f64)> {
+    let u16_at = |at: usize| -> Option<u16> { Some(u16::from_be_bytes([*data.get(at)?, *data.get(at + 1)?])) };
+    let u32_at = |at: usize| -> Option<u32> { Some((u32::from(u16_at(at)?) << 16) | u32::from(u16_at(at + 2)?)) };
+    let directory = directory as usize;
+    let tables = usize::from(u16_at(directory + 4)?);
+    for index in 0..tables {
+        let record = directory + 12 + index * 16;
+        if data.get(record..record + 4)? == b"OS/2" {
+            let table = u32_at(record + 8)? as usize;
+            let ascent = f64::from(u16_at(table + 68)? as i16);
+            let descent = -f64::from(u16_at(table + 70)? as i16);
+            return (ascent + descent > 0.0).then(|| split_em(ascent, descent, px));
+        }
+    }
+    None
 }
 
 /// Draws annotations. Reusable between calls: it keeps its scratch buffers.
@@ -366,7 +397,7 @@ impl Painter {
                         continue;
                     }
                     let run = self.text.run(line, fp);
-                    let baseline = y + i as f64 * fp * 1.25 + rounded(run.ascent);
+                    let baseline = y + i as f64 * fp * 1.25 + run.em_ascent;
                     left = left.min(x + f64::from(run.left));
                     right = right.max(x + f64::from(run.left) + run.width as f64 + 2.0);
                     top = top.min(baseline - f64::from(run.top) - 2.0);
@@ -487,7 +518,7 @@ impl Painter {
                     }
                     let run = self.text.run(line, fp);
                     let origin_x = js_round(*x) as i32;
-                    let baseline = js_round(y + i as f64 * fp * 1.25 + rounded(run.ascent)) as i32;
+                    let baseline = js_round(y + i as f64 * fp * 1.25 + run.em_ascent) as i32;
                     self.draw_run(canvas, &run, origin_x, baseline, *color, true);
                 }
             }
@@ -497,7 +528,7 @@ impl Painter {
                 self.fill_with_shadow(canvas, *color);
                 let run = self.text.run(&n.to_string(), r * 1.15);
                 let origin_x = js_round(x - run.advance / 2.0) as i32;
-                let baseline = js_round(y + r * 0.05 + (rounded(run.ascent) - rounded(run.descent)) / 2.0) as i32;
+                let baseline = js_round(y + r * 0.05 + (run.em_ascent - run.em_descent) / 2.0) as i32;
                 self.draw_run(canvas, &run, origin_x, baseline, color.light_or_dark(), false);
             }
         }
@@ -960,6 +991,67 @@ pub fn bake(source: RgbImage<'_>, area: IRect, annotations: &[Annotation], paint
     out
 }
 
+/// A `box-shadow` for a floating panel, in device pixels.
+pub struct PanelShadowSpec {
+    pub width: f64,
+    pub height: f64,
+    pub radius: f64,
+    /// How far the image extends beyond the panel on every side.
+    pub spread: f64,
+    /// CSS blur radius: a Gaussian with half this as sigma.
+    pub blur: f64,
+    pub alpha: f64,
+    /// The image is shown this far down from the panel; the panel's own area is cut out relative to it.
+    pub offset_y: f64,
+}
+
+pub struct PanelShadow {
+    pub width: u32,
+    pub height: u32,
+    /// RGBA premultiplied: black with alpha.
+    pub rgba: Vec<u8>,
+}
+
+/// The software renderer draws no soft shadows, and `box-shadow` is what lifts a panel off the screenshot.
+/// Rendered once per panel size. Like CSS, it leaves the panel's own area empty.
+pub fn panel_shadow(spec: PanelShadowSpec) -> PanelShadow {
+    let width = (spec.width + 2.0 * spec.spread).ceil() as usize;
+    let height = (spec.height + 2.0 * spec.spread).ceil() as usize;
+    let panel = RectF::new(spec.spread, spec.spread, spec.width, spec.height);
+
+    let mut commands = Vec::new();
+    rounded_rect_path(&mut commands, panel, spec.radius);
+    let commands_ref: &[Command] = &commands;
+    let mut mask = vec![0_u8; width * height];
+    Mask::new(commands_ref).style(Fill::NonZero).format(Format::Alpha).size(width as u32, height as u32).render_into(&mut mask, None);
+
+    // Three box blurs, the same approximation as the annotation shadows.
+    let sigma = spec.blur / 2.0;
+    let d = (sigma * 3.0 * (2.0 * std::f64::consts::PI).sqrt() / 4.0 + 0.5).floor().max(1.0) as usize;
+    let reach = (d / 2, d / 2);
+    let mut temp = vec![0_u8; width * height];
+    let mut blurred = vec![0_u8; width * height];
+    for _ in 0..3 {
+        box_horizontal(&mask, &mut temp, width, reach);
+        box_vertical(&temp, &mut blurred, width, height, reach);
+        std::mem::swap(&mut mask, &mut blurred);
+    }
+
+    // Cut the panel out where it will sit: the image is shown `offset_y` lower.
+    let mut cut = vec![0_u8; width * height];
+    let hole = RectF::new(panel.x, panel.y - spec.offset_y, panel.w, panel.h);
+    rounded_rect_path(&mut commands, hole, spec.radius);
+    let commands_ref: &[Command] = &commands;
+    Mask::new(commands_ref).style(Fill::NonZero).format(Format::Alpha).size(width as u32, height as u32).render_into(&mut cut, None);
+
+    let alpha = (spec.alpha * 255.0) as u32;
+    let mut rgba = vec![0_u8; width * height * 4];
+    for ((px, &shadow), &inside) in rgba.chunks_exact_mut(4).zip(&mask).zip(&cut) {
+        px[3] = mul255(mul255(u32::from(shadow), alpha), 255 - u32::from(inside)) as u8;
+    }
+    PanelShadow { width: width as u32, height: height as u32, rgba }
+}
+
 /// Tightly packed BGRA of an RGB picture, what `Frame` wants.
 pub fn rgb_to_bgra(rgb: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(rgb.len() / 3 * 4);
@@ -1227,6 +1319,40 @@ mod tests {
         assert!(f64::from(top) > 50.0, "{top}");
         assert!(f64::from(bottom) > 50.0 + 2.0 * fp * 1.25, "{bottom}");
         assert!(left >= 29, "{left}");
+    }
+
+    #[test]
+    fn a_panel_shadow_is_dark_around_the_panel_and_empty_under_it() {
+        let shadow = panel_shadow(PanelShadowSpec { width: 100.0, height: 40.0, radius: 10.0, spread: 30.0, blur: 20.0, alpha: 0.5, offset_y: 6.0 });
+        assert_eq!((shadow.width, shadow.height), (160, 100));
+        let alpha = |x: usize, y: usize| shadow.rgba[(y * 160 + x) * 4 + 3];
+        assert_eq!(alpha(80, 50 - 6), 0, "the panel covers this, so it is cut out");
+        assert!(alpha(80, 75) > 20, "below the panel: {}", alpha(80, 75));
+        assert!(alpha(80, 75) <= 128, "never over the shadow's alpha");
+        assert_eq!(alpha(0, 0), 0, "fades out at the corners");
+    }
+
+    #[test]
+    fn the_em_box_divides_by_the_typographic_metrics() {
+        // Segoe UI: sTypoAscender 1491, sTypoDescender -431.
+        let (above, below) = split_em(1491.0, 431.0, 34.5);
+        assert!((above - 26.75).abs() < 0.02, "{above}");
+        assert!((above + below - 34.5).abs() < 1e-9);
+        assert_eq!(split_em(0.0, 0.0, 10.0), (10.0, 0.0));
+    }
+
+    #[test]
+    fn the_em_box_reads_the_os2_table() {
+        let mut font = vec![0_u8; 12 + 16 + 72];
+        font[4..6].copy_from_slice(&1_u16.to_be_bytes());
+        font[12..16].copy_from_slice(b"OS/2");
+        font[20..24].copy_from_slice(&28_u32.to_be_bytes());
+        font[28 + 68..28 + 70].copy_from_slice(&1491_i16.to_be_bytes());
+        font[28 + 70..28 + 72].copy_from_slice(&(-431_i16).to_be_bytes());
+        let (above, _) = em_box(&font, 0, 34.5).expect("a table");
+        assert!((above - 26.75).abs() < 0.02, "{above}");
+        assert!(em_box(&font[..20], 0, 34.5).is_none(), "cut short");
+        assert!(em_box(&[0; 12], 0, 34.5).is_none(), "no tables");
     }
 
     #[test]

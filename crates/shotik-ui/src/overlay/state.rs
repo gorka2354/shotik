@@ -1093,7 +1093,8 @@ impl State {
     }
 
     fn double_click(&mut self, x: f64, y: f64, fx: &mut Vec<Effect>) {
-        if self.mode != Mode::Selected {
+        // The second press of a double click opened the editor under the pointer: `isUiTarget` in the JS.
+        if self.mode != Mode::Selected || self.editor.is_some() {
             return;
         }
         let ip = self.to_img(x, y);
@@ -1326,7 +1327,8 @@ impl State {
         if y + th > self.view_h - 8.0 {
             y = 8.0_f64.max(rc.y - th - m);
         }
-        self.text_toolbar = Some(Place { x, y, tips_below: y < 56.0 });
+        // `tips-below` only exists on `#toolbar` in overlay.css.
+        self.text_toolbar = Some(Place { x, y, tips_below: false });
     }
 
     /// `flash`: a message that goes away by itself. Always re-arms; older timers find a newer generation.
@@ -1748,6 +1750,7 @@ impl State {
             "optionsVisible": self.options.is_some(),
             "textToolbarVisible": self.text_toolbar.is_some(),
             "editorOpen": self.editor.is_some(),
+            "editorText": self.editor.as_ref().map(|e| e.text.clone()),
             "badgeVisible": self.badge_visible,
             "magnifierVisible": self.magnifier().is_some(),
             "dims": self.dims().map(|d| d.0),
@@ -2446,6 +2449,15 @@ mod tests {
         assert!(go(&mut s, Action::DoubleClick { x: 1000.0, y: 1000.0 }).is_empty());
         let fx = go(&mut s, Action::DoubleClick { x: 300.0, y: 250.0 });
         assert_eq!(finish_of(&fx).action, OverlayActionKind::Copy);
+    }
+
+    #[test]
+    fn a_double_click_that_opened_the_editor_is_the_editors() {
+        let mut s = selected();
+        go(&mut s, Action::SetTool { tool: Tool::Text });
+        down(&mut s, 300.0, 250.0);
+        assert!(go(&mut s, Action::DoubleClick { x: 300.0, y: 250.0 }).is_empty());
+        assert!(!s.closing);
     }
 
     #[test]

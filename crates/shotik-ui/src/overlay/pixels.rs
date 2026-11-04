@@ -35,6 +35,40 @@ pub fn bgra_to_rgb_and_veil(bgra: &[u8], rgb: &mut [u8], dim: &mut [u8]) {
     convert_scalar(&bgra[done * 4..], &mut rgb[done * 3..], &mut dim[done * 3..]);
 }
 
+/// The same in bands on a few threads, for big frames: this runs on every capture. The calling thread takes
+/// whatever no thread has started on, so it also covers a failure to get threads at all.
+pub fn bgra_to_rgb_and_veil_parallel(bgra: &[u8], rgb: &mut [u8], dim: &mut [u8], threads: usize) {
+    type Band<'a> = std::sync::Mutex<Option<(&'a [u8], &'a mut [u8], &'a mut [u8])>>;
+
+    fn convert_band(band: &Band<'_>) {
+        if let Some((src, out, veil)) = band.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            bgra_to_rgb_and_veil(src, out, veil);
+        }
+    }
+
+    let pixels = bgra.len() / 4;
+    if threads <= 1 || pixels == 0 {
+        bgra_to_rgb_and_veil(bgra, rgb, dim);
+        return;
+    }
+    let band = pixels.div_ceil(threads);
+    let bands: Vec<Band<'_>> = bgra
+        .chunks(band * 4)
+        .zip(rgb.chunks_mut(band * 3))
+        .zip(dim.chunks_mut(band * 3))
+        .map(|((src, out), veil)| std::sync::Mutex::new(Some((src, out, veil))))
+        .collect();
+    std::thread::scope(|scope| {
+        for band in bands.iter().skip(1) {
+            // Not getting a thread is fine: the loop below picks the band up.
+            let _ = std::thread::Builder::new().spawn_scoped(scope, move || convert_band(band));
+        }
+        for band in &bands {
+            convert_band(band);
+        }
+    });
+}
+
 fn convert_scalar(bgra: &[u8], rgb: &mut [u8], dim: &mut [u8]) {
     for ((src, out), veil) in bgra.chunks_exact(4).zip(rgb.chunks_exact_mut(3)).zip(dim.chunks_exact_mut(3)) {
         out[0] = src[2];
@@ -78,74 +112,92 @@ impl RgbImage<'_> {
 }
 
 /// The magnifier's picture at device resolution: 13 by 13 source pixels around a point, grid and centre
-/// marker, rounded corners. RGBA premultiplied. Pixels outside the frame stay transparent, like the JS canvas.
-pub fn magnifier(image: RgbImage<'_>, cx: i32, cy: i32, side: usize, scale: f64, accent: [u8; 3], out: &mut [u8]) {
-    const CELLS: i32 = 13;
-    debug_assert_eq!(out.len(), side * side * 4);
-    let cell = side as f64 / f64::from(CELLS);
-    // Grid lines and marker edges are in device pixels, one and two CSS pixels wide.
-    let line = scale.round().max(1.0) as usize;
-    let marker = (2.0 * scale).round().max(1.0) as usize;
-    let edge = |index: i32| (f64::from(index) * cell).round() as usize;
-    let marker_start = edge(6);
-    let marker_end = edge(7);
+/// marker, rounded corners. Everything that does not depend on the pixels is worked out once.
+pub struct MagnifierPainter {
+    side: usize,
+    /// For each output coordinate: source offset from the point, -6 to 6.
+    cell_of: Vec<i8>,
+    /// Row and column positions that carry a grid line.
+    on_line: Vec<bool>,
+    /// Output pixels the centre marker covers.
+    marker: Vec<bool>,
+    /// Alpha of the rounded corners, per output pixel.
+    corner: Vec<u8>,
+}
 
-    let radius = 8.0 * scale;
-    for y in 0..side {
-        let row_cell = (y as f64 / cell) as i32;
-        let on_row_line = (1..CELLS).any(|i| {
-            let e = edge(i);
-            y >= e && y < e + line
-        });
-        for x in 0..side {
-            let column_cell = (x as f64 / cell) as i32;
-            let at = (y * side + x) * 4;
-            let (sx, sy) = (cx - CELLS / 2 + column_cell, cy - CELLS / 2 + row_cell);
-            if sx < 0 || sy < 0 || sx >= image.width || sy >= image.height {
-                out[at..at + 4].fill(0);
-            } else {
-                let [mut r, mut g, mut b] = image.pixel(sx, sy);
-                let on_column_line = (1..CELLS).any(|i| {
-                    let e = edge(i);
-                    x >= e && x < e + line
-                });
-                if on_row_line || on_column_line {
-                    // rgba(255,255,255,0.10)
-                    r = r + ((255 - u32::from(r)) * 26 / 255) as u8;
-                    g = g + ((255 - u32::from(g)) * 26 / 255) as u8;
-                    b = b + ((255 - u32::from(b)) * 26 / 255) as u8;
+impl MagnifierPainter {
+    pub fn new(side: usize, scale: f64) -> Self {
+        const CELLS: f64 = 13.0;
+        let cell = side as f64 / CELLS;
+        let edge = |index: i32| (f64::from(index) * cell).round() as usize;
+        // Grid lines and marker edges are in device pixels, one and two CSS pixels wide.
+        let line = scale.round().max(1.0) as usize;
+        let thick = ((2.0 * scale).round().max(1.0) as usize).div_ceil(2);
+
+        let cell_of = (0..side).map(|p| ((p as f64 / cell) as i8).min(12) - 6).collect();
+        let mut on_line = vec![false; side];
+        for i in 1..13 {
+            for flag in on_line.iter_mut().skip(edge(i)).take(line) {
+                *flag = true;
+            }
+        }
+
+        let (start, end) = (edge(6), edge(7));
+        let mut marker = vec![false; side * side];
+        let radius = 8.0 * scale;
+        let mut corner = vec![255_u8; side * side];
+        for y in 0..side {
+            for x in 0..side {
+                let in_box = x + thick >= start && x < end + thick && y + thick >= start && y < end + thick;
+                let in_hole = x >= start + thick && x + thick < end && y >= start + thick && y + thick < end;
+                marker[y * side + x] = in_box && !in_hole;
+                let (fx, fy) = (x as f64 + 0.5, y as f64 + 0.5);
+                let far = side as f64;
+                let dx = (radius - fx).max(fx - (far - radius));
+                let dy = (radius - fy).max(fy - (far - radius));
+                if dx > 0.0 && dy > 0.0 {
+                    corner[y * side + x] = ((radius - dx.hypot(dy) + 0.5).clamp(0.0, 1.0) * 255.0) as u8;
                 }
-                out[at] = r;
-                out[at + 1] = g;
-                out[at + 2] = b;
-                out[at + 3] = 255;
             }
-            let in_marker_box = x + marker / 2 >= marker_start
-                && x < marker_end + marker / 2
-                && y + marker / 2 >= marker_start
-                && y < marker_end + marker / 2;
-            let in_marker_hole = x >= marker_start + marker / 2
-                && x + marker / 2 < marker_end
-                && y >= marker_start + marker / 2
-                && y + marker / 2 < marker_end;
-            if in_marker_box && !in_marker_hole {
-                out[at] = accent[0];
-                out[at + 1] = accent[1];
-                out[at + 2] = accent[2];
-                out[at + 3] = 255;
-            }
-            // Rounded corners: coverage from the distance to the corner's centre.
-            let (fx, fy) = (x as f64 + 0.5, y as f64 + 0.5);
-            let far = side as f64;
-            let dx = (radius - fx).max(fx - (far - radius));
-            let dy = (radius - fy).max(fy - (far - radius));
-            if dx > 0.0 && dy > 0.0 {
-                let coverage = (radius - dx.hypot(dy) + 0.5).clamp(0.0, 1.0);
-                if coverage < 1.0 {
-                    for channel in &mut out[at..at + 4] {
-                        *channel = (f64::from(*channel) * coverage) as u8;
+        }
+        Self { side, cell_of, on_line, marker, corner }
+    }
+
+    pub fn side(&self) -> usize {
+        self.side
+    }
+
+    /// RGBA premultiplied. Pixels outside the frame stay transparent, like the JS canvas.
+    pub fn paint(&self, image: RgbImage<'_>, cx: i32, cy: i32, accent: [u8; 3], out: &mut [u8]) {
+        let side = self.side;
+        debug_assert_eq!(out.len(), side * side * 4);
+        for y in 0..side {
+            let sy = cy + i32::from(self.cell_of[y]);
+            let row_line = self.on_line[y];
+            let row = &mut out[y * side * 4..(y + 1) * side * 4];
+            for (x, px) in row.chunks_exact_mut(4).enumerate() {
+                let sx = cx + i32::from(self.cell_of[x]);
+                let at = y * side + x;
+                let mut value = if sx < 0 || sy < 0 || sx >= image.width || sy >= image.height {
+                    [0, 0, 0, 0]
+                } else {
+                    let [r, g, b] = image.pixel(sx, sy);
+                    if row_line || self.on_line[x] {
+                        // rgba(255,255,255,0.10)
+                        let lighten = |v: u8| v + ((255 - u32::from(v)) * 26 / 255) as u8;
+                        [lighten(r), lighten(g), lighten(b), 255]
+                    } else {
+                        [r, g, b, 255]
                     }
+                };
+                if self.marker[at] {
+                    value = [accent[0], accent[1], accent[2], 255];
                 }
+                let alpha = u32::from(self.corner[at]);
+                if alpha < 255 {
+                    value = value.map(|v| (u32::from(v) * alpha / 255) as u8);
+                }
+                px.copy_from_slice(&value);
             }
         }
     }
@@ -243,6 +295,19 @@ mod tests {
     }
 
     #[test]
+    fn bands_on_threads_agree_with_one_pass() {
+        for (pixels, threads) in [(0, 4), (1, 4), (7, 3), (1000, 4), (1027, 8), (5000, 2), (100, 1)] {
+            let bgra = sample_bgra(pixels);
+            let (mut rgb, mut dim) = (vec![0; pixels * 3], vec![0; pixels * 3]);
+            bgra_to_rgb_and_veil_parallel(&bgra, &mut rgb, &mut dim, threads);
+            let (mut rgb_one, mut dim_one) = (vec![0; pixels * 3], vec![0; pixels * 3]);
+            bgra_to_rgb_and_veil(&bgra, &mut rgb_one, &mut dim_one);
+            assert_eq!(rgb, rgb_one, "{pixels} pixels on {threads} threads");
+            assert_eq!(dim, dim_one, "{pixels} pixels on {threads} threads");
+        }
+    }
+
+    #[test]
     fn every_value_on_every_channel_agrees() {
         let bgra: Vec<u8> = (0..=255u8).flat_map(|v| [v, v, v, 0]).collect();
         let (mut rgb, mut dim) = (vec![0; 256 * 3], vec![0; 256 * 3]);
@@ -286,7 +351,7 @@ mod tests {
         let image = RgbImage { data: &data, width: 100, height: 100 };
         let side = 143;
         let mut out = vec![0; side * side * 4];
-        magnifier(image, 50, 60, side, 1.0, [1, 2, 3], &mut out);
+        MagnifierPainter::new(side, 1.0).paint(image, 50, 60, [1, 2, 3], &mut out);
         // Centre of the centre cell, away from grid and marker.
         let at = (71 * side + 71) * 4;
         assert_eq!(&out[at..at + 4], &[50, 60, 40, 255]);
@@ -306,7 +371,7 @@ mod tests {
         let image = RgbImage { data: &data, width: 20, height: 20 };
         let side = 143;
         let mut out = vec![9; side * side * 4];
-        magnifier(image, 0, 0, side, 1.0, [1, 2, 3], &mut out);
+        MagnifierPainter::new(side, 1.0).paint(image, 0, 0, [1, 2, 3], &mut out);
         let at = (20 * side + 20) * 4;
         assert_eq!(out[at + 3], 0, "up and left of the frame");
         let at = (71 * side + 71) * 4;
