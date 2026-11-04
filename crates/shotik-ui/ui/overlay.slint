@@ -1,8 +1,1205 @@
 // Freeze frame, selection, annotations, toolbar, Live Text. Reference: src/overlay/.
+//
+// Nothing here decides anything: positions and visibility come from overlay/state.rs through properties.
+// The frame is drawn twice, baked under the veil and as a bright hole on top, so moving a selection repaints
+// the hole instead of the window. Annotations are opaque tiles over both, same idea.
 import { Theme } from "theme.slint";
+
+export struct OverlayTile {
+    image: image,
+    x: length,
+    y: length,
+    width: length,
+    height: length,
+}
+
+export struct OverlayWord {
+    x: length,
+    y: length,
+    width: length,
+    height: length,
+    // 0 normal, 1 under the pointer, 2 selected.
+    state: int,
+}
+
+export struct OverlayHint {
+    bold: string,
+    desc: string,
+}
+
+export struct OverlayTips {
+    tools: [string],
+    undo: string,
+    redo: string,
+    ocr: string,
+    pin: string,
+    rec: string,
+    save: string,
+    claude: string,
+    copy: string,
+    cancel: string,
+    sizes: [string],
+    text-copy: string,
+    text-all: string,
+    text-translate: string,
+    text-back: string,
+    translation-title: string,
+    translation-copy: string,
+}
+
+/// Transitions and entry animations. Off in ghost mode: an off-screen capture must not catch a panel half way.
+export global OverlayMotion {
+    in property <bool> enabled;
+}
+
+// overlay.css custom properties.
+global Chrome {
+    out property <color> glass: Theme.dark ? #1c1c1ee6 : #f9f9faeb;
+    out property <color> glass-border: Theme.dark ? #ffffff17 : #00000017;
+    out property <color> text: Theme.dark ? #f0f0f2 : #1b1b1b;
+    out property <color> text-dim: Theme.dark ? #ffffff8c : #0000008c;
+    out property <color> icon: Theme.dark ? #d6d6da : #3a3a3e;
+    out property <color> tip-bg: Theme.dark ? #1b1b1d : #ffffff;
+    out property <color> btn-hover: Theme.dark ? #ffffff14 : #0000000f;
+    // The CSS asks for 'Segoe UI Variable Text' first. Fontique does not find that face, and "Segoe UI
+    // Variable" alone comes out wider than the reference; plain Segoe UI is within 1%.
+    out property <string> font: "Segoe UI";
+    out property <string> mono: "Consolas";
+}
+
+component Tip inherits Rectangle {
+    in property <string> text;
+    width: label.preferred-width + 20px;
+    height: label.preferred-height + 10px;
+    background: Chrome.tip-bg;
+    border-width: 1px;
+    border-color: Chrome.glass-border;
+    border-radius: 5px;
+    label := Text {
+        text: root.text;
+        color: Chrome.text;
+        font-size: 11.5px;
+        font-weight: 500;
+    }
+}
+
+component IconPath inherits Path {
+    viewbox-width: 24;
+    viewbox-height: 24;
+    fill: transparent;
+    stroke-width: 1.35px;
+    stroke-line-cap: round;
+    stroke-line-join: round;
+}
+
+component TbButton {
+    in property <string> icon;
+    in property <string> tip;
+    in property <bool> tips-below;
+    in property <bool> enabled: true;
+    in property <bool> active;
+    /// `.tb-btn.primary`.
+    in property <bool> primary;
+    /// `.tb-btn.claude`.
+    in property <bool> accented;
+    /// `.tb-btn.rec`, with the dot of its icon.
+    in property <bool> rec;
+    /// `.tb-btn.danger`.
+    in property <bool> danger;
+    callback clicked;
+
+    width: 34px;
+    height: 34px;
+    accessible-role: button;
+    accessible-label: root.tip;
+
+    private property <float> tip-shown: touch.has-hover ? 1 : 0;
+    animate tip-shown {
+        delay: touch.has-hover ? 250ms : 0ms;
+        duration: touch.has-hover ? 150ms : 0ms;
+    }
+    // `.tb-btn:active { transform: scale(0.93) }`, on the icon.
+    private property <length> icon-size: touch.pressed ? 16.74px : 18px;
+
+    private property <color> icon-color: !root.enabled ? Chrome.icon.with-alpha(0.35)
+        : root.primary ? Theme.accent-text
+        : root.active || root.accented ? Theme.accent
+        : root.rec ? #ff4d4d
+        : root.danger && touch.has-hover ? #e0574a
+        : Chrome.icon;
+
+    Rectangle {
+        border-radius: 9px;
+        background: root.primary ? (touch.has-hover ? Theme.accent.brighter(0.1) : Theme.accent)
+            : root.active ? Theme.accent.with-alpha(0.2)
+            : !touch.has-hover ? transparent
+            : root.rec ? #ff4d4d29
+            : root.danger ? #c42b1c29
+            : Chrome.btn-hover;
+        animate background { duration: OverlayMotion.enabled ? 120ms : 0ms; }
+    }
+
+    IconPath {
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        width: root.icon-size + 1.35px;
+        height: root.icon-size + 1.35px;
+        commands: root.icon;
+        stroke: root.icon-color;
+    }
+
+    // `<circle fill="currentColor">` in the record icon: the button's text colour, black by default.
+    if root.rec: IconPath {
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        width: root.icon-size + 1.35px;
+        height: root.icon-size + 1.35px;
+        commands: "M8.5 12a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0-7 0z";
+        stroke: root.icon-color;
+        fill: black;
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    if root.tip-shown > 0: Tip {
+        x: (root.width - self.width) / 2;
+        y: root.tips-below ? root.height + 8px : -self.height - 8px;
+        text: root.tip;
+        opacity: root.tip-shown;
+    }
+}
+
+component Sep {
+    width: 11px;
+    height: 34px;
+    Rectangle {
+        x: 5px;
+        y: 6px;
+        width: 1px;
+        height: 22px;
+        background: Chrome.glass-border;
+    }
+}
+
+// `@keyframes bar-in`: fades and slides up as it appears. `entered` flips once on creation.
+component Glass inherits Rectangle {
+    in property <length> rest-y;
+    private property <bool> entered: !OverlayMotion.enabled;
+    private property <length> slide: root.entered ? 0px : 6px;
+    private property <float> shown: root.entered ? 1 : 0;
+    animate slide { duration: OverlayMotion.enabled ? 180ms : 0ms; easing: ease-out; }
+    animate shown { duration: OverlayMotion.enabled ? 180ms : 0ms; easing: ease-out; }
+    y: root.rest-y + root.slide;
+    opacity: root.shown;
+    init => {
+        // A property animates from the value it last showed, so it has to have shown one.
+        if root.slide >= 0px && root.shown >= 0 {
+            root.entered = true;
+        }
+    }
+    background: Chrome.glass;
+    border-width: 1px;
+    border-color: Chrome.glass-border;
+    // The bars swallow the pointer, as `isUiTarget` keeps them out of the canvas handlers.
+    TouchArea {
+        mouse-cursor: default;
+    }
+    @children
+}
+
+component ColorDot {
+    in property <color> value;
+    in property <bool> active;
+    callback clicked;
+    width: 21px;
+    height: 21px;
+    if root.active: Rectangle {
+        x: -2px;
+        y: -2px;
+        width: 25px;
+        height: 25px;
+        border-radius: 12.5px;
+        background: Theme.accent.with-alpha(0.35);
+    }
+    Rectangle {
+        x: touch.has-hover ? -2px : 0px;
+        y: touch.has-hover ? -2px : 0px;
+        width: touch.has-hover ? 25px : 21px;
+        height: touch.has-hover ? 25px : 21px;
+        border-radius: self.width / 2;
+        background: root.value;
+        border-width: root.active ? 2px : 0px;
+        border-color: Theme.accent;
+        Rectangle {
+            x: 2px;
+            y: 2px;
+            width: parent.width - 4px;
+            height: parent.height - 4px;
+            border-radius: self.width / 2;
+            border-width: 1px;
+            border-color: #ffffff29;
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SizeButton {
+    in property <length> dot;
+    in property <bool> active;
+    in property <string> tip;
+    in property <bool> tips-below;
+    callback clicked;
+    width: 28px;
+    height: 28px;
+    private property <float> tip-shown: touch.has-hover ? 1 : 0;
+    animate tip-shown {
+        delay: touch.has-hover ? 250ms : 0ms;
+        duration: touch.has-hover ? 150ms : 0ms;
+    }
+    Rectangle {
+        border-radius: 6px;
+        background: root.active ? Theme.accent.with-alpha(0.22) : touch.has-hover ? Chrome.btn-hover : transparent;
+        animate background { duration: OverlayMotion.enabled ? 120ms : 0ms; }
+    }
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: root.dot;
+        height: root.dot;
+        border-radius: root.dot / 2;
+        background: root.active ? Theme.accent : Chrome.icon;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+    if root.tip-shown > 0: Tip {
+        x: (root.width - self.width) / 2;
+        y: root.tips-below ? root.height + 8px : -self.height - 8px;
+        text: root.tip;
+        opacity: root.tip-shown;
+    }
+}
+
+// Pre-rendered soft shadow behind a floating panel. The software renderer has none of its own.
+component PanelShadow inherits Image {
+    in property <length> panel-width;
+    in property <length> panel-height;
+    in property <length> spread;
+    in property <length> offset-y;
+    x: -root.spread;
+    y: -root.spread + root.offset-y;
+    width: root.panel-width + 2 * root.spread;
+    height: root.panel-height + 2 * root.spread;
+    image-fit: fill;
+}
 
 export component Overlay inherits Window {
     no-frame: true;
-    background: Theme.window-bg;
-    default-font-family: Theme.font;
+    background: #0b0d11;
+    default-font-family: Chrome.font;
+    title: "Shotik";
+
+    // ---------- frame ----------
+    in property <image> frame-dim;
+    in property <image> frame-bright;
+    in property <[OverlayTile]> dim-tiles;
+    in property <[OverlayTile]> bright-tiles;
+
+    in property <bool> hole-visible;
+    in property <length> hole-x;
+    in property <length> hole-y;
+    in property <length> hole-w;
+    in property <length> hole-h;
+    in property <int> hole-px-x;
+    in property <int> hole-px-y;
+    in property <int> hole-px-w;
+    in property <int> hole-px-h;
+
+    // ---------- selection ----------
+    in property <bool> selection-visible;
+    in property <length> selection-x;
+    in property <length> selection-y;
+    in property <length> selection-w;
+    in property <length> selection-h;
+    in property <length> selection-border;
+    in property <bool> thirds-visible;
+    in property <bool> handles-visible;
+
+    in property <bool> outline-visible;
+    in property <length> outline-border;
+
+    in property <bool> dims-visible;
+    in property <string> dims-text;
+    in property <length> dims-x;
+    in property <length> dims-y;
+
+    // ---------- magnifier ----------
+    in property <bool> magnifier-visible;
+    in property <length> magnifier-x;
+    in property <length> magnifier-y;
+    in property <image> magnifier-image;
+    in property <string> magnifier-hex;
+    in property <string> magnifier-pos;
+
+    // ---------- hints and badge ----------
+    in property <bool> hints-visible;
+    in property <[OverlayHint]> hints;
+    in property <bool> badge-visible;
+    in property <string> badge-text;
+
+    // ---------- toolbars ----------
+    in property <OverlayTips> tips;
+    in property <bool> toolbar-visible;
+    in property <length> toolbar-x;
+    in property <length> toolbar-y;
+    in property <bool> toolbar-tips-below;
+    in property <int> tool;
+    in property <bool> can-undo;
+    in property <bool> can-redo;
+    in property <bool> options-visible;
+    in property <length> options-x;
+    in property <length> options-y;
+    in property <int> color-index;
+    in property <int> size-index;
+    in property <[color]> palette;
+
+    in property <bool> text-toolbar-visible;
+    in property <length> text-toolbar-x;
+    in property <length> text-toolbar-y;
+    in property <bool> text-toolbar-tips-below;
+
+    in property <image> toolbar-shadow;
+    in property <image> options-shadow;
+    in property <image> text-toolbar-shadow;
+    in property <image> magnifier-shadow;
+    in property <image> card-shadow;
+
+    // ---------- Live Text ----------
+    in property <bool> words-visible;
+    in property <[OverlayWord]> words;
+    in property <bool> rubber-visible;
+    in property <length> rubber-x;
+    in property <length> rubber-y;
+    in property <length> rubber-w;
+    in property <length> rubber-h;
+    in property <bool> flash-visible;
+    in property <string> flash-text;
+    in property <length> flash-x;
+    in property <length> flash-y;
+
+    in property <bool> card-visible;
+    in property <length> card-x;
+    in property <length> card-y;
+    in property <length> card-w;
+    in property <bool> card-loading;
+    in property <string> card-body;
+    in property <string> card-meta;
+    /// What the card measures to at its current width and text, for the placement in Rust.
+    out property <length> card-height: card-panel.measured;
+
+    // ---------- text editor ----------
+    in property <bool> editor-visible;
+    in property <length> editor-x;
+    in property <length> editor-y;
+    in property <color> editor-color;
+    in property <length> editor-font;
+    in-out property <string> editor-text;
+
+    // 0 crosshair, 1 move, 2 text, 3 progress, 4 nwse, 5 nesw, 6 ns, 7 ew.
+    in property <int> cursor;
+
+    callback pointer-down(x: length, y: length, shift: bool);
+    callback pointer-moved(x: length, y: length, shift: bool, alt: bool);
+    callback pointer-up(x: length, y: length, shift: bool);
+    callback double-click(x: length, y: length);
+    callback set-tool(index: int);
+    callback set-color(index: int);
+    callback set-size(index: int);
+    callback undo();
+    callback redo();
+    callback action(name: string);
+    callback text-action(name: string);
+    callback card-action(name: string);
+    callback editor-edited(text: string);
+    callback editor-commit();
+    callback editor-cancel();
+
+    public function focus-editor() {
+        editor-input.focus();
+    }
+
+    public function blur-editor() {
+        editor-input.clear-focus();
+    }
+
+    // ---------- the picture ----------
+    Image {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.height;
+        source: root.frame-dim;
+        image-fit: fill;
+    }
+
+    for tile in root.dim-tiles: Image {
+        x: tile.x;
+        y: tile.y;
+        width: tile.width;
+        height: tile.height;
+        source: tile.image;
+        image-fit: fill;
+    }
+
+    if root.hole-visible: Image {
+        x: root.hole-x;
+        y: root.hole-y;
+        width: root.hole-w;
+        height: root.hole-h;
+        source: root.frame-bright;
+        source-clip-x: root.hole-px-x;
+        source-clip-y: root.hole-px-y;
+        source-clip-width: root.hole-px-w;
+        source-clip-height: root.hole-px-h;
+        image-fit: fill;
+    }
+
+    if root.hole-visible: Rectangle {
+        x: root.hole-x;
+        y: root.hole-y;
+        width: root.hole-w;
+        height: root.hole-h;
+        clip: true;
+        for tile in root.bright-tiles: Image {
+            x: tile.x - root.hole-x;
+            y: tile.y - root.hole-y;
+            width: tile.width;
+            height: tile.height;
+            source: tile.image;
+            image-fit: fill;
+        }
+    }
+
+    // ---------- pointer ----------
+    canvas := TouchArea {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.height;
+        mouse-cursor: root.cursor == 1 ? MouseCursor.move
+            : root.cursor == 2 ? MouseCursor.text
+            : root.cursor == 3 ? MouseCursor.progress
+            : root.cursor == 4 ? MouseCursor.nwse-resize
+            : root.cursor == 5 ? MouseCursor.nesw-resize
+            : root.cursor == 6 ? MouseCursor.ns-resize
+            : root.cursor == 7 ? MouseCursor.ew-resize
+            : MouseCursor.crosshair;
+        pointer-event(event) => {
+            if event.kind == PointerEventKind.move {
+                root.pointer-moved(self.mouse-x, self.mouse-y, event.modifiers.shift, event.modifiers.alt);
+            } else if event.button == PointerEventButton.left {
+                if event.kind == PointerEventKind.down {
+                    root.pointer-down(self.mouse-x, self.mouse-y, event.modifiers.shift);
+                } else if event.kind == PointerEventKind.up {
+                    root.pointer-up(self.mouse-x, self.mouse-y, event.modifiers.shift);
+                }
+            }
+        }
+        double-clicked => {
+            root.double-click(self.mouse-x, self.mouse-y);
+        }
+    }
+
+    // ---------- selection chrome ----------
+    if root.outline-visible: Rectangle {
+        x: root.hole-x;
+        y: root.hole-y;
+        width: root.hole-w;
+        height: root.hole-h;
+        border-width: root.outline-border;
+        border-color: Theme.accent;
+    }
+
+    if root.selection-visible: Rectangle {
+        x: root.selection-x - root.selection-border;
+        y: root.selection-y - root.selection-border;
+        width: root.selection-w + 2 * root.selection-border;
+        height: root.selection-h + 2 * root.selection-border;
+        border-width: root.selection-border;
+        border-color: Theme.accent;
+    }
+
+    if root.selection-visible && root.thirds-visible: Rectangle {
+        x: root.selection-x;
+        y: root.selection-y;
+        width: root.selection-w;
+        height: root.selection-h;
+        for i in 2: Rectangle {
+            x: parent.width * (i + 1) / 3;
+            y: 0px;
+            width: 1px;
+            height: parent.height;
+            background: #ffffff21;
+        }
+        for i in 2: Rectangle {
+            x: 0px;
+            y: parent.height * (i + 1) / 3;
+            width: parent.width;
+            height: 1px;
+            background: #ffffff21;
+        }
+    }
+
+    if root.selection-visible && root.handles-visible: Rectangle {
+        x: root.selection-x;
+        y: root.selection-y;
+        width: root.selection-w;
+        height: root.selection-h;
+        for handle in [
+            { fx: 0, fy: 0 }, { fx: 0.5, fy: 0 }, { fx: 1, fy: 0 }, { fx: 1, fy: 0.5 },
+            { fx: 1, fy: 1 }, { fx: 0.5, fy: 1 }, { fx: 0, fy: 1 }, { fx: 0, fy: 0.5 },
+        ]: Rectangle {
+            x: parent.width * handle.fx - 4.7px;
+            y: parent.height * handle.fy - 4.7px;
+            width: 9.4px;
+            height: 9.4px;
+            border-radius: 4.7px;
+            background: white;
+            border-width: 1.2px;
+            border-color: Theme.accent;
+        }
+    }
+
+    // ---------- labels ----------
+    if root.hints-visible: HorizontalLayout {
+        x: (root.width - self.preferred-width) / 2;
+        y: root.height - 26px - self.preferred-height;
+        width: self.preferred-width;
+        height: self.preferred-height;
+        spacing: 8px;
+        for hint in root.hints: Rectangle {
+            background: Chrome.glass;
+            border-width: 1px;
+            border-color: Chrome.glass-border;
+            border-radius: self.height / 2;
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                padding-top: 7px;
+                padding-bottom: 7px;
+                spacing: 2px;
+                Text {
+                    text: hint.bold;
+                    color: Chrome.text;
+                    font-size: 12px;
+                    font-weight: 600;
+                }
+                Text {
+                    text: " — " + hint.desc;
+                    color: Chrome.text-dim;
+                    font-size: 12px;
+                }
+            }
+        }
+    }
+
+    if root.dims-visible: Rectangle {
+        x: root.dims-x;
+        y: root.dims-y;
+        width: dims-label.preferred-width + 22px;
+        height: 24px;
+        background: Chrome.glass;
+        border-width: 1px;
+        border-color: Chrome.glass-border;
+        border-radius: 8px;
+        dims-label := Text {
+            text: root.dims-text;
+            color: Chrome.text;
+            font-size: 12px;
+            font-weight: 700;
+            font-family: Chrome.mono;
+        }
+    }
+
+    if root.magnifier-visible: Rectangle {
+        x: root.magnifier-x;
+        y: root.magnifier-y;
+        width: 161px;
+        height: 184px;
+        background: Chrome.glass;
+        border-width: 1px;
+        border-color: Chrome.glass-border;
+        border-radius: 14px;
+        PanelShadow {
+            panel-width: parent.width;
+            panel-height: parent.height;
+            source: root.magnifier-shadow;
+            spread: 48px;
+            offset-y: 12px;
+        }
+        Image {
+            x: 9px;
+            y: 9px;
+            width: 143px;
+            height: 143px;
+            source: root.magnifier-image;
+            image-fit: fill;
+        }
+        Text {
+            x: 13px;
+            y: 158px;
+            text: root.magnifier-hex;
+            color: Chrome.text;
+            font-size: 11.5px;
+            font-weight: 700;
+            font-family: Chrome.mono;
+        }
+        Text {
+            x: parent.width - self.width - 13px;
+            y: 158px;
+            text: root.magnifier-pos;
+            color: Chrome.text-dim;
+            font-size: 11.5px;
+            font-family: Chrome.mono;
+        }
+    }
+
+    if root.badge-visible: Rectangle {
+        // `@keyframes badge-in`.
+        private property <bool> entered: !OverlayMotion.enabled;
+        private property <length> slide: self.entered ? 0px : -12px;
+        private property <float> shown: self.entered ? 1 : 0;
+        animate slide { duration: OverlayMotion.enabled ? 350ms : 0ms; easing: cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+        animate shown { duration: OverlayMotion.enabled ? 350ms : 0ms; easing: cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+        init => {
+            // A property animates from the value it last showed, so it has to have shown one.
+            if self.slide != 1000px && self.shown >= 0 {
+                self.entered = true;
+            }
+        }
+        x: (root.width - self.width) / 2;
+        y: 22px + self.slide;
+        opacity: self.shown;
+        width: badge-row.preferred-width;
+        height: badge-row.preferred-height;
+        background: Theme.accent;
+        border-radius: self.height / 2;
+        badge-row := HorizontalLayout {
+            padding-left: 18px;
+            padding-right: 18px;
+            padding-top: 9px;
+            padding-bottom: 9px;
+            spacing: 9px;
+            Path {
+                width: 17px;
+                height: 17px;
+                viewbox-width: 24;
+                viewbox-height: 24;
+                commands: "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z";
+                fill: Theme.accent-text;
+            }
+            Text {
+                text: root.badge-text;
+                color: Theme.accent-text;
+                font-size: 13.5px;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    // ---------- Live Text ----------
+    if root.words-visible: Rectangle {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.height;
+        for word in root.words: Rectangle {
+            x: word.x;
+            y: word.y;
+            width: word.width;
+            height: word.height;
+            border-radius: 3px;
+            background: Theme.accent.with-alpha(word.state == 2 ? 0.46 : word.state == 1 ? 0.26 : 0.14);
+            border-width: 1px;
+            border-color: word.state == 2 ? Theme.accent : Theme.accent.with-alpha(0.22);
+        }
+    }
+
+    if root.rubber-visible: Rectangle {
+        x: root.rubber-x;
+        y: root.rubber-y;
+        width: root.rubber-w;
+        height: root.rubber-h;
+        border-radius: 2px;
+        border-width: 1px;
+        border-color: Theme.accent;
+        background: Theme.accent.with-alpha(0.12);
+    }
+
+    // ---------- toolbars ----------
+    if root.toolbar-visible: Glass {
+        x: root.toolbar-x;
+        rest-y: root.toolbar-y;
+        width: 720px;
+        height: 46px;
+        border-radius: 13px;
+        PanelShadow {
+            panel-width: parent.width;
+            panel-height: parent.height;
+            source: root.toolbar-shadow;
+            spread: 56px;
+            offset-y: 14px;
+        }
+        HorizontalLayout {
+            padding: 6px;
+            spacing: 2px;
+            for icon[i] in [
+                "M5 3l14 7-6.5 1.5L9 18 5 3z",
+                "M3 21l1-4L15.5 5.5l3 3L7 20l-4 1z M14 7l3 3",
+                "M5 19L19 5 M11.5 5H19v7.5",
+                "M5 19L19 5",
+                "M6 5h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z",
+                "M3.5 12a8.5 6.5 0 1 0 17 0a8.5 6.5 0 1 0-17 0z",
+                "M9 11l4 4L20 8l-4-4-7 7z M9 11l-3.5 3.5L8 17l3-2 M4 21h7",
+                "M12 3.5s6 6.4 6 10.5a6 6 0 1 1-12 0C6 9.9 12 3.5 12 3.5z",
+                "M5 6V4h14v2 M12 4v16 M9 20h6",
+                "M3.5 12a8.5 8.5 0 1 0 17 0a8.5 8.5 0 1 0-17 0z M10.5 9.5L12.5 8v8",
+            ]: TbButton {
+                icon: icon;
+                tip: root.tips.tools[i];
+                tips-below: root.toolbar-tips-below;
+                active: root.tool == i;
+                clicked => {
+                    root.set-tool(i);
+                }
+            }
+            Sep { }
+            TbButton {
+                icon: "M9 14L4 9l5-5 M4 9h10a6 6 0 0 1 0 12h-3";
+                tip: root.tips.undo;
+                tips-below: root.toolbar-tips-below;
+                enabled: root.can-undo;
+                clicked => {
+                    root.undo();
+                }
+            }
+            TbButton {
+                icon: "M15 14l5-5-5-5 M20 9H10a6 6 0 0 0 0 12h3";
+                tip: root.tips.redo;
+                tips-below: root.toolbar-tips-below;
+                enabled: root.can-redo;
+                clicked => {
+                    root.redo();
+                }
+            }
+            Sep { }
+            TbButton {
+                icon: "M3 7V5a2 2 0 0 1 2-2h2 M17 3h2a2 2 0 0 1 2 2v2 M21 17v2a2 2 0 0 1-2 2h-2 M7 21H5a2 2 0 0 1-2-2v-2 M7 8h10 M7 12h6 M7 16h8";
+                tip: root.tips.ocr;
+                tips-below: root.toolbar-tips-below;
+                clicked => {
+                    root.action("ocr");
+                }
+            }
+            TbButton {
+                icon: "M12 17v5 M9 4h6l.8 6.2L18 13H6l2.2-2.8L9 4z";
+                tip: root.tips.pin;
+                tips-below: root.toolbar-tips-below;
+                clicked => {
+                    root.action("pin");
+                }
+            }
+            TbButton {
+                icon: "M4 12a8 8 0 1 0 16 0a8 8 0 1 0-16 0z";
+                tip: root.tips.rec;
+                tips-below: root.toolbar-tips-below;
+                rec: true;
+                clicked => {
+                    root.action("rec");
+                }
+            }
+            TbButton {
+                icon: "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z M17 21v-8H7v8 M7 3v5h8";
+                tip: root.tips.save;
+                tips-below: root.toolbar-tips-below;
+                clicked => {
+                    root.action("save");
+                }
+            }
+            TbButton {
+                icon: "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15z";
+                tip: root.tips.claude;
+                tips-below: root.toolbar-tips-below;
+                accented: true;
+                clicked => {
+                    root.action("claude");
+                }
+            }
+            TbButton {
+                icon: "M11 9h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z M5 15V5a2 2 0 0 1 2-2h10";
+                tip: root.tips.copy;
+                tips-below: root.toolbar-tips-below;
+                primary: true;
+                clicked => {
+                    root.action("copy");
+                }
+            }
+            TbButton {
+                icon: "M6 6l12 12 M18 6L6 18";
+                tip: root.tips.cancel;
+                tips-below: root.toolbar-tips-below;
+                danger: true;
+                clicked => {
+                    root.action("cancel");
+                }
+            }
+        }
+    }
+
+    if root.options-visible: Glass {
+        x: root.options-x;
+        rest-y: root.options-y;
+        width: 372px;
+        height: 44px;
+        border-radius: 13px;
+        PanelShadow {
+            panel-width: parent.width;
+            panel-height: parent.height;
+            source: root.options-shadow;
+            spread: 56px;
+            offset-y: 14px;
+        }
+        HorizontalLayout {
+            padding-left: 11px;
+            padding-right: 11px;
+            padding-top: 8px;
+            padding-bottom: 8px;
+            spacing: 6px;
+            alignment: start;
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: center;
+                for value[i] in root.palette: VerticalLayout {
+                    alignment: center;
+                    ColorDot {
+                        value: value;
+                        active: root.color-index == i;
+                        clicked => {
+                            root.set-color(i);
+                        }
+                    }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 11px;
+                    height: 22px;
+                    Rectangle {
+                        x: 5px;
+                        width: 1px;
+                        background: Chrome.glass-border;
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 3px;
+                for size[i] in [4px, 7px, 11px]: SizeButton {
+                    dot: size;
+                    active: root.size-index == i;
+                    tip: root.tips.sizes[i];
+                    tips-below: false;
+                    clicked => {
+                        root.set-size(i);
+                    }
+                }
+            }
+        }
+    }
+
+    if root.text-toolbar-visible: Glass {
+        x: root.text-toolbar-x;
+        rest-y: root.text-toolbar-y;
+        width: 167px;
+        height: 46px;
+        border-radius: 13px;
+        PanelShadow {
+            panel-width: parent.width;
+            panel-height: parent.height;
+            source: root.text-toolbar-shadow;
+            spread: 56px;
+            offset-y: 14px;
+        }
+        HorizontalLayout {
+            padding: 6px;
+            spacing: 2px;
+            TbButton {
+                icon: "M11 9h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z M5 15V5a2 2 0 0 1 2-2h10";
+                tip: root.tips.text-copy;
+                tips-below: root.text-toolbar-tips-below;
+                primary: true;
+                clicked => {
+                    root.text-action("copy");
+                }
+            }
+            TbButton {
+                icon: "M4 8V5a1 1 0 0 1 1-1h3 M16 4h3a1 1 0 0 1 1 1v3 M20 16v3a1 1 0 0 1-1 1h-3 M8 20H5a1 1 0 0 1-1-1v-3 M8 12h8";
+                tip: root.tips.text-all;
+                tips-below: root.text-toolbar-tips-below;
+                clicked => {
+                    root.text-action("all");
+                }
+            }
+            TbButton {
+                icon: "M4 5h7 M7 5v.5C7 9 5.5 12 3 13 M5 9c0 2 2 3.5 5 4.5 M12 20l4-9 4 9 M13.5 17h5";
+                tip: root.tips.text-translate;
+                tips-below: root.text-toolbar-tips-below;
+                clicked => {
+                    root.text-action("translate");
+                }
+            }
+            Sep { }
+            TbButton {
+                icon: "M6 6l12 12 M18 6L6 18";
+                tip: root.tips.text-back;
+                tips-below: root.text-toolbar-tips-below;
+                danger: true;
+                clicked => {
+                    root.text-action("back");
+                }
+            }
+        }
+    }
+
+    card-panel := Glass {
+        visible: root.card-visible;
+        x: root.card-x;
+        rest-y: root.card-y;
+        width: root.card-w;
+        height: self.measured;
+        border-radius: 13px;
+
+        out property <length> body-height: min(card-body-text.preferred-height + 18px, root.height * 0.4);
+        out property <length> measured: 1px + 12px + 22px + 9px + self.body-height + 11px + 34px + 14px + 1px;
+
+        PanelShadow {
+
+            panel-width: parent.width;
+
+            panel-height: parent.height;
+            source: root.card-shadow;
+            spread: 64px;
+            offset-y: 18px;
+        }
+        Path {
+            x: 14.4px;
+            y: 15.4px;
+            width: 17.2px;
+            height: 17.2px;
+            viewbox-width: 24;
+            viewbox-height: 24;
+            commands: "M4 5h7 M7 5v.5C7 9 5.5 12 3 13 M5 9c0 2 2 3.5 5 4.5 M12 20l4-9 4 9 M13.5 17h5";
+            fill: transparent;
+            stroke: Theme.accent;
+            stroke-width: 1.2px;
+            stroke-line-cap: round;
+            stroke-line-join: round;
+        }
+        card-title := Text {
+            x: 39px;
+            y: 13px;
+            height: 22px;
+            text: root.tips.translation-title;
+            color: Chrome.text;
+            font-size: 13px;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+        Text {
+            x: card-title.x + card-title.width + 8px;
+            y: 13px;
+            height: 22px;
+            text: root.card-meta;
+            color: Chrome.text-dim;
+            font-size: 11px;
+            font-family: Chrome.mono;
+            vertical-alignment: center;
+        }
+        Rectangle {
+            x: parent.width - 15px - 22px;
+            y: 13px;
+            width: 22px;
+            height: 22px;
+            border-radius: 6px;
+            background: close-touch.has-hover ? Chrome.btn-hover : transparent;
+            Text {
+                text: "✕";
+                font-size: 13px;
+                color: close-touch.has-hover ? Chrome.text : Chrome.text-dim;
+            }
+            close-touch := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.card-action("close");
+                }
+            }
+        }
+        Rectangle {
+            x: 15px;
+            y: 44px;
+            width: parent.width - 30px;
+            height: parent.body-height;
+            border-radius: 8px;
+            background: Chrome.text.with-alpha(0.06);
+            Flickable {
+                x: 11px;
+                y: 9px;
+                width: parent.width - 22px;
+                height: parent.height - 18px;
+                content-height: max(card-body-text.preferred-height, self.height);
+                card-body-text := TextInput {
+                    width: parent.width;
+                    text: root.card-body;
+                    read-only: true;
+                    single-line: false;
+                    wrap: word-wrap;
+                    color: root.card-loading ? Chrome.text-dim : Chrome.text;
+                    font-size: 14px;
+                    font-italic: root.card-loading;
+                }
+            }
+        }
+        Rectangle {
+            x: 15px;
+            y: parent.height - 15px - 34px;
+            width: parent.width - 30px;
+            height: 34px;
+            border-radius: 8px;
+            background: copy-touch.has-hover ? Theme.accent.brighter(0.1) : Theme.accent;
+            Text {
+                text: root.tips.translation-copy;
+                color: Theme.accent-text;
+                font-size: 13px;
+                font-weight: 600;
+            }
+            copy-touch := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.card-action("copy");
+                }
+            }
+        }
+    }
+
+    if root.flash-visible: Rectangle {
+        // `@keyframes flash-in`.
+        private property <bool> entered: !OverlayMotion.enabled;
+        private property <length> slide: self.entered ? 0px : 8px;
+        private property <float> shown: self.entered ? 1 : 0;
+        animate slide { duration: OverlayMotion.enabled ? 200ms : 0ms; easing: ease-out; }
+        animate shown { duration: OverlayMotion.enabled ? 200ms : 0ms; easing: ease-out; }
+        init => {
+            // A property animates from the value it last showed, so it has to have shown one.
+            if self.slide != 1000px && self.shown >= 0 {
+                self.entered = true;
+            }
+        }
+        x: root.flash-x - self.width / 2;
+        y: root.flash-y + self.slide;
+        opacity: self.shown;
+        width: flash-label.preferred-width + 32px;
+        height: flash-label.preferred-height + 14px;
+        background: Theme.accent;
+        border-radius: self.height / 2;
+        flash-label := Text {
+            text: root.flash-text;
+            color: Theme.accent-text;
+            font-size: 12.5px;
+            font-weight: 600;
+        }
+    }
+
+    // ---------- text editor ----------
+    editor-box := Rectangle {
+        visible: root.editor-visible;
+        x: root.editor-x;
+        y: root.editor-y;
+        width: max(30px, min(editor-input.preferred-width, root.width * 0.6 - 15px) + 15px);
+        height: editor-input.preferred-height + 7px;
+        background: #00000026;
+        border-radius: 4px;
+
+        for i in ceil(editor-box.width / 7.5px): Rectangle {
+            x: i * 7.5px;
+            y: 0px;
+            width: 4.5px;
+            height: 1.5px;
+            background: #ffffff8c;
+        }
+        for i in ceil(editor-box.width / 7.5px): Rectangle {
+            x: i * 7.5px;
+            y: parent.height - 1.5px;
+            width: 4.5px;
+            height: 1.5px;
+            background: #ffffff8c;
+        }
+        for i in ceil(editor-box.height / 7.5px): Rectangle {
+            x: 0px;
+            y: i * 7.5px;
+            width: 1.5px;
+            height: 4.5px;
+            background: #ffffff8c;
+        }
+        for i in ceil(editor-box.height / 7.5px): Rectangle {
+            x: parent.width - 1.5px;
+            y: i * 7.5px;
+            width: 1.5px;
+            height: 4.5px;
+            background: #ffffff8c;
+        }
+
+        FocusScope {
+            capture-key-pressed(event) => {
+                if event.text == Key.Return && !event.modifiers.shift {
+                    root.editor-commit();
+                    return accept;
+                }
+                if event.text == Key.Escape {
+                    root.editor-cancel();
+                    return accept;
+                }
+                reject
+            }
+            editor-input := TextInput {
+                x: 7.5px;
+                y: 3.5px;
+                width: parent.width - 15px;
+                height: parent.height - 7px;
+                text <=> root.editor-text;
+                single-line: false;
+                wrap: word-wrap;
+                color: root.editor-color;
+                font-size: root.editor-font;
+                font-weight: 700;
+                edited => {
+                    root.editor-edited(self.text);
+                }
+            }
+        }
+    }
 }
