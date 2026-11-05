@@ -40,6 +40,8 @@ Port traits stay small. If a window or tool needs something new, add one method,
   so they need nothing from the UI toolkit and work while no window exists.
 - **Tokio runtime (few workers):** MCP and test HTTP server, orchestration, spawn_blocking for slow ports.
 - **Recorder threads:** capture and encode run on dedicated threads, never on the UI thread.
+- **Update threads:** plain threads, not the runtime's: it waits for its blocking tasks on the way out, and a stalled
+  download must not hold the application open. See [UPDATES.md](UPDATES.md).
 
 Other threads talk to the UI only through `UiPort`, which posts to the event loop.
 

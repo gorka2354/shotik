@@ -6,6 +6,9 @@ name: Release
 #
 # The build runs with read-only permissions, from a clean toolchain and no restored cache, so nothing
 # from an earlier run can reach a release. Only the short publish job can write to the repository.
+#
+# Nothing here signs updates: a key in this repository's secrets would sign for anyone who takes over the account. A draft
+# becomes an update on the machine with the key, after it has been checked: installer/publish-release.js, docs/rust/UPDATES.md.
 on:
   push:
     tags: ['v*']
@@ -68,6 +71,9 @@ jobs:
       - name: Installer does what it says
         shell: powershell
         run: installer\smoke.ps1 -Setup (Resolve-Path "dist\Shotik-Setup-$env:CRATE_VERSION.exe").Path
+      - name: The update works from end to end
+        shell: bash
+        run: node installer/update-smoke.js "$(pwd -W)/dist/Shotik-Setup-$CRATE_VERSION.exe"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: shotik-windows

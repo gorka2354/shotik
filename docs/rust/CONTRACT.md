@@ -111,6 +111,8 @@ action shapes are in `docs/rust/TEST-ROUTES.md`. `exec-js` does not exist in Rus
   AAC in `.m4a`. `recording.format` values stay valid in `settings.json`.
 - **Fallback name:** `capture_window`'s fallback reports its own method name instead of `desktopCapturer`.
 - **Removed:** `exec-js`, `win-sources` (Chromium diagnostics), Microsoft Store packaging for now.
+- **Updates:** new, see [UPDATES.md](UPDATES.md). The Electron version had none, so `settings.json` gains `checkUpdates`, default
+  on, and the application reaches the network without being asked: once a day, and only GitHub.
 - **macOS:** not in the first Rust release.
 - **Installer:** not electron-builder, but the same install location, shortcuts and upgrade over Electron.
 - **Secure desktop:** a capture fails with an explicit error instead of returning a black frame.

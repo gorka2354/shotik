@@ -218,7 +218,8 @@ Rust binary; the table compares it with the last Electron build, on one machine,
 
 1.3.0 was measured with a game running, 1.3.1 and 2.0 on an idle machine, one after the other. 1.3.1 gave up its warm capture timer to fix a handle leak, which is why it captures slower than 1.3.0. Medians on a Ryzen 9 7950X3D with three monitors, one of them 4K at 150%, in ghost mode: on the real desktop a Rust overlay appears about 150 ms after the key press.
 
-- **No telemetry, no account, no network** except the translation call you trigger (free service or your DeepL key). Screenshots stay on your disk.
+- **No telemetry, no account.** Two things reach the network: the translation call you trigger (free service or your DeepL key), and a once-a-day look at GitHub for a newer version, which you can turn off in Settings. Screenshots stay on your disk.
+- **Updates in one click, and only on your click.** Updates are signed with a key that is not on GitHub, so taking over the repository is not enough to reach your machine. Details: [docs/rust/UPDATES.md](docs/rust/UPDATES.md).
 - **One executable, no runtime.** The overlay stays out of memory until you need it: after you close it, the app is back to a few megabytes.
 - **The select-to-translate watcher** runs inside the app and uses Windows UI Automation to read *whether* text is selected. It never logs keystrokes and never touches the clipboard. It runs **only** while "Translate bubble on selection" is on, and you can turn it off in Settings.
 

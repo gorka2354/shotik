@@ -257,3 +257,13 @@ Foundation seek check. `probeMedia` returns `{duration,seekTo,seeked,position}`;
 `seeked` is true only when MF can seek and the actual position is within 0.2 s.
 The original tests also independently check MF's duration (0.1 s tolerance) and
 a later seek (0.3 s tolerance). No synthetic successful media result is returned.
+
+## Updates
+
+- `update-status`: `current`, `available`, `checking`, `installing`, `checked`, `error`. The same object is `update` in `app:state`.
+- `update-check`: looks now, as the settings button does, and returns the status when it is done.
+- `ui-action` on `toast` with `{"type":"action"}` presses the toast's button. It fails if this toast has none.
+- `ui-action` on `main` with `{"type":"update-check"}` or `{"type":"update-install"}` presses the settings and sidebar buttons.
+
+`SHOTIK_UPDATE_BASE` and `SHOTIK_UPDATE_PUBLIC_KEY` point a test instance at a test server, and make it check by itself two seconds
+after starting, as a real one does after a minute. See [UPDATES.md](UPDATES.md).
