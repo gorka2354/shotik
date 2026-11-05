@@ -33,7 +33,8 @@ recording runs or the capture overlay is open. If an antivirus blocks the instal
 always install the latest version by hand from the [releases page](https://github.com/gorka2354/shotik/releases/latest), and
 your settings and history stay. Details: `%TEMP%\shotik-bubble.log`.
 
-If Shotik does not come back after an update, start it from the Start menu.
+If Shotik does not come back after an update, start it from the Start menu. If it keeps asking you to finish a recording when none is
+running, a recording is stuck being written: restart Shotik and update then.
 
 ## Uninstalling
 

@@ -1,6 +1,7 @@
 //! Updating to a newer release: when to look, what to tell the user, when a restart is safe. What may be trusted is
 //! decided in `shotik_core::update`. See `docs/rust/UPDATES.md`.
 
+use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -69,6 +70,13 @@ pub(crate) struct UpdateState {
     error: Option<String>,
     /// Which version a toast has told the user about. The tray and main window keep saying it; a toast says it once.
     announced: Option<Version>,
+}
+
+/// A panic on the way must not leave a flag up for the rest of the run: recordings or further checks would be refused
+/// until a restart. The recorder treats its sessions the same way.
+fn without_panic<T>(work: impl FnOnce() -> Result<T>) -> Result<T> {
+    panic::catch_unwind(AssertUnwindSafe(work))
+        .unwrap_or_else(|_| Err(Error::msg("the update stopped because of an internal error")))
 }
 
 fn clip(text: &str) -> String {
@@ -161,7 +169,7 @@ impl App {
             state.update.checking = true;
         }
         self.update_changed();
-        let found = self.newer_release();
+        let found = without_panic(|| self.newer_release());
         let toast = self.finish_check(found, manual);
         self.update_changed();
         if let Some(toast) = toast {
@@ -243,12 +251,16 @@ impl App {
         let Some((manifest, install_dir)) = self.begin_install() else {
             return;
         };
-        let result = self.download_and_start_installer(&manifest, &install_dir);
+        let result = without_panic(|| self.download_and_start_installer(&manifest, &install_dir));
         match result {
             // It cannot replace the executable while this process runs.
             Ok(()) => self.shutdown(),
             Err(e) => {
-                self.state().update.installing = false;
+                {
+                    let mut state = self.state();
+                    state.update.installing = false;
+                    state.update.handing_over = false;
+                }
                 self.update_failed(&e);
                 self.update_changed();
             }
@@ -311,14 +323,10 @@ impl App {
         std::fs::write(&path, installer).map_err(|e| Error::io("write the update", &path, e))?;
         // The download took a while, and a recording may have started meanwhile. The flag goes up first: see `handing_over`.
         self.state().update.handing_over = true;
-        let result = match self.update_blocked() {
-            Some(reason) => Err(Error::msg(reason)),
-            None => self.ports.shell.run_installer(&path, install_dir, self.ports.ui.main_visible()),
-        };
-        if result.is_err() {
-            self.state().update.handing_over = false;
+        if let Some(reason) = self.update_blocked() {
+            return Err(Error::msg(reason));
         }
-        result
+        self.ports.shell.run_installer(&path, install_dir, self.ports.ui.main_visible())
     }
 
     /// An installer cannot delete itself, so the version it installed cleans up after it, once it has surely exited.

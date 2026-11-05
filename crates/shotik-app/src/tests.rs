@@ -364,6 +364,8 @@ struct FakeUi {
     update_pushed: Mutex<Option<Value>>,
     /// Runs at the last moment before the installer starts, for what the user does then.
     at_main_visible: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+    /// Runs when something asks whether the overlay is open: the last thing a look before an update reads.
+    at_overlay_look: Mutex<Option<Box<dyn FnOnce() + Send>>>,
 }
 impl UiPort for FakeUi {
     fn overlay_begin(&self, _mode: OverlayMode, marks: MarkSink, done: Once<OverlayOutcome>) -> Result<u64> {
@@ -402,6 +404,10 @@ impl UiPort for FakeUi {
         }
     }
     fn overlay_is_open(&self) -> bool {
+        let moment = self.at_overlay_look.lock().unwrap().take();
+        if let Some(moment) = moment {
+            moment();
+        }
         *self.overlay_open.lock().unwrap()
     }
     fn overlay_bounds(&self) -> Vec<Rect> {
@@ -412,7 +418,8 @@ impl UiPort for FakeUi {
     }
     fn hide_main(&self) {}
     fn main_visible(&self) -> bool {
-        if let Some(moment) = self.at_main_visible.lock().unwrap().take() {
+        let moment = self.at_main_visible.lock().unwrap().take();
+        if let Some(moment) = moment {
             moment();
         }
         *self.main_open.lock().unwrap()
@@ -1430,6 +1437,8 @@ fn an_overlay_asked_for_at_the_last_moment_is_refused() {
     let r = rig("update-last-overlay");
     r.publish("2.1.0");
     r.app.check_for_update(false);
+    // So that a regression fails here instead of waiting for a user who never comes.
+    *r.ui.overlay_answer.lock().unwrap() = Some(OverlayOutcome::Cancelled);
     let app = r.app.clone();
     *r.ui.at_main_visible.lock().unwrap() = Some(Box::new(move || {
         assert!(matches!(app.run_overlay(OverlayMode::default()), crate::overlay::OverlayResult::Busy));
@@ -1437,6 +1446,52 @@ fn an_overlay_asked_for_at_the_last_moment_is_refused() {
     r.app.install_update();
     assert!(!*r.ui.overlay_open.lock().unwrap(), "it would be cut off a moment later");
     assert_eq!(r.quit_count(), 1);
+}
+
+#[test]
+fn a_recording_asked_for_during_the_last_look_is_refused() {
+    let r = rig("update-during-look");
+    r.publish("2.1.0");
+    r.app.check_for_update(false);
+    let (ui, app) = (r.ui.clone(), r.app.clone());
+    *r.http.during.lock().unwrap() = Some(Box::new(move |url| {
+        if url.contains("Shotik-Setup") {
+            let app = app.clone();
+            *ui.at_overlay_look.lock().unwrap() = Some(Box::new(move || {
+                // Too late for this look to see it, so the flag has to be up already.
+                let _ = app.start_recording(RecordTarget::AudioOnly);
+            }));
+        }
+    }));
+    r.app.install_update();
+    assert!(r.recorder.starts.lock().unwrap().is_empty(), "it would be cut off a moment later");
+    assert_eq!(r.quit_count(), 1);
+}
+
+#[test]
+fn a_panic_during_the_handover_does_not_block_captures_for_good() {
+    let r = rig("update-panic");
+    r.publish("2.1.0");
+    r.app.check_for_update(false);
+    *r.ui.at_main_visible.lock().unwrap() = Some(Box::new(|| panic!("injected by the test")));
+    r.app.install_update();
+    assert_eq!(r.quit_count(), 0);
+    let status = r.app.update_status();
+    assert_eq!(status["installing"], false);
+    assert!(status["error"].as_str().unwrap().contains("internal error"), "{status}");
+    assert_eq!(r.toasts().last().unwrap().kind, "update-failed");
+    assert!(r.app.start_recording(RecordTarget::AudioOnly).unwrap().is_some());
+}
+
+#[test]
+fn a_panic_during_a_check_does_not_stop_later_ones() {
+    let r = rig("update-check-panic");
+    r.publish("2.1.0");
+    *r.http.during.lock().unwrap() = Some(Box::new(|_| panic!("injected by the test")));
+    r.app.check_for_update(false);
+    let status = r.app.update_status();
+    assert_eq!(status["checking"], false, "a flag left up would refuse every later check");
+    assert!(status["error"].as_str().unwrap().contains("internal error"), "{status}");
 }
 
 #[test]
