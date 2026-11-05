@@ -16,6 +16,7 @@ pub mod ocr_select;
 pub mod ports;
 pub mod settings;
 pub mod translate;
+pub mod update;
 
 mod storage;
 mod text;

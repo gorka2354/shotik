@@ -25,6 +25,17 @@ Settings, history and screenshots stay where they were, in `%APPDATA%\Shotik`. F
 cannot read are reset one by one, so one damaged value costs that value only. The last Electron build,
 including the macOS DMG, is [v1.3.1](https://github.com/gorka2354/shotik/releases/tag/v1.3.1).
 
+## An update does not arrive or does not install
+
+Settings show the version and what the last check found. A check that failed says why, and is tried again within the hour; a
+portable copy opens the release page, because an installer would put a second copy elsewhere. The button waits while a
+recording runs or the capture overlay is open. If an antivirus blocks the installer, Shotik says so and keeps running; you can
+always install the latest version by hand from the [releases page](https://github.com/gorka2354/shotik/releases/latest), and
+your settings and history stay. Details: `%TEMP%\shotik-bubble.log`.
+
+If Shotik does not come back after an update, start it from the Start menu. If it keeps asking you to finish a recording when none is
+running, a recording is stuck being written: restart Shotik and update then.
+
 ## Uninstalling
 
 Uninstalling removes the program, its shortcuts and its autostart entry. Your settings, history and

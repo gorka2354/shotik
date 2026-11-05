@@ -15,9 +15,30 @@ pub(crate) enum OverlayResult {
     Action(OverlayAction),
 }
 
+/// Counted for an update's sake, however the session ends.
+struct OverlaySession<'a>(&'a App);
+
+impl Drop for OverlaySession<'_> {
+    fn drop(&mut self) {
+        self.0.state().overlay_sessions -= 1;
+    }
+}
+
 impl App {
     /// Opens the overlay and waits for the user. Blocks: run on a blocking thread.
     pub(crate) fn run_overlay(self: &Arc<Self>, mode: OverlayMode) -> OverlayResult {
+        {
+            let mut state = self.state();
+            if state.update.handing_over {
+                return OverlayResult::Busy;
+            }
+            state.overlay_sessions += 1;
+        }
+        let _session = OverlaySession(self);
+        self.overlay_session(mode)
+    }
+
+    fn overlay_session(self: &Arc<Self>, mode: OverlayMode) -> OverlayResult {
         let ui = &self.ports.ui;
         if ui.overlay_is_open() {
             return OverlayResult::Busy;
@@ -96,6 +117,7 @@ impl App {
             thumb: None,
             file: None,
             color: None,
+            action: None,
         });
     }
 

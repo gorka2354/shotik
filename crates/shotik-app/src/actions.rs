@@ -27,7 +27,7 @@ fn clip(text: &str, chars: usize) -> String {
 }
 
 pub(crate) fn text_toast(title: String, body: String) -> Toast {
-    Toast { kind: "text".into(), title, body, thumb: None, file: None, color: None }
+    Toast { kind: "text".into(), title, body, thumb: None, file: None, color: None, action: None }
 }
 
 impl App {
@@ -53,6 +53,7 @@ impl App {
             thumb: entry.and_then(|e| e.thumb.clone()),
             file: entry.map(|e| e.file.clone()),
             color: None,
+            action: None,
         }
     }
 
@@ -115,6 +116,7 @@ impl App {
                         thumb: entry.thumb.clone(),
                         file: Some(entry.file.clone()),
                         color: None,
+                        action: None,
                     });
                 }
                 Ok(Some(entry.file))
@@ -135,6 +137,7 @@ impl App {
                         thumb: None,
                         file: Some(path.clone()),
                         color: None,
+                        action: None,
                     });
                 }
                 Ok(Some(path))

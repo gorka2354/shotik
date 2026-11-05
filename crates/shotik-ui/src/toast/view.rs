@@ -59,6 +59,12 @@ impl View {
                 })
             });
             let weak = window.as_weak();
+            window.on_action(|| {
+                runtime::on_ui(|| {
+                    hide_ui();
+                    runtime::host().update_install();
+                })
+            });
             window.on_hover(move |over| {
                 let weak = weak.clone();
                 runtime::on_ui(move || {
@@ -80,6 +86,7 @@ impl View {
         crate::apply_theme!(window, runtime::current_theme());
         window.set_heading(content.title.as_str().into());
         window.set_message(content.body.as_str().into());
+        window.set_action_text(content.action.as_deref().unwrap_or_default().into());
         let thumbnail = content.thumb.as_deref().map(runtime::uncached_image).transpose()?;
         window.set_has_thumbnail(thumbnail.is_some());
         window.set_thumbnail(thumbnail.unwrap_or_default());
@@ -103,6 +110,8 @@ impl View {
                     "video" => "⏺",
                     "audio" => "♪",
                     "color" => "◉",
+                    "update" => "↑",
+                    "update-failed" => "!",
                     _ => "✓",
                 }
             }
@@ -181,6 +190,19 @@ pub fn ui_state() -> Result<Value> {
     runtime::on_ui_wait(|| json!({"visible":VIEW.with_borrow(|view| view.state.visible)}))
 }
 pub fn ui_action(action: Value) -> Result<Value> {
+    // The same way in as the button on the toast.
+    if action.get("type").and_then(Value::as_str) == Some("action") {
+        return runtime::on_ui_wait(|| {
+            let window = VIEW.with_borrow(|view| view.window.as_ref().map(|window| window.clone_strong()));
+            match window {
+                Some(window) if !window.get_action_text().is_empty() => {
+                    window.invoke_action();
+                    Ok(json!({"visible":VIEW.with_borrow(|view| view.state.visible)}))
+                }
+                _ => Err(Error::msg("the toast has no button")),
+            }
+        })?;
+    }
     let over = super::state::hover_action(&action)?;
     runtime::on_ui_wait(move || {
         hover_ui(over);

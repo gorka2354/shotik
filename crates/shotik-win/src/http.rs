@@ -13,7 +13,9 @@ use windows::Win32::Networking::WinHttp::{
     WINHTTP_FLAG_SECURE, WINHTTP_OPEN_REQUEST_FLAGS, WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_QUERY_STATUS_CODE,
 };
 
-const MAX_RESPONSE: usize = 16 * 1024 * 1024;
+/// Bounds what a hostile server can make this process hold. It must stay well above the size of an installer: a limit
+/// below it could only be fixed by the update it would block.
+const MAX_RESPONSE: usize = 128 * 1024 * 1024;
 
 /// A WinHTTP handle closed on drop.
 struct Handle(*mut core::ffi::c_void);
@@ -233,6 +235,18 @@ mod tests {
         let error = WinHttp.send(request("GET", &url, &[], None)).err().expect("nothing listens").to_string();
         assert!(!error.contains("secret-text"), "{error}");
         assert!(!error.contains("127.0.0.1"), "{error}");
+    }
+
+    /// The kind of address an update downloads from, redirected to another host, at the size of a real installer. It needs the
+    /// network, so it is left out of a normal run: `cargo test -p shotik-win --lib -- --ignored github_release`.
+    #[test]
+    #[ignore = "needs the network"]
+    fn github_release_downloads_follow_redirects() {
+        let url = "https://github.com/gorka2354/shotik/releases/download/v2.0.1/Shotik-Setup-2.0.1.exe";
+        let reply = WinHttp.send(HttpRequest { method: "GET", url, headers: &[], body: None, timeout_ms: 60_000 }).unwrap();
+        assert_eq!(reply.status, 200);
+        assert!(reply.body.len() > 1024 * 1024, "{} bytes", reply.body.len());
+        assert_eq!(&reply.body[..2], b"MZ", "an executable, not a page");
     }
 
     #[test]

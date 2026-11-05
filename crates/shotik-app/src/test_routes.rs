@@ -48,6 +48,11 @@ impl App {
         let index = body.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
         match route {
             "ping" => Ok(json!("pong")),
+            "update-status" => Ok(self.update_status()),
+            "update-check" => {
+                self.check_for_update(true);
+                Ok(self.update_status())
+            }
             "trigger" => self.route_trigger(&body),
             "record-stop" => {
                 self.stop_recording();
@@ -177,6 +182,7 @@ impl App {
                     thumb: None,
                     file: None,
                     color: None,
+                    action: None,
                 });
                 wait(250);
                 Ok(json!({ "visible": ui.toast_visible() }))

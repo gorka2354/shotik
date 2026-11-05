@@ -194,6 +194,11 @@ pub trait Shell: Send + Sync {
     fn reveal_in_folder(&self, path: &Path) -> Result<()>;
     fn open_path(&self, path: &Path) -> Result<()>;
     fn open_url(&self, url: &str) -> Result<()>;
+    /// Starts a verified installer on `install_dir` and returns at once: it stops this process, replaces the
+    /// executable and starts the new one, with the main window open when `show_main` says so.
+    fn run_installer(&self, installer: &Path, install_dir: &Path, show_main: bool) -> Result<()>;
+    /// False while a notification nobody asked for would interrupt: a fullscreen game or presentation, a locked screen.
+    fn notifications_welcome(&self) -> bool;
 }
 
 pub trait Dialogs: Send + Sync {
@@ -390,6 +395,9 @@ pub trait RecorderControl: Send + Sync {
     fn cancel(&self);
     /// True from the first moment of a start until the file is finalized.
     fn is_recording(&self) -> bool;
+    /// True until every session has written its file. Unlike `is_recording`, it stays true after the safety timeout
+    /// gave up on one, whose worker goes on writing: ending the process then would lose that file.
+    fn has_unfinished_file(&self) -> bool;
     fn status(&self) -> RecStatus;
     fn set_listener(&self, events: Callback<RecorderEvent>);
 }
@@ -453,6 +461,9 @@ pub struct Toast {
     pub file: Option<PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
+    /// The label of a button on the toast. Only an update toast has one so far.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -495,6 +506,8 @@ pub enum MainEvent {
     HistoryChanged,
     McpLog(Value),
     RecState(RecStatus),
+    /// The `update` part of `app_state`.
+    UpdateStatus(Value),
     ThemeChanged(Theme),
 }
 
@@ -630,6 +643,11 @@ pub trait AppHost: Send + Sync {
     fn reveal_file(&self, path: &Path) -> Result<()>;
     fn translate_text(&self, text: &str, target: Option<&str>, done: Once<Result<Value>>);
     fn copy_text(&self, text: &str) -> Result<()>;
+
+    /// Asks for the latest version now, whatever the setting says, and reports the answer to the user.
+    fn update_check(&self);
+    /// Downloads and installs the version found. The application restarts when this works.
+    fn update_install(&self);
 
     // overlay
     fn overlay_ocr_boxes(&self, png: Vec<u8>, done: Once<OcrBoxes>);

@@ -83,6 +83,8 @@ pub struct State {
     #[serde(skip)]
     pub mcp: Value,
     #[serde(skip)]
+    pub update: Value,
+    #[serde(skip)]
     pub logs: Vec<Value>,
     #[serde(skip)]
     pub history: Vec<Value>,
@@ -132,6 +134,10 @@ pub enum Action {
     HistoryPin {
         id: String,
     },
+    UpdateInstall,
+    UpdateCheck,
+    #[serde(skip)]
+    UpdateStatus(Value),
     #[serde(skip)]
     Loaded {
         app: Value,
@@ -207,9 +213,34 @@ pub enum Effect {
         operation: String,
     },
     ClearHistory,
+    UpdateInstall,
+    UpdateCheck,
 }
 
 impl State {
+    /// The label of the update button beside the version. Empty when there is nothing to offer.
+    pub fn update_button(&self) -> String {
+        if self.update["installing"] == true {
+            return self.tr("updateInstalling");
+        }
+        self.update["available"].as_str().map_or_else(String::new, |version| self.format("updateTo", &[version]))
+    }
+
+    /// What the check row of the settings page says under the version.
+    pub fn update_summary(&self) -> String {
+        if self.update["checking"] == true {
+            self.tr("updateChecking")
+        } else if let Some(version) = self.update["available"].as_str() {
+            self.format("updateStatusAvailable", &[version])
+        } else if let Some(error) = self.update["error"].as_str() {
+            self.format("updateStatusFailed", &[error])
+        } else if self.update["checked"] == true {
+            self.tr("updateStatusLatest")
+        } else {
+            self.tr("updateStatusUnknown")
+        }
+    }
+
     pub fn tr(&self, key: &str) -> String {
         self.dictionary
             .get(key)
@@ -344,6 +375,7 @@ pub fn reduce(state: &mut State, action: Action) -> Result<Vec<Effect>> {
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .into();
+            state.update = app.get("update").cloned().unwrap_or(Value::Null);
             state.logs = app
                 .get("mcpLog")
                 .and_then(Value::as_array)
@@ -505,6 +537,9 @@ pub fn reduce(state: &mut State, action: Action) -> Result<Vec<Effect>> {
             state.logs.truncate(60);
         }
         Action::McpStatus(status) => state.mcp = status,
+        Action::UpdateStatus(status) => state.update = status,
+        Action::UpdateInstall => effects.push(Effect::UpdateInstall),
+        Action::UpdateCheck => effects.push(Effect::UpdateCheck),
         Action::RecState(recording) => state.recording = recording,
     }
     Ok(effects)
@@ -844,6 +879,33 @@ mod tests {
             reduce(&mut state, Action::Capture("record".into())).unwrap(),
             vec![Effect::Capture("stop".into())]
         );
+    }
+    #[test]
+    fn the_update_button_offers_what_was_found_and_goes_quiet_while_installing() {
+        let mut state = loaded();
+        assert_eq!(state.update_button(), "", "nothing to offer, no button");
+        reduce(&mut state, Action::UpdateStatus(json!({"available":"2.1.0"}))).unwrap();
+        assert_eq!(state.update_button(), "Update to 2.1.0");
+        reduce(&mut state, Action::UpdateStatus(json!({"available":"2.1.0","installing":true}))).unwrap();
+        assert_eq!(state.update_button(), state.tr("updateInstalling"));
+    }
+    #[test]
+    fn the_update_row_says_what_the_last_check_found() {
+        let mut state = loaded();
+        let summary = |state: &State, status: Value| State { update: status, ..state.clone() }.update_summary();
+        assert_eq!(summary(&state, json!({})), "not checked yet");
+        assert_eq!(summary(&state, json!({"checking":true})), "Checking…");
+        assert_eq!(summary(&state, json!({"checked":true})), "this is the latest version");
+        assert_eq!(summary(&state, json!({"checked":true,"available":"2.1.0"})), "version 2.1.0 is available");
+        assert_eq!(summary(&state, json!({"error":"offline"})), "could not check: offline");
+        reduce(&mut state, Action::UpdateStatus(json!({"checked":true}))).unwrap();
+        assert_eq!(state.update_summary(), "this is the latest version");
+    }
+    #[test]
+    fn update_buttons_become_host_calls() {
+        let mut state = loaded();
+        assert_eq!(reduce(&mut state, Action::UpdateInstall).unwrap(), vec![Effect::UpdateInstall]);
+        assert_eq!(reduce(&mut state, Action::UpdateCheck).unwrap(), vec![Effect::UpdateCheck]);
     }
     #[test]
     fn relative_time_uses_the_current_dictionary() {

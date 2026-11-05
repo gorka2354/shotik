@@ -13,7 +13,9 @@ export component Toast inherits Window {
     in property <bool> has-thumbnail;
     in property <string> glyph;
     in property <color> swatch: #262a36;
+    in property <string> action-text;
     callback dismiss();
+    callback action();
     callback open-file();
     callback hover(bool);
     Rectangle {
@@ -39,11 +41,19 @@ export component Toast inherits Window {
                 commands: "M8 7h12v14H8z M16 4V2H3v15h2 M11 11h6 M11 15h6";
                 fill: transparent; stroke: #000000; stroke-width: 1px; }
         }
-        Rectangle { x: 112px; y: 33px; width: 6px; height: 6px; border-radius: 3px; background: Theme.accent; }
-        Text { x: 125px; y: 26px; width: 202px; height: 19px;
+        Rectangle { x: 112px; y: root.action-text == "" ? 33px : 19px; width: 6px; height: 6px; border-radius: 3px; background: Theme.accent; }
+        Text { x: 125px; y: root.action-text == "" ? 26px : 12px; width: 202px; height: 19px;
             text: root.heading; color: Theme.text; font-size: 13px; font-weight: 600; overflow: elide; }
-        Text { x: 112px; y: 48px; width: 215px; height: 18px;
+        Text { x: 112px; y: root.action-text == "" ? 48px : 32px; width: 215px; height: 18px;
             text: root.message; color: Theme.text-secondary; font-size: 12px; overflow: elide; }
+        Rectangle {
+            visible: root.action-text != "";
+            x: 112px; y: 56px; width: max(84px, label.preferred-width + 24px); height: 26px; border-radius: 5px;
+            background: act.has-hover ? Theme.accent.brighter(10%) : Theme.accent;
+            label := Text { text: root.action-text; color: Theme.accent-text; font-size: 12px; font-weight: 600;
+                horizontal-alignment: center; vertical-alignment: center; }
+            act := TouchArea { enabled: root.action-text != ""; mouse-cursor: pointer; clicked => { root.action(); } }
+        }
         Rectangle {
             x: root.width - 45px; y: 34px; width: 24px; height: 24px; border-radius: 5px;
             background: close.has-hover ? Theme.hover : transparent;
@@ -52,7 +62,7 @@ export component Toast inherits Window {
             close := TouchArea { mouse-cursor: pointer; clicked => { root.dismiss(); } }
         }
         // One enclosing hover state also covers the close button and image.
-        out property <bool> hovering: whole.has-hover || close.has-hover;
+        out property <bool> hovering: whole.has-hover || close.has-hover || act.has-hover;
         changed hovering => { root.hover(self.hovering); }
     }
 }

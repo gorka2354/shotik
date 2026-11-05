@@ -12,6 +12,7 @@ mod recording;
 mod selection;
 mod test_routes;
 mod tray;
+mod update;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
@@ -26,6 +27,7 @@ use shotik_core::{i18n, Result, Settings};
 use tokio::runtime::Handle;
 
 use diagnostics::Diagnostics;
+pub use update::UpdateConfig;
 
 /// Facts about this run, resolved by the binary from the environment and arguments.
 #[derive(Clone, Debug)]
@@ -48,6 +50,7 @@ pub struct Environment {
     pub platform: &'static str,
     pub locale: String,
     pub temp_dir: PathBuf,
+    pub update: UpdateConfig,
 }
 
 /// Writes a GIF next to the video: fps 12, at most 640 px wide.
@@ -96,6 +99,9 @@ struct State {
     rec_starting: Option<Arc<std::sync::atomic::AtomicBool>>,
     /// `set-theme` in tests.
     forced_theme: Option<Theme>,
+    update: update::UpdateState,
+    /// Overlays from the moment they begin to open until the user is done.
+    overlay_sessions: u32,
 }
 
 pub struct App {
@@ -135,10 +141,12 @@ impl App {
         let capture = self.ports.capture.clone();
         self.spawn(move |_| capture.warm_up());
         self.start_selection_watcher();
+        self.start_update_schedule();
 
         if !argv.iter().any(|a| a == "--hidden") {
             self.ports.ui.show_main();
         }
+        self.announce_update_result(argv);
         if let Some(mode) = cli_capture_mode(argv) {
             self.spawn(move |app| {
                 std::thread::sleep(std::time::Duration::from_millis(400));

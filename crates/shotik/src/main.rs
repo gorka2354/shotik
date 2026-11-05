@@ -5,7 +5,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use shotik_app::{App, Environment, Ports};
+use shotik_app::{App, Environment, Ports, UpdateConfig};
 use shotik_core::history::FileHistory;
 use shotik_core::ports::{Callback, ScreenCapture, Tray, TrayItem, Hotkeys, HotkeyAction, HotkeyBinding, HotkeyError, SelectionEvent, SelectionWatcher};
 use shotik_core::settings::{defaults, FileSettings};
@@ -146,6 +146,13 @@ fn run(temp: &std::path::Path) -> Result<()> {
         platform: "win32",
         locale,
         temp_dir: temp.to_path_buf(),
+        update: UpdateConfig::resolve(
+            test_mode,
+            ghost,
+            std::env::var("SHOTIK_UPDATE_BASE").ok(),
+            std::env::var("SHOTIK_UPDATE_PUBLIC_KEY").ok(),
+            std::env::current_exe().ok().as_deref().and_then(shotik_win::paths::install_dir_of),
+        ),
     };
 
     let app = App::new(ports, env, rt.handle().clone());

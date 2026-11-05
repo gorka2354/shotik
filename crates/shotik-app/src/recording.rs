@@ -46,7 +46,7 @@ impl App {
         let pending = Arc::new(AtomicBool::new(false));
         {
             let mut state = self.state();
-            if state.rec_starting.is_some() || self.ports.recorder.is_recording() {
+            if state.rec_starting.is_some() || state.update.handing_over || self.ports.recorder.is_recording() {
                 return Ok(None);
             }
             state.rec_starting = Some(pending.clone());
@@ -171,6 +171,7 @@ impl App {
                 thumb: entry.thumb.clone(),
                 file: Some(entry.file.clone()),
                 color: None,
+                action: None,
             });
         }
         self.set_last_processed("record-done", Some(&entry.file));

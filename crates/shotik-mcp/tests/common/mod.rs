@@ -291,6 +291,9 @@ impl RecorderControl for FakeRecorder {
     fn is_recording(&self) -> bool {
         self.0.lock().unwrap().recording
     }
+    fn has_unfinished_file(&self) -> bool {
+        self.is_recording()
+    }
     fn status(&self) -> RecStatus {
         self.0.lock().unwrap().clone()
     }
@@ -402,7 +405,7 @@ impl Fixture {
             "translate": {"target":"en", "provider":"free", "deeplKey":"", "autoBubble":false, "ocrFallback":false},
             "recording": {"fps":30, "format":"mp4", "systemAudio":false, "microphone":false, "microphoneDeviceId":"", "countdown":false},
             "audioRecording": {"systemAudio":false, "microphone":false},
-            "mcp":{"enabled":true,"port":7464}, "language":"en", "launchAtStartup":false,
+            "mcp":{"enabled":true,"port":7464}, "language":"en", "launchAtStartup":false, "checkUpdates":false,
             "downscaleForAI":true, "lastRegion":null,
         })).unwrap();
         Self {

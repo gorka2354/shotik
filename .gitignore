@@ -5,3 +5,4 @@ target/
 *.log
 *.stackdump
 Thumbs.db
+.env

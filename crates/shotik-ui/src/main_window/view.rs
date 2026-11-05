@@ -118,6 +118,7 @@ fn ensure() -> Result<MainWindow> {
     ui.on_translate(|| report(dispatch(Action::Translate)));
     ui.on_copy_text(|| report(dispatch(Action::CopyTranslation)));
     ui.on_copy_command(|| report(dispatch(Action::CopyCommand)));
+    ui.on_update_clicked(|| report(dispatch(Action::UpdateInstall)));
     ui.on_capture(|mode| report(dispatch(Action::Capture(mode.into()))));
     ui.on_history_action(|id, operation| {
         report(dispatch(Action::History {
@@ -465,6 +466,8 @@ fn execute(effect: Effect) -> Result<()> {
                 runtime::on_ui(move || fail(Error::msg(format!("unknown capture action: {mode}"))))
             }
         })?,
+        Effect::UpdateInstall => work(move || host.update_install())?,
+        Effect::UpdateCheck => work(move || host.update_check())?,
         Effect::ClearHistory => work(move || {
             let result = host.history_clear(false);
             let history = host.history_list(200);
@@ -568,6 +571,9 @@ fn setting(key: &str, value: &str) -> Result<()> {
             device_id: value.into(),
         });
     }
+    if key == "update.check" {
+        return dispatch(Action::UpdateCheck);
+    }
     if key == "saveDir" {
         let host = runtime::host().clone();
         return work(move || {
@@ -597,6 +603,7 @@ fn setting(key: &str, value: &str) -> Result<()> {
             | "showToast"
             | "downscaleForAI"
             | "launchAtStartup"
+            | "checkUpdates"
             | "recording.systemAudio"
             | "recording.microphone"
             | "recording.countdown"
@@ -654,6 +661,8 @@ fn render() {
         .into(),
     );
     ui.set_version(state.version.clone().into());
+    ui.set_update_label(state.update_button().into());
+    ui.set_update_busy(state.update["installing"] == true);
     ui.set_native_title(state.title.clone().into());
     ui.set_text_input(state.text.input.clone().into());
     ui.set_text_result(state.text.result.clone().into());
@@ -1059,6 +1068,10 @@ fn settings_sections(state: &State) -> Vec<MainSection> {
     let mut save = row("saveDir", "saveDir", "", "button");
     save.sub = state.string("/saveDir").into();
     save.value = state.tr("btnChange").into();
+    let mut check_now = row("update.check", "updateCheckButton", "", "button");
+    check_now.label = state.format("updateCheckNow", &[&state.version]).into();
+    check_now.sub = state.update_summary().into();
+    check_now.value = state.tr("updateCheckButton").into();
     let mut recording = vec![
         combo(
             "recording.fps",
@@ -1142,6 +1155,8 @@ fn settings_sections(state: &State) -> Vec<MainSection> {
                 row("showToast", "toasts", "toastsSub", "switch"),
                 row("downscaleForAI", "downscale", "downscaleSub", "switch"),
                 row("launchAtStartup", "autostart", "autostartSub", "switch"),
+                row("checkUpdates", "updateCheck", "updateCheckSub", "switch"),
+                check_now,
                 combo(
                     "language",
                     "language",
@@ -1413,6 +1428,7 @@ pub fn send(event: MainEvent) {
             }
             MainEvent::McpLog(entry) => report(dispatch(Action::McpLog(entry))),
             MainEvent::RecState(state) => report(dispatch(Action::RecState(state))),
+            MainEvent::UpdateStatus(status) => report(dispatch(Action::UpdateStatus(status))),
             MainEvent::ThemeChanged(theme) => apply_theme_now(&theme),
         }
     });
@@ -1453,6 +1469,8 @@ fn snapshot() -> Result<Value> {
             let length = unsafe { GetWindowTextW(hwnd, &mut title) };
             state["title"] = json!(String::from_utf16_lossy(&title[..length as usize]));
         }
+        state["updateButton"] = json!(view.state.update_button());
+        state["updateSummary"] = json!(view.state.update_summary());
         Ok(state)
     })
 }
@@ -1961,6 +1979,8 @@ mod tests {
                                 "showToast",
                                 "downscaleForAI",
                                 "launchAtStartup",
+                                "checkUpdates",
+                                "update.check",
                                 "language",
                                 "recording.fps",
                                 "recording.format",
@@ -1989,6 +2009,8 @@ mod tests {
                         ("showToast", "false"),
                         ("downscaleForAI", "false"),
                         ("launchAtStartup", "true"),
+                        ("checkUpdates", "false"),
+                        ("update.check", ""),
                         ("recording.fps", "60"),
                         ("recording.format", "mp4"),
                         ("recording.systemAudio", "true"),

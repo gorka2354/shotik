@@ -13,7 +13,7 @@ use windows::Win32::Foundation::ERROR_FILE_NOT_FOUND;
 use windows::Win32::System::Com::{CoInitializeEx, CoTaskMemFree, CoUninitialize, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE};
 use windows::Win32::UI::Shell::Common::ITEMIDLIST;
 use windows::Win32::UI::Shell::{
-    SHOpenFolderAndSelectItems, SHParseDisplayName, ShellExecuteExW, SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW,
+    SHOpenFolderAndSelectItems, SHParseDisplayName, SHQueryUserNotificationState, ShellExecuteExW, QUNS_ACCEPTS_NOTIFICATIONS, SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW,
 };
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
@@ -185,6 +185,30 @@ impl Shell for WinShell {
         })
     }
 
+    fn run_installer(&self, installer: &Path, install_dir: &Path, show_main: bool) -> Result<()> {
+        use std::os::windows::process::CommandExt;
+        require_exists(installer)?;
+        let folder = installer.parent().ok_or_else(|| Error::msg("the installer has no folder"))?;
+        std::process::Command::new(installer)
+            .raw_arg(installer_arguments(install_dir, show_main)?)
+            .current_dir(folder)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .map(drop)
+            .map_err(|e| Error::io("start the installer", installer, e))
+    }
+
+    fn notifications_welcome(&self) -> bool {
+        // SAFETY: no pointers go in, and the state comes back by value.
+        match unsafe { SHQueryUserNotificationState() } {
+            Ok(state) => state == QUNS_ACCEPTS_NOTIFICATIONS,
+            // Only a toast is at stake, and never hearing of an update costs more than one badly timed toast.
+            Err(_) => true,
+        }
+    }
+
     fn open_url(&self, url: &str) -> Result<()> {
         check_web_url(url)?;
         // Quoted, so the handler cannot read parameters out of it.
@@ -193,8 +217,38 @@ impl Shell for WinShell {
     }
 }
 
+/// NSIS reads `/D=` as the rest of the line: it comes last and takes no quotes, even around spaces. That is why this
+/// is one raw string: `Command::arg` would quote it.
+fn installer_arguments(install_dir: &Path, show_main: bool) -> Result<String> {
+    let dir = install_dir.to_str().ok_or_else(|| Error::msg("the install folder has an unreadable name"))?;
+    if dir.starts_with(r"\\?\") || !install_dir.is_absolute() {
+        return Err(Error::msg(format!("the installer cannot use this install folder: {dir}")));
+    }
+    let show = if show_main { " /SHOWMAIN" } else { "" };
+    Ok(format!("/S /RESTART{show} /D={dir}"))
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn installer_arguments_end_with_an_unquoted_folder() {
+        let dir = Path::new(r"C:\Users\John Smith\AppData\Local\Programs\shotik");
+        assert_eq!(
+            installer_arguments(dir, false).unwrap(),
+            r"/S /RESTART /D=C:\Users\John Smith\AppData\Local\Programs\shotik"
+        );
+        assert_eq!(
+            installer_arguments(dir, true).unwrap(),
+            r"/S /RESTART /SHOWMAIN /D=C:\Users\John Smith\AppData\Local\Programs\shotik"
+        );
+    }
+
+    #[test]
+    fn installer_arguments_refuse_what_nsis_cannot_read() {
+        assert!(installer_arguments(Path::new("relative\\folder"), false).is_err());
+        assert!(installer_arguments(Path::new(r"\\?\C:\Programs\shotik"), false).is_err());
+    }
+
     use super::*;
 
     #[test]

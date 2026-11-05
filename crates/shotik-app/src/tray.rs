@@ -59,6 +59,9 @@ impl App {
             items.push(item("record-audio", self.t("trayRecordAudio"), Some(&hk.record_audio)));
         }
         items.push(TrayItem::Separator);
+        if let Some(version) = self.available_update() {
+            items.push(item("update", self.t_args("updateTo", &[&version.to_string()]), None));
+        }
         items.push(item("open", self.t("trayOpen"), None));
         items.push(TrayItem::Separator);
         items.push(item("quit", self.t("trayQuit"), None));
@@ -75,6 +78,7 @@ impl App {
             "stop-rec" => self.stop_recording(),
             "record" => self.spawn(|app| app.trigger_record()),
             "record-audio" => self.spawn(|app| app.trigger_record_audio()),
+            "update" => shotik_core::ports::AppHost::update_install(&**self),
             "open" => self.ports.ui.show_main(),
             "quit" => self.shutdown(),
             other => self.diag.log(&format!("unknown tray item: {other}")),

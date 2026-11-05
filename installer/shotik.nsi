@@ -2,8 +2,13 @@
 ; upgrade keeps autostart, pinned shortcuts and Command Palette entries.
 ;
 ;   makensis /DVERSION=2.0.0 /DEXE=path\to\Shotik.exe /DOUT=path\to\Shotik-Setup-2.0.0.exe installer\shotik.nsi
+;
+; The application's updater runs it as: Setup.exe /S /RESTART [/SHOWMAIN] /D=<the folder it runs from>
+; /DNO_SHELL_ENTRIES builds one that writes no shortcuts and no registry, so installer/update-smoke.js can run it on a
+; machine that has a real install.
 
 Unicode true
+!include "FileFunc.nsh"
 SetCompressor /SOLID lzma
 RequestExecutionLevel user
 Name "Shotik"
@@ -26,6 +31,10 @@ VIAddVersionKey "FileVersion" "${VERSION}"
 VIAddVersionKey "ProductVersion" "${VERSION}"
 VIAddVersionKey "LegalCopyright" "MIT"
 
+; Set when the application's updater started this: it has already left and expects to be brought back.
+Var Restart
+Var RestartArgs
+
 Page instfiles
 UninstPage instfiles
 
@@ -40,6 +49,21 @@ UninstPage instfiles
 
 Section "Shotik"
   SetShellVarContext current
+
+  ${GetParameters} $R0
+  ClearErrors
+  ${GetOptions} $R0 "/RESTART" $R1
+  IfErrors +2
+    StrCpy $Restart "1"
+  StrCpy $RestartArgs "--hidden"
+  ClearErrors
+  ${GetOptions} $R0 "/SHOWMAIN" $R1
+  IfErrors +2
+    StrCpy $RestartArgs ""
+
+  ; The updater is on its way out: a moment lets it leave properly and take its tray icon along.
+  StrCmp $Restart "1" 0 +2
+    Sleep 1500
   !insertmacro StopRunningShotik
 
   ; An Electron install leaves its uninstaller here: let it remove its own files and registry entry.
@@ -62,10 +86,26 @@ Section "Shotik"
 
   SetOutPath "$INSTDIR"
   SetOverwrite on
+  ; Written beside the old one first, then moved over it in one call: a full disk, a failed write or an install cut
+  ; off halfway must not cost the user a working program. An update runs unattended, and nobody would be there to
+  ; reinstall. It tries for a few seconds, because a scanner may be holding the old file for a moment.
   ClearErrors
-  File "/oname=Shotik.exe" "${EXE}"
-  ; Silently keeping the old executable would look like a successful update.
-  IfErrors 0 replaced
+  File "/oname=Shotik.exe.new" "${EXE}"
+  IfErrors not_replaced
+  StrCpy $1 0
+  swap:
+    ; MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH
+    System::Call 'Kernel32::MoveFileEx(t "$INSTDIR\Shotik.exe.new", t "$INSTDIR\Shotik.exe", i 9) i .r0'
+    StrCmp $0 "0" 0 replaced
+    IntOp $1 $1 + 1
+    IntCmp $1 10 not_replaced
+    Sleep 300
+    Goto swap
+  not_replaced:
+    ; Silently keeping the old executable would look like a successful update.
+    Delete "$INSTDIR\Shotik.exe.new"
+    StrCmp $Restart "1" 0 +2
+      Exec `"$INSTDIR\Shotik.exe" --update-failed $RestartArgs`
     MessageBox MB_ICONSTOP|MB_OK "Shotik.exe is in use and could not be replaced. Quit Shotik and run the installer again." /SD IDOK
     SetErrorLevel 2
     Abort
@@ -73,8 +113,11 @@ Section "Shotik"
   File "/oname=LICENSE" "..\LICENSE"
   WriteUninstaller "$INSTDIR\Uninstall Shotik.exe"
 
+  !ifndef NO_SHELL_ENTRIES
   CreateShortcut "$SMPROGRAMS\Shotik.lnk" "$INSTDIR\Shotik.exe"
-  CreateShortcut "$DESKTOP\Shotik.lnk" "$INSTDIR\Shotik.exe"
+  ; An update must not bring back a desktop icon the user deleted.
+  StrCmp $Restart "1" +2
+    CreateShortcut "$DESKTOP\Shotik.lnk" "$INSTDIR\Shotik.exe"
   ; PowerToys Command Palette and Win+S index Start Menu entries, so these become runnable commands.
   CreateShortcut "$SMPROGRAMS\Shotik Area Screenshot.lnk" "$INSTDIR\Shotik.exe" "--capture region" "$INSTDIR\Shotik.exe" 0
   CreateShortcut "$SMPROGRAMS\Shotik Full Screen.lnk" "$INSTDIR\Shotik.exe" "--capture full" "$INSTDIR\Shotik.exe" 0
@@ -92,7 +135,12 @@ Section "Shotik"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "QuietUninstallString" `"$INSTDIR\Uninstall Shotik.exe" /S`
   WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoModify" 1
   WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoRepair" 1
+  !endif
 
+  StrCmp $Restart "1" 0 not_updating
+    Exec `"$INSTDIR\Shotik.exe" --updated $RestartArgs`
+    Goto done
+  not_updating:
   ; An interactive install opens the app, as the one-click Electron installer did. A silent one does not.
   IfSilent done
     Exec `"$INSTDIR\Shotik.exe"`
@@ -102,6 +150,7 @@ SectionEnd
 Section "Uninstall"
   SetShellVarContext current
   !insertmacro StopRunningShotik
+  !ifndef NO_SHELL_ENTRIES
   Delete "$SMPROGRAMS\Shotik.lnk"
   Delete "$DESKTOP\Shotik.lnk"
   Delete "$SMPROGRAMS\Shotik Area Screenshot.lnk"
@@ -112,7 +161,9 @@ Section "Uninstall"
   Delete "$SMPROGRAMS\Shotik Record Audio.lnk"
   DeleteRegKey HKCU "${UNINSTALL_KEY}"
   DeleteRegValue HKCU "${RUN_KEY}" "dev.shotik.app"
+  !endif
   Delete "$INSTDIR\Shotik.exe"
+  Delete "$INSTDIR\Shotik.exe.new"
   Delete "$INSTDIR\LICENSE"
   Delete "$INSTDIR\Uninstall Shotik.exe"
   RMDir "$INSTDIR"
