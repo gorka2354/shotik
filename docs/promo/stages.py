@@ -1,7 +1,8 @@
 """The staged screens of the promo film: made-up applications, drawn by Edge in headless mode.
 
 Each fills a whole display, because a fake screen is scaled to fit one, and the film shows its top left 1120x630. Nothing
-here looks like a real product, and the token on the checkout page is obviously not one.
+here looks like a real product, and the token on the checkout page is obviously not one. The checkout page is tidy, and
+its one mistake is in the numbers: a crooked layout reads as a defect of the film, not as the bug it is showing.
 """
 import os
 import subprocess
@@ -27,7 +28,7 @@ COPY = {
         "summary": "Order summary",
         "rows": [("Wireless keyboard", "$39.00"), ("Delivery", "$5.00"), ("Tax", "$4.00")],
         "total": ("Total", "$48.00"),
-        "pay": "Pay $48.00 now",
+        "pay": "Pay $84.00 now",
         "postTitle": "Morning digest",
         "author": "Nina Volkova",
         "when": "Today, 09:41",
@@ -43,7 +44,7 @@ COPY = {
         "summary": "Ваш заказ",
         "rows": [("Беспроводная клавиатура", "3 900 ₽"), ("Доставка", "500 ₽"), ("Налог", "400 ₽")],
         "total": ("Итого", "4 800 ₽"),
-        "pay": "Оплатить 4 800 ₽ сейчас",
+        "pay": "Оплатить 8 400 ₽ сейчас",
         "postTitle": "Утренний дайджест",
         "author": "Nina Volkova",
         "when": "Сегодня, 09:41",
@@ -63,13 +64,13 @@ def checkout(copy):
 <div class="win" style="left:60px;top:40px;width:1000px;height:550px">
   <div class="bar">{copy['checkoutTitle']}<div class="btns"><span>&#8212;</span><span>&#9633;</span><span>&#10005;</span></div></div>
   <div style="position:absolute;left:18px;top:62px;width:190px">{nav}</div>
-  <div style="position:absolute;left:280px;top:92px;width:420px;height:256px;background:#fff;border:1px solid #e3e5ea;border-radius:12px;padding:20px 24px;box-shadow:0 2px 8px rgba(20,25,40,.06)">
+  <div style="position:absolute;left:280px;top:92px;width:420px;height:300px;background:#fff;border:1px solid #e3e5ea;border-radius:12px;padding:20px 24px;box-shadow:0 2px 8px rgba(20,25,40,.06)">
     <div style="font-size:19px;font-weight:600;margin-bottom:8px">{copy['summary']}</div>
     {rows}
     <div style="display:flex;justify-content:space-between;border-top:1px solid #e3e5ea;margin-top:6px;padding-top:10px;font-size:17px;font-weight:600"><span>{copy['total'][0]}</span><span>{copy['total'][1]}</span></div>
   </div>
-  <div style="position:absolute;left:380px;top:328px;width:420px;height:44px;background:#2f5be0;border-radius:9px;color:#fff;font-weight:600;font-size:16px;display:flex;align-items:center;justify-content:center">{copy['pay']}</div>
-  <div style="position:absolute;left:280px;top:386px;width:420px;font:14px Consolas,monospace;color:#5b6070;background:#f6f7f9;border:1px solid #e3e5ea;border-radius:7px;padding:10px 14px">api_token = demo-8f3a21c7d94e60b5</div>
+  <div style="position:absolute;left:304px;top:328px;width:372px;height:44px;background:#2f5be0;border-radius:9px;color:#fff;font-weight:600;font-size:16px;display:flex;align-items:center;justify-content:center">{copy['pay']}</div>
+  <div style="position:absolute;left:280px;top:404px;width:420px;font:14px Consolas,monospace;color:#5b6070;background:#f6f7f9;border:1px solid #e3e5ea;border-radius:7px;padding:10px 14px">api_token = demo-8f3a21c7d94e60b5</div>
 </div>"""
 
 
