@@ -12,6 +12,7 @@ const which = process.argv[2] || 'all';
   if (which === 'all' || which === 'unit') {
     console.log('\n── unit ──');
     require('./unit/ghost-adapter.test.js');
+    require('./unit/sign-update.test.js');
     const r = await runRegistered('unit › ');
     passed += r.passed; failed += r.failed;
   }
@@ -26,6 +27,7 @@ const which = process.argv[2] || 'all';
     require('./ghost/recorder.test.js');
     require('./ghost/recording-seek.test.js');
     require('./ghost/audio-recording.test.js');
+    require('./ghost/update.test.js');
     const r = await runRegistered('ghost › ');
     passed += r.passed; failed += r.failed;
   }
