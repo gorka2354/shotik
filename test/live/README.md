@@ -22,7 +22,8 @@ node test/live/installed.js                                # the installed app: 
 
 `run.js` uses its own hotkeys (`Ctrl+Alt+Shift+F5` to `F11`), so it runs next to an installed Shotik. The
 selection watcher does not start in test mode, which is why `selection.js` is separate. It runs without test
-routes, on a private `%APPDATA%`, with the MCP server on port 7699. `microphone_signal` needs VB-Audio Cable; it
+routes, on a private `%APPDATA%`, with the MCP server on port 7699, and it needs no other Shotik running: a second production instance would only
+forward its arguments and exit. `microphone_signal` needs VB-Audio Cable; it
 sends a tone through it, which nobody hears. `microphone` records two seconds from the real default microphone,
 measures the level and deletes the file. Mixed-DPI checks need monitors of different scale.
 

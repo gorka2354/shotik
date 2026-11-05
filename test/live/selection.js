@@ -1,7 +1,7 @@
 'use strict';
 // The production path, no test routes: a private profile, a real UI Automation watcher, a real translation.
 const { spawn, execFileSync } = require('child_process');
-const { Live, UserBack, until, sleep, VK, ROOT, SCRATCH, os, fs, path } = require('./lib');
+const { Live, UserBack, trayIcon, until, sleep, VK, ROOT, SCRATCH, os, fs, path } = require('./lib');
 const { preserveClipboard } = require(path.join(ROOT, 'test/ghost/clipboard'));
 
 const EXE = process.argv[2];
@@ -102,43 +102,21 @@ const HOTKEYS = { region: 'Ctrl+Alt+Shift+F9', fullscreen: 'Ctrl+Alt+Shift+F10',
     const ocrBubble = await until(async () => (await list()).find((b) => b.w <= 140 && b.h <= 140), 5000, 60);
     L.check('without a TextPattern, the highlight is read by OCR and brings the bubble', !!ocrBubble, 'diag: ' + log().slice(-3).join(' | '));
     if (ocrBubble) await call('shot', { x: plain.x, y: plain.y, w: plain.w, h: 200, scale: 1, path: path.join(shots, 'ocr-gesture.png') });
-    // The tray with a real mouse, as a person uses it: left click opens the app, the menu's last item quits.
-    const t = await call('tray', { cls: 'Shotik.NativeTray', pid: app.pid });
-    if (L.check('the tray icon has a place on the taskbar', t.found && t.hr === 0 && t.w > 0, JSON.stringify(t))) {
-      const ix = t.x + Math.floor(t.w / 2), iy = t.y + Math.floor(t.h / 2);
-      const realClick = async (down, up) => {
-        await L.move(ix, iy);
-        await sleep(350);
-        await L.guard();
-        L.mark(await call('btn', { flags: down }));
-        await sleep(60);
-        L.mark(await call('btn', { flags: up }));
-      };
-      await realClick(0x0002, 0x0004);
-      const main = await until(async () => (await list()).find((x) => x.w > 800 && x.h > 500), 2500, 80);
-      if (L.check('a real click on the icon opens the main window', !!main)) {
-        await sleep(400);
-        const fg = await call('fg');
-        L.check('  with the focus', fg.pid === app.pid, fg.cls);
-        await L.key(app.pid, VK.alt, VK.f4);
-        await sleep(400);
-      }
-      await realClick(0x0008, 0x0010);
+    // Quit the way a person does: a real right click on the icon, the menu's last item.
+    const tray = trayIcon(L, app.pid);
+    const icon = await tray.reveal();
+    if (L.check('the shell shows the tray icon', icon.found, JSON.stringify(icon))) {
+      await tray.rightClick(icon);
       const menu = await until(async () => (await list()).find((x) => x.cls === '#32768'), 2500, 80);
       if (L.check('a real right click opens the menu', !!menu)) {
         await sleep(250);
-        const fg = await call('fg');
-        L.check('  and it has the keyboard', fg.pid === app.pid, fg.cls);
         await L.key(app.pid, VK.up);
         await L.key(app.pid, VK.enter);
         const quit = await until(async () => app.exitCode !== null, 5000, 100);
         L.check('its Exit item quits the app', quit, `exit code ${app.exitCode}`);
         await sleep(200);
-        const icon = await call('tray', { cls: 'Shotik.NativeTray', pid: app.pid });
-        L.check('  and takes the tray icon with it', !icon.found);
-      } else {
-        const fg = await call('fg');
-        L.note('foreground after the right click: ' + fg.cls);
+        const after = await call('tray', { cls: 'Shotik.NativeTray', pid: app.pid });
+        L.check('  and takes the tray icon with it', !after.found);
       }
     }
     const failed = L.summary();

@@ -210,6 +210,41 @@ async function until(fn, timeoutMs = 3000, step = 40) {
   return last;
 }
 
+/**
+ * The tray icon with a real mouse, through the shell. Windows hides a new icon in a flyout, and the rectangle it
+ * reports is then the arrow's, which moves as other icons come and go: so it is read right before the click.
+ */
+function trayIcon(live, pid) {
+  const call = (op, a) => live.probe.call(op, a);
+  const click = async (x, y, down, up) => {
+    await live.move(x, y);
+    await sleep(300);
+    await live.guard();
+    await live.assertCursor(x, y);
+    live.mark(await call('btn', { flags: down }));
+    await sleep(60);
+    live.mark(await call('btn', { flags: up }));
+  };
+  const find = () => {
+    const out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(SCRATCH, 'tray-icon.ps1')], { encoding: 'utf8', windowsHide: true });
+    return JSON.parse(out.trim().split(/\r?\n/).pop());
+  };
+  const reveal = async () => {
+    const shown = find();
+    if (shown.found) return shown;
+    const arrow = await call('tray', { cls: 'Shotik.NativeTray', pid });
+    await click(arrow.x + Math.floor(arrow.w / 2), arrow.y + Math.floor(arrow.h / 2), LDOWN, LUP);
+    await until(async () => /Overflow/.test((await call('fg')).cls), 2000, 50);
+    await sleep(250);
+    return find();
+  };
+  return {
+    reveal,
+    leftClick: (icon) => click(icon.x, icon.y, LDOWN, LUP),
+    rightClick: (icon) => click(icon.x, icon.y, RDOWN, RUP),
+  };
+}
+
 /** A private instance of the app with real windows, real capture and its own profile. */
 async function launchApp({ exe, port, hotkeys, settings = {}, env = {}, dir }) {
   const appData = path.join(dir, 'appdata');
@@ -242,4 +277,4 @@ async function stopApp(port, app) {
   }
 }
 
-module.exports = { Live, Probe, UserBack, post, until, sleep, launchApp, stopApp, VK, digit, ROOT, SCRATCH, WHEEL, os, fs, path };
+module.exports = { Live, Probe, UserBack, trayIcon, post, until, sleep, launchApp, stopApp, VK, digit, ROOT, SCRATCH, WHEEL, os, fs, path };
