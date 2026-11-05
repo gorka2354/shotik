@@ -256,6 +256,7 @@ fn render(root: &Path, host: Arc<StubHost>) -> Result<Value> {
                 }),
                 file: None,
                 color: (kind == "color").then(|| "#3E9EFF".into()),
+                action: None,
             });
             until("toast visible", || Ok(Ui.toast_visible()))?;
             Ui.ui_action("toast", 0, json!({"type":"hover","over":true}))?;
@@ -573,6 +574,7 @@ fn render(root: &Path, host: Arc<StubHost>) -> Result<Value> {
         thumb: None,
         file: None,
         color: None,
+        action: None,
     };
     Ui.show_toast(timer_toast.clone());
     until("timer toast", || Ok(Ui.toast_visible()))?;

@@ -10,7 +10,7 @@ use shotik_core::settings::{defaults, FileSettings};
 use shotik_core::history::FileHistory;
 use shotik_core::{Display, Error, Frame, Point, PointF, Rect, Result};
 
-use crate::{cli_capture_mode, App, Environment, Ports};
+use crate::{cli_capture_mode, App, Environment, Ports, UpdateConfig};
 
 fn display() -> Display {
     Display {
@@ -135,22 +135,64 @@ impl Ocr for FakeOcr {
     }
 }
 
-struct NoHttp;
-impl Http for NoHttp {
-    fn send(&self, _request: HttpRequest<'_>) -> Result<HttpResponse> {
-        Err(Error::msg("no network in tests"))
+type DuringRequest = Box<dyn Fn(&str) + Send>;
+
+/// Answers from a table. Anything else is a failed connection: tests have no network.
+#[derive(Default)]
+struct FakeHttp {
+    routes: Mutex<std::collections::HashMap<String, (u16, Vec<u8>)>>,
+    requests: Mutex<Vec<String>>,
+    /// Runs while a request is under way, for what the user does meanwhile.
+    during: Mutex<Option<DuringRequest>>,
+}
+impl Http for FakeHttp {
+    fn send(&self, request: HttpRequest<'_>) -> Result<HttpResponse> {
+        self.requests.lock().unwrap().push(request.url.to_string());
+        if let Some(during) = self.during.lock().unwrap().as_ref() {
+            during(request.url);
+        }
+        match self.routes.lock().unwrap().get(request.url) {
+            Some((status, body)) => Ok(HttpResponse { status: *status, body: body.clone() }),
+            None => Err(Error::msg("no network in tests")),
+        }
     }
 }
 
-struct NoShell;
-impl Shell for NoShell {
+/// What was handed to an installer, read at the moment it started: it deletes nothing, but a test reads this later.
+struct StartedInstaller {
+    path: PathBuf,
+    contents: Vec<u8>,
+    install_dir: PathBuf,
+    show_main: bool,
+}
+
+#[derive(Default)]
+struct FakeShell {
+    urls: Mutex<Vec<String>>,
+    installers: Mutex<Vec<StartedInstaller>>,
+    installer_error: Mutex<Option<String>>,
+}
+impl Shell for FakeShell {
     fn reveal_in_folder(&self, _path: &Path) -> Result<()> {
         Ok(())
     }
     fn open_path(&self, _path: &Path) -> Result<()> {
         Ok(())
     }
-    fn open_url(&self, _url: &str) -> Result<()> {
+    fn open_url(&self, url: &str) -> Result<()> {
+        self.urls.lock().unwrap().push(url.to_string());
+        Ok(())
+    }
+    fn run_installer(&self, installer: &Path, install_dir: &Path, show_main: bool) -> Result<()> {
+        if let Some(error) = self.installer_error.lock().unwrap().as_ref() {
+            return Err(Error::msg(error.clone()));
+        }
+        self.installers.lock().unwrap().push(StartedInstaller {
+            path: installer.to_path_buf(),
+            contents: std::fs::read(installer).unwrap(),
+            install_dir: install_dir.to_path_buf(),
+            show_main,
+        });
         Ok(())
     }
 }
@@ -310,6 +352,8 @@ struct FakeUi {
     overlay_displays: Mutex<Vec<(u64, bool)>>,
     pending_done: Mutex<Option<Once<OverlayOutcome>>>,
     marks: Mutex<Option<MarkSink>>,
+    main_open: Mutex<bool>,
+    update_pushed: Mutex<Option<Value>>,
 }
 impl UiPort for FakeUi {
     fn overlay_begin(&self, _mode: OverlayMode, marks: MarkSink, done: Once<OverlayOutcome>) -> Result<u64> {
@@ -358,9 +402,13 @@ impl UiPort for FakeUi {
     }
     fn hide_main(&self) {}
     fn main_visible(&self) -> bool {
-        false
+        *self.main_open.lock().unwrap()
     }
-    fn send_to_main(&self, _event: MainEvent) {}
+    fn send_to_main(&self, event: MainEvent) {
+        if let MainEvent::UpdateStatus(status) = event {
+            *self.update_pushed.lock().unwrap() = Some(status);
+        }
+    }
     fn show_toast(&self, toast: Toast) {
         self.toasts.lock().unwrap().push(toast);
     }
@@ -438,6 +486,9 @@ struct Rig {
     tray: Arc<FakeTray>,
     autostart: Arc<FakeAutostart>,
     selection: Arc<FakeSelection>,
+    http: Arc<FakeHttp>,
+    shell: Arc<FakeShell>,
+    quits: Arc<std::sync::atomic::AtomicU32>,
     dir: PathBuf,
     _rt: tokio::runtime::Runtime,
 }
@@ -449,6 +500,10 @@ impl Drop for Rig {
 }
 
 fn rig_with(name: &str, ghost: bool, test_mode: bool) -> Rig {
+    rig_installed(name, ghost, test_mode, true)
+}
+
+fn rig_installed(name: &str, ghost: bool, test_mode: bool, installed: bool) -> Rig {
     let dir = std::env::temp_dir().join(format!("shotik-app-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -466,6 +521,10 @@ fn rig_with(name: &str, ghost: bool, test_mode: bool) -> Rig {
     let tray = Arc::new(FakeTray::default());
     let autostart = Arc::new(FakeAutostart::default());
     let selection = Arc::new(FakeSelection::default());
+    let http = Arc::new(FakeHttp::default());
+    let shell = Arc::new(FakeShell::default());
+    let quits = Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let quit_count = quits.clone();
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(1).enable_all().build().unwrap();
     let ports = Ports {
         settings,
@@ -475,8 +534,8 @@ fn rig_with(name: &str, ghost: bool, test_mode: bool) -> Rig {
         windows: Arc::new(NoWindows),
         clipboard: clipboard.clone(),
         ocr: Arc::new(FakeOcr("распознанный текст")),
-        http: Arc::new(NoHttp),
-        shell: Arc::new(NoShell),
+        http: http.clone(),
+        shell: shell.clone(),
         dialogs: Arc::new(NoDialogs),
         hotkeys: hotkeys.clone(),
         tray: tray.clone(),
@@ -487,7 +546,9 @@ fn rig_with(name: &str, ghost: bool, test_mode: bool) -> Rig {
         recorder: recorder.clone(),
         ui: ui.clone(),
         export_gif: Arc::new(|video| Ok(video.with_extension("gif"))),
-        quit: Arc::new(|| {}),
+        quit: Arc::new(move || {
+            quit_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }),
     };
     let env = Environment {
         test_mode,
@@ -498,13 +559,19 @@ fn rig_with(name: &str, ghost: bool, test_mode: bool) -> Rig {
         translate_stub: true,
         wincap_fail: false,
         port_override: None,
-        version: "2.0.0-test".into(),
+        version: "2.0.0".into(),
         platform: "win32",
         locale: "ru-RU".into(),
         temp_dir: dir.clone(),
+        update: UpdateConfig {
+            source: shotik_core::update::UpdateSource::at(UPDATES, &update_public_key()),
+            auto_check: false,
+            first_check_after: Duration::ZERO,
+            install_dir: installed.then(|| dir.join("Programs")),
+        },
     };
     let app = App::new(ports, env, rt.handle().clone());
-    Rig { app, ui, clipboard, recorder, displays, capture, hotkeys, tray, autostart, selection, dir, _rt: rt }
+    Rig { app, ui, clipboard, recorder, displays, capture, hotkeys, tray, autostart, selection, http, shell, quits, dir, _rt: rt }
 }
 
 fn rig(name: &str) -> Rig {
@@ -941,4 +1008,382 @@ fn cli_capture_mode_reads_both_spellings() {
     assert_eq!(cli_capture_mode(&args(&["x", "--capture=text"])).as_deref(), Some("text"));
     assert_eq!(cli_capture_mode(&args(&["x", "--capture"])).as_deref(), Some("region"));
     assert_eq!(cli_capture_mode(&args(&["x", "--hidden"])), None);
+}
+
+// ---------- updates ----------
+
+const UPDATES: &str = "https://updates.test";
+const INSTALLER: &[u8] = b"the real installer";
+
+fn update_key() -> ed25519_dalek::SigningKey {
+    ed25519_dalek::SigningKey::from_bytes(&[7u8; 32])
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn update_public_key() -> String {
+    hex(update_key().verifying_key().as_bytes())
+}
+
+fn signed_with(key: &ed25519_dalek::SigningKey, manifest: &[u8]) -> Vec<u8> {
+    use ed25519_dalek::Signer;
+    let mut message = b"shotik-update-manifest-v1\n".to_vec();
+    message.extend_from_slice(manifest);
+    hex(&key.sign(&message).to_bytes()).into_bytes()
+}
+
+fn manifest_of(version: &str, installer: &[u8]) -> Vec<u8> {
+    use sha2::Digest;
+    format!(r#"{{"version":"{version}","sha256":"{}","size":{}}}"#, hex(&sha2::Sha256::digest(installer)), installer.len())
+        .into_bytes()
+}
+
+impl Rig {
+    /// Publishes a correctly signed release on the fake server.
+    fn publish(&self, version: &str) {
+        self.publish_signed_by(version, &update_key());
+        self.http.routes.lock().unwrap().insert(format!("{UPDATES}/Shotik-Setup-{version}.exe"), (200, INSTALLER.to_vec()));
+    }
+
+    fn publish_signed_by(&self, version: &str, key: &ed25519_dalek::SigningKey) {
+        let manifest = manifest_of(version, INSTALLER);
+        let signature = signed_with(key, &manifest);
+        let mut routes = self.http.routes.lock().unwrap();
+        routes.insert(format!("{UPDATES}/latest.json"), (200, manifest));
+        routes.insert(format!("{UPDATES}/latest.json.sig"), (200, signature));
+    }
+
+    fn toasts(&self) -> Vec<Toast> {
+        self.ui.toasts.lock().unwrap().clone()
+    }
+
+    fn quit_count(&self) -> u32 {
+        self.quits.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn tray_has_update(&self) -> bool {
+        self.tray.menu.lock().unwrap().iter().any(|i| matches!(i, TrayItem::Action { id, .. } if id == "update"))
+    }
+
+    fn requests_of(&self, part: &str) -> usize {
+        self.http.requests.lock().unwrap().iter().filter(|url| url.contains(part)).count()
+    }
+
+    fn download_folders(&self) -> usize {
+        std::fs::read_dir(&self.dir)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with("shotik-update-"))
+            .count()
+    }
+}
+
+#[test]
+fn a_newer_signed_release_is_offered_and_announced_once() {
+    let r = rig("update-offer");
+    r.publish("2.1.0");
+    r.app.check_for_update(false);
+    let status = r.app.update_status();
+    assert_eq!(status["available"], "2.1.0");
+    assert_eq!(status["current"], "2.0.0");
+    assert_eq!(status["checked"], true);
+    assert_eq!(status["checking"], false);
+    assert_eq!(*r.ui.update_pushed.lock().unwrap(), Some(status), "the main window hears about it");
+    assert!(r.tray_has_update());
+    let toasts = r.toasts();
+    assert_eq!(toasts.len(), 1);
+    assert_eq!(toasts[0].kind, "update");
+    assert!(toasts[0].title.contains("2.1.0"), "{}", toasts[0].title);
+    assert_eq!(toasts[0].action.as_deref(), Some(r.app.t("updateAction").as_str()));
+
+    r.app.check_for_update(false);
+    assert_eq!(r.toasts().len(), 1, "a toast says it once; the tray and main window keep saying it");
+    r.app.check_for_update(true);
+    assert_eq!(r.toasts().len(), 2, "unless the user asks");
+    r.publish("2.2.0");
+    r.app.check_for_update(false);
+    assert_eq!(r.toasts().len(), 3, "a newer version is news again");
+    assert_eq!(r.app.update_status()["available"], "2.2.0");
+}
+
+#[test]
+fn turned_off_toasts_leave_the_offer_in_the_tray() {
+    let r = rig("update-quiet");
+    r.app.ports.settings.set(json!({ "showToast": false })).unwrap();
+    r.publish("2.1.0");
+    r.app.check_for_update(false);
+    assert!(r.toasts().is_empty());
+    assert!(r.tray_has_update());
+    r.app.check_for_update(true);
+    assert_eq!(r.toasts().len(), 1, "the user asked, so the user hears");
+}
+
+#[test]
+fn the_same_or_an_older_release_is_not_offered() {
+    for version in ["2.0.0", "1.3.1", "1.99.99"] {
+        let r = rig(&format!("update-old-{version}"));
+        r.publish(version);
+        r.app.check_for_update(false);
+        assert_eq!(r.app.update_status()["available"], Value::Null, "{version}");
+        assert_eq!(r.app.update_status()["checked"], true);
+        assert!(r.toasts().is_empty());
+        assert!(!r.tray_has_update());
+    }
+}
+
+#[test]
+fn a_release_taken_back_stops_being_offered() {
+    let r = rig("update-pulled");
+    r.publish("2.1.0");
+    r.app.check_for_update(false);
+    r.publish("2.0.0");
+    r.app.check_for_update(false);
+    assert_eq!(r.app.update_status()["available"], Value::Null);
+    assert!(!r.tray_has_update());
+}
+
+#[test]
+fn asking_when_up_to_date_gets_an_answer() {
+    let r = rig("update-latest");
+    r.publish("2.0.0");
+    r.app.check_for_update(true);
+    assert_eq!(r.toasts()[0].title, r.app.t("updateLatestTitle"));
+}
+
+#[test]
+fn a_manifest_signed_by_someone_else_is_refused() {
+    let r = rig("update-forged");
+    r.publish_signed_by("9.9.9", &ed25519_dalek::SigningKey::from_bytes(&[9u8; 32]));
+    r.app.check_for_update(false);
+    let status = r.app.update_status();
+    assert_eq!(status["available"], Value::Null);
+    assert_eq!(status["checked"], false);
+    assert!(status["error"].as_str().unwrap().contains("signature"), "{status}");
+    assert!(r.toasts().is_empty(), "nothing to bother the user with in the background");
+    assert!(!r.tray_has_update());
+
+    r.app.check_for_update(true);
+    assert_eq!(r.toasts().last().unwrap().kind, "update-failed");
+}
+
+#[test]
+fn a_failed_background_check_is_quiet_and_tried_again_within_the_hour() {
+    let r = rig("update-offline");
+    let now = std::time::SystemTime::now();
+    r.app.update_tick(now);
+    assert!(r.toasts().is_empty());
+    assert!(r.app.update_status()["error"].as_str().unwrap().contains("no network"));
+    let attempts = r.requests_of("latest.json");
+    r.app.update_tick(now + Duration::from_secs(3600));
+    assert!(r.requests_of("latest.json") > attempts, "a failure does not wait a day");
+
+    r.publish("2.0.0");
+    r.app.update_tick(now + Duration::from_secs(7200));
+    assert_eq!(r.app.update_status()["error"], Value::Null, "a success clears it");
+    let attempts = r.requests_of("latest.json");
+    r.app.update_tick(now + Duration::from_secs(7200 + 3600));
+    assert_eq!(r.requests_of("latest.json"), attempts, "a success stands for a day");
+}
+
+#[test]
+fn a_server_error_is_an_error_with_its_status() {
+    let r = rig("update-404");
+    r.http.routes.lock().unwrap().insert(format!("{UPDATES}/latest.json"), (404, Vec::new()));
+    r.app.check_for_update(false);
+    assert!(r.app.update_status()["error"].as_str().unwrap().contains("404"));
+}
+
+#[test]
+fn the_setting_stops_scheduled_checks_but_not_a_manual_one() {
+    let r = rig("update-setting");
+    r.publish("2.1.0");
+    r.app.ports.settings.set(json!({ "checkUpdates": false })).unwrap();
+    r.app.update_tick(std::time::SystemTime::now());
+    assert!(r.http.requests.lock().unwrap().is_empty(), "with the setting off, nothing leaves the machine");
+    r.app.check_for_update(true);
+    assert_eq!(r.app.update_status()["available"], "2.1.0");
+}
+
+#[test]
+fn installing_hands_the_verified_file_to_the_installer_and_leaves() {
+    let r = rig("update-install");
+    r.publish("2.1.0");
+    r.app.check_for_update(false);
+    r.app.install_update();
+    let started = r.shell.installers.lock().unwrap();
+    assert_eq!(started.len(), 1);
+    assert_eq!(started[0].contents, INSTALLER);
+    assert_eq!(started[0].install_dir, r.dir.join("Programs"));
+    assert!(!started[0].show_main);
+    assert_eq!(started[0].path.file_name().unwrap(), "Shotik-Setup-2.1.0.exe");
+    let folder = started[0].path.parent().unwrap().file_name().unwrap().to_string_lossy().into_owned();
+    assert!(folder.starts_with("shotik-update-"), "a folder of its own: {folder}");
+    assert_eq!(r.quit_count(), 1, "the installer cannot replace a running executable");
+}
+
+#[test]
+fn an_open_main_window_comes_back_after_the_update() {
+    let r = rig("update-main");
+    *r.ui.main_open.lock().unwrap() = true;
+    r.publish("2.1.0");
+    r.app.check_for_update(false);
+    r.app.install_update();
+    assert!(r.shell.installers.lock().unwrap()[0].show_main);
+}
+
+#[test]
+fn a_tampered_installer_is_never_started() {
+    let r = rig("update-tampered");
+    r.publish("2.1.0");
+    r.app.check_for_update(false);
+    r.http.routes.lock().unwrap().insert(format!("{UPDATES}/Shotik-Setup-2.1.0.exe"), (200, b"the fake installer".to_vec()));
+    r.app.install_update();
+    assert!(r.shell.installers.lock().unwrap().is_empty());
+    assert_eq!(r.quit_count(), 0);
+    assert_eq!(r.download_folders(), 0, "not even written to disk");
+    let status = r.app.update_status();
+    assert!(status["error"].as_str().unwrap().contains("hash"), "{status}");
+    assert_eq!(status["installing"], false);
+    assert_eq!(status["available"], "2.1.0", "still on offer");
+    assert_eq!(r.toasts().last().unwrap().kind, "update-failed");
+
+    r.http.routes.lock().unwrap().insert(format!("{UPDATES}/Shotik-Setup-2.1.0.exe"), (200, INSTALLER.to_vec()));
+    r.app.install_update();
+    assert_eq!(r.shell.installers.lock().unwrap().len(), 1, "and a clean retry works");
+}
+
+#[test]
+fn a_failed_download_keeps_the_application_running() {
+    let r = rig("update-no-installer");
+    r.publish("2.1.0");
+    r.app.check_for_update(false);
+    r.http.routes.lock().unwrap().remove(&format!("{UPDATES}/Shotik-Setup-2.1.0.exe"));
+    r.app.install_update();
+    assert_eq!(r.quit_count(), 0);
+    assert_eq!(r.app.update_status()["installing"], false);
+    assert_eq!(r.toasts().last().unwrap().kind, "update-failed");
+}
+
+#[test]
+fn an_installer_that_will_not_start_keeps_the_application_running() {
+    let r = rig("update-blocked-exe");
+    r.publish("2.1.0");
+    r.app.check_for_update(false);
+    *r.shell.installer_error.lock().unwrap() = Some("blocked by antivirus".into());
+    r.app.install_update();
+    assert_eq!(r.quit_count(), 0);
+    assert_eq!(r.download_folders(), 0, "nothing left behind");
+    assert!(r.toasts().last().unwrap().body.contains("blocked by antivirus"));
+}
+
+#[test]
+fn nothing_is_installed_while_recording() {
+    let r = rig("update-recording");
+    r.publish("2.1.0");
+    r.app.check_for_update(false);
+    *r.recorder.recording.lock().unwrap() = true;
+    r.app.install_update();
+    assert_eq!(r.requests_of("Shotik-Setup"), 0, "not even downloaded");
+    assert!(r.shell.installers.lock().unwrap().is_empty());
+    assert_eq!(r.quit_count(), 0);
+    assert_eq!(r.toasts().last().unwrap().body, r.app.t("updateBusyRecording"));
+    assert_eq!(r.app.update_status()["available"], "2.1.0", "still on offer afterwards");
+}
+
+#[test]
+fn nothing_is_installed_with_the_overlay_open() {
+    let r = rig("update-overlay");
+    r.publish("2.1.0");
+    r.app.check_for_update(false);
+    *r.ui.overlay_open.lock().unwrap() = true;
+    r.app.install_update();
+    assert!(r.shell.installers.lock().unwrap().is_empty());
+    assert_eq!(r.quit_count(), 0);
+    assert_eq!(r.toasts().last().unwrap().body, r.app.t("updateBusyOverlay"));
+}
+
+#[test]
+fn a_recording_started_during_the_download_stops_the_install() {
+    let r = rig("update-race");
+    r.publish("2.1.0");
+    r.app.check_for_update(false);
+    let recorder = r.recorder.clone();
+    *r.http.during.lock().unwrap() = Some(Box::new(move |url| {
+        if url.contains("Shotik-Setup") {
+            *recorder.recording.lock().unwrap() = true;
+        }
+    }));
+    r.app.install_update();
+    assert!(r.shell.installers.lock().unwrap().is_empty());
+    assert_eq!(r.quit_count(), 0, "the recording goes on");
+    assert_eq!(r.download_folders(), 0);
+    assert_eq!(r.app.update_status()["installing"], false);
+}
+
+#[test]
+fn a_portable_copy_opens_the_release_page() {
+    let r = rig_installed("update-portable", true, true, false);
+    r.publish("2.1.0");
+    r.app.check_for_update(false);
+    r.app.install_update();
+    assert_eq!(*r.shell.urls.lock().unwrap(), vec![format!("{UPDATES}/tag/v2.1.0")]);
+    assert!(r.shell.installers.lock().unwrap().is_empty(), "an installer would add a second copy elsewhere");
+    assert_eq!(r.quit_count(), 0);
+}
+
+#[test]
+fn nothing_to_install_does_nothing() {
+    let r = rig("update-nothing");
+    r.app.install_update();
+    assert!(r.http.requests.lock().unwrap().is_empty());
+    assert_eq!(r.quit_count(), 0);
+}
+
+#[test]
+fn the_installer_is_heard_when_it_restarts_the_application() {
+    let r = rig("update-result");
+    r.app.announce_update_result(&["x".into(), "--hidden".into()]);
+    assert!(r.toasts().is_empty());
+    r.app.announce_update_result(&["x".into(), "--updated".into()]);
+    assert_eq!(r.toasts()[0].kind, "update-done");
+    assert!(r.toasts()[0].title.contains("2.0.0"));
+    r.app.announce_update_result(&["x".into(), "--update-failed".into()]);
+    assert_eq!(r.toasts()[1].kind, "update-failed");
+    assert_eq!(r.toasts()[1].body, r.app.t("updateFailedInstallBody"));
+}
+
+#[test]
+fn only_finished_updates_are_cleaned_up() {
+    let r = rig("update-clean");
+    let own = format!("shotik-update-{}-1", std::process::id());
+    for folder in ["shotik-update-1-2", &own, "shotik-updates", "other"] {
+        std::fs::create_dir_all(r.dir.join(folder).join("inner")).unwrap();
+    }
+    r.app.remove_old_downloads();
+    assert!(!r.dir.join("shotik-update-1-2").exists());
+    assert!(r.dir.join(&own).exists(), "this process may be using it");
+    assert!(r.dir.join("other").exists());
+    assert!(r.dir.join("shotik-updates").exists(), "a prefix match is not enough");
+}
+
+#[test]
+fn test_overrides_only_work_for_a_test_instance() {
+    let base = || Some("http://127.0.0.1:1".to_string());
+    let key = || Some("00".repeat(32));
+    let real = UpdateConfig::resolve(false, false, base(), key(), None);
+    assert_eq!(real.source, shotik_core::update::UpdateSource::github(), "an environment variable must not change whom a user's copy trusts");
+    assert!(real.auto_check);
+    assert_eq!(real.first_check_after, Duration::from_secs(60));
+
+    let test = UpdateConfig::resolve(true, true, base(), key(), None);
+    assert_eq!(test.source.manifest_url(), "http://127.0.0.1:1/latest.json");
+    assert_eq!(test.source.public_key, "00".repeat(32));
+    assert!(test.auto_check);
+
+    let quiet = UpdateConfig::resolve(true, true, None, None, None);
+    assert!(!quiet.auto_check, "a test instance has no business reaching GitHub");
+    assert!(!UpdateConfig::resolve(false, true, None, None, None).auto_check);
+    assert!(!UpdateConfig::resolve(true, false, None, None, None).auto_check);
 }

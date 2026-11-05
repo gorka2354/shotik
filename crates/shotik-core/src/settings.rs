@@ -92,6 +92,8 @@ pub struct Settings {
     /// "system", "en" or "ru".
     pub language: String,
     pub launch_at_startup: bool,
+    /// Asks GitHub once a day whether a newer version exists.
+    pub check_updates: bool,
     #[serde(rename = "downscaleForAI")]
     pub downscale_for_ai: bool,
     pub last_region: Option<LastRegion>,
@@ -180,6 +182,7 @@ pub fn defaults(
         },
         language: "system".into(),
         launch_at_startup: false,
+        check_updates: true,
         downscale_for_ai: true,
         last_region: None,
         extra: Map::new(),
@@ -388,7 +391,8 @@ mod tests {
         assert_eq!(store.get().mcp.extra["futureServer"], "kept");
         assert_eq!(store.get().extra["futureTop"], original["futureTop"]);
         let patch = json!({"showToast": false, "translate": {"target": "ru"}, "futureTop": {"added": "value"}});
-        let expected = deep_merge(&original, &patch);
+        // Everything it had, what was changed, and the one setting Electron never had, at its default.
+        let expected = deep_merge(&deep_merge(&original, &json!({"checkUpdates": true})), &patch);
         store.set(patch).unwrap();
         let back: Value = serde_json::from_slice(&fs::read(&file).unwrap()).unwrap();
         // Includes the original rectPhys keys and unknown fields inside that rectangle.
@@ -474,6 +478,7 @@ mod tests {
             assert_eq!(json[key], true);
         }
         assert_eq!(json["launchAtStartup"], false);
+        assert_eq!(json["checkUpdates"], true);
         assert_eq!(json["language"], "system");
     }
 

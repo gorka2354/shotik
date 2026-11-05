@@ -82,6 +82,8 @@ impl AppHost for PreviewHost {
         rec_status() -> RecStatus;
         microphones() -> Result<Vec<AudioDevice>>;
         open_external(url: &str) -> Result<()>;
+        update_check();
+        update_install();
         open_save_dir() -> Result<()>;
         reveal_file(path: &Path) -> Result<()>;
         translate_text(text: &str, target: Option<&str>, done: Once<Result<Value>>);

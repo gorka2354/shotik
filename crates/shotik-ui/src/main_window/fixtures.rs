@@ -208,6 +208,12 @@ impl AppHost for PreviewHost {
     fn open_external(&self, url: &str) -> Result<()> {
         self.stub.open_external(url)
     }
+    fn update_check(&self) {
+        self.called("update_check");
+    }
+    fn update_install(&self) {
+        self.called("update_install");
+    }
     fn open_save_dir(&self) -> Result<()> {
         self.called("open_save_dir");
         Ok(())

@@ -171,6 +171,7 @@ impl App {
                 thumb: entry.thumb.clone(),
                 file: Some(entry.file.clone()),
                 color: None,
+                action: None,
             });
         }
         self.set_last_processed("record-done", Some(&entry.file));

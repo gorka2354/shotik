@@ -13,7 +13,9 @@ use windows::Win32::Networking::WinHttp::{
     WINHTTP_FLAG_SECURE, WINHTTP_OPEN_REQUEST_FLAGS, WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_QUERY_STATUS_CODE,
 };
 
-const MAX_RESPONSE: usize = 16 * 1024 * 1024;
+/// Bounds what a hostile server can make this process hold. It must stay well above the size of an installer: a limit
+/// below it could only be fixed by the update it would block.
+const MAX_RESPONSE: usize = 128 * 1024 * 1024;
 
 /// A WinHTTP handle closed on drop.
 struct Handle(*mut core::ffi::c_void);

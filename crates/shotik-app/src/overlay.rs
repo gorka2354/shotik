@@ -96,6 +96,7 @@ impl App {
             thumb: None,
             file: None,
             color: None,
+            action: None,
         });
     }
 

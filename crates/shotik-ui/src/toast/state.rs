@@ -13,7 +13,7 @@ pub struct State {
 impl State {
     pub fn show(&mut self, content: Toast, now: u64) {
         self.ttl = match content.kind.as_str() {
-            "video" | "gif" => 10_000,
+            "video" | "gif" | "update" => 10_000,
             _ => 4_200,
         };
         self.last = Some(content);
@@ -70,6 +70,7 @@ mod tests {
             thumb: None,
             file: None,
             color: None,
+            action: None,
         }
     }
 

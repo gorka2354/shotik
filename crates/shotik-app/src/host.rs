@@ -20,6 +20,7 @@ impl AppHost for App {
             "settings": self.settings(),
             "version": self.env.version,
             "mcp": self.mcp_status(),
+            "update": self.update_status(),
             "mcpLog": self.mcp.get().map_or_else(Vec::new, |server| server.get_log()),
             "hotkeyErrors": self.state().hotkey_errors,
             "hasLastRegion": self.settings().last_region.is_some(),
@@ -76,6 +77,7 @@ impl AppHost for App {
             thumb: entry.thumb.clone(),
             file: Some(entry.file.clone()),
             color: None,
+            action: None,
         });
         Ok(true)
     }
@@ -207,6 +209,16 @@ impl AppHost for App {
         self.ports.audio_devices.microphones()
     }
 
+    fn update_check(&self) {
+        let app = self.arc();
+        self.update_thread("shotik-update-check", move || app.check_for_update(true));
+    }
+
+    fn update_install(&self) {
+        let app = self.arc();
+        self.update_thread("shotik-update-install", move || app.install_update());
+    }
+
     fn open_external(&self, url: &str) -> Result<()> {
         if url.starts_with("http://") || url.starts_with("https://") {
             self.ports.shell.open_url(url)
@@ -280,6 +292,7 @@ impl AppHost for App {
                 thumb: None,
                 file: None,
                 color: Some(hex.to_string()),
+                action: None,
             }),
             Err(e) => self.ports.ui.show_toast(text_toast(self.t("colorTitle"), e.to_string())),
         }
@@ -364,6 +377,7 @@ impl App {
                     thumb: None,
                     file: Some(gif.clone()),
                     color: None,
+                    action: None,
                 });
                 if let Err(e) = self.ports.clipboard.write_text(&gif.to_string_lossy()) {
                     self.diag.log(&format!("cannot copy the GIF path: {e}"));

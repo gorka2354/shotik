@@ -18,6 +18,12 @@ fn known_folder(id: &windows::core::GUID) -> Result<PathBuf> {
     }
 }
 
+/// The folder of an installed copy: its uninstaller sits next to the executable. None for a portable one.
+pub fn install_dir_of(exe: &std::path::Path) -> Option<PathBuf> {
+    let dir = exe.parent()?;
+    dir.join("Uninstall Shotik.exe").is_file().then(|| dir.to_path_buf())
+}
+
 /// `%APPDATA%`. The environment variable wins, so test instances can have a private profile.
 pub fn app_data() -> Result<PathBuf> {
     match std::env::var_os("APPDATA").filter(|v| !v.is_empty()) {

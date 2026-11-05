@@ -122,6 +122,8 @@ impl AppHost for StubHost {
     fn open_external(&self, _url: &str) -> Result<()> {
         Ok(())
     }
+    fn update_check(&self) {}
+    fn update_install(&self) {}
     fn open_save_dir(&self) -> Result<()> {
         Ok(())
     }

@@ -235,6 +235,7 @@ fn show_problem(title_key: &str, message: &str) {
         thumb: None,
         file: None,
         color: None,
+        action: None,
     });
 }
 
