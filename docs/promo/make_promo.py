@@ -65,12 +65,12 @@ TEXT = {
         "statOverlay": "to the overlay",
         "mb": "MB",
         "ms": "ms",
-        "ask": "the Pay button looks broken, see it?",
+        "ask": "something is off on this page, see it?",
         "image": "[Image #1]",
-        "answer": ["I see it: the Pay button sticks out past the right edge",
-                   "of the order card. And your token is hidden, so that is safe."],
+        "answer": ["I see it: the total is $48.00, but the button charges $84.00.",
+                   "The digits are swapped. And your token is hidden, so that is safe."],
         "askMcp": "now check my screen yourself",
-        "answerMcp": ["Checkout is open, and the button is still outside the card."],
+        "answerMcp": ["The button still says $84.00, so it is not fixed yet."],
         "toolCall": "shotik · take_screenshot",
     },
     "ru": {
@@ -93,12 +93,12 @@ TEXT = {
         "statOverlay": "до оверлея",
         "mb": "МБ",
         "ms": "мс",
-        "ask": "кнопка оплаты выглядит сломанной, видишь?",
+        "ask": "что-то не так на этой странице, видишь?",
         "image": "[Image #1]",
-        "answer": ["Вижу: кнопка оплаты вылезает за правый край карточки",
-                   "заказа. А токен скрыт, так что всё безопасно."],
+        "answer": ["Вижу: итого 4 800 ₽, а кнопка списывает 8 400 ₽.",
+                   "Цифры перепутаны. А токен скрыт, так что всё безопасно."],
         "askMcp": "теперь проверь мой экран сам",
-        "answerMcp": ["Оплата открыта, и кнопка всё ещё вне карточки."],
+        "answerMcp": ["Кнопка всё ещё показывает 8 400 ₽, пока не исправлено."],
         "toolCall": "shotik · take_screenshot",
     },
 }
@@ -414,9 +414,9 @@ def scene_capture(film, exe, stages, t, temp):
             film.screen = app.shot()
             film.hold(0.1)
 
-        stroke("rect", (432, 361), (868, 419), frames=9)
-        stroke("arrow", (846, 214), (806, 352), frames=9)
-        stroke("blur", (442, 432), (624, 458), frames=8)
+        stroke("rect", (358, 362), (742, 418), frames=9)
+        stroke("arrow", (850, 268), (752, 354), frames=9)
+        stroke("blur", (442, 452), (624, 476), frames=8)
         film.hold(0.4)
         return film.screen
     finally:
