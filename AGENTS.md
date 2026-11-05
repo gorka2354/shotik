@@ -28,7 +28,9 @@ Read first: `docs/rust/ARCHITECTURE.md`, `docs/rust/CONTRACT.md`.
 4. **Explicit errors.** A silent fallback that carries on as if nothing happened is a bug. Every
    port returns a typed error; the caller decides what the user sees.
 5. **Test the contract, not the implementation.** Pure logic gets unit tests that survive a refactor.
-6. **No secrets in code, docs, commits or logs.** `settings.json` may contain a DeepL key.
+6. **No secrets in code, docs, commits or logs.** `settings.json` may contain a DeepL key. `.env` holds the update
+   signing key, which decides what every installed copy will run: do not read or print it, and never copy it anywhere.
+   Only `installer/publish-release.js` uses it (`docs/rust/UPDATES.md`).
 
 ## Build environment
 
