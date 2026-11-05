@@ -13,7 +13,7 @@ use windows::Win32::Foundation::ERROR_FILE_NOT_FOUND;
 use windows::Win32::System::Com::{CoInitializeEx, CoTaskMemFree, CoUninitialize, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE};
 use windows::Win32::UI::Shell::Common::ITEMIDLIST;
 use windows::Win32::UI::Shell::{
-    SHOpenFolderAndSelectItems, SHParseDisplayName, ShellExecuteExW, SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW,
+    SHOpenFolderAndSelectItems, SHParseDisplayName, SHQueryUserNotificationState, ShellExecuteExW, QUNS_ACCEPTS_NOTIFICATIONS, SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW,
 };
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
@@ -198,6 +198,15 @@ impl Shell for WinShell {
             .spawn()
             .map(drop)
             .map_err(|e| Error::io("start the installer", installer, e))
+    }
+
+    fn notifications_welcome(&self) -> bool {
+        // SAFETY: no pointers go in, and the state comes back by value.
+        match unsafe { SHQueryUserNotificationState() } {
+            Ok(state) => state == QUNS_ACCEPTS_NOTIFICATIONS,
+            // Only a toast is at stake, and never hearing of an update costs more than one badly timed toast.
+            Err(_) => true,
+        }
     }
 
     fn open_url(&self, url: &str) -> Result<()> {

@@ -171,6 +171,7 @@ struct FakeShell {
     urls: Mutex<Vec<String>>,
     installers: Mutex<Vec<StartedInstaller>>,
     installer_error: Mutex<Option<String>>,
+    busy: Mutex<bool>,
 }
 impl Shell for FakeShell {
     fn reveal_in_folder(&self, _path: &Path) -> Result<()> {
@@ -182,6 +183,9 @@ impl Shell for FakeShell {
     fn open_url(&self, url: &str) -> Result<()> {
         self.urls.lock().unwrap().push(url.to_string());
         Ok(())
+    }
+    fn notifications_welcome(&self) -> bool {
+        !*self.busy.lock().unwrap()
     }
     fn run_installer(&self, installer: &Path, install_dir: &Path, show_main: bool) -> Result<()> {
         if let Some(error) = self.installer_error.lock().unwrap().as_ref() {
@@ -1118,6 +1122,38 @@ fn turned_off_toasts_leave_the_offer_in_the_tray() {
     assert!(r.tray_has_update());
     r.app.check_for_update(true);
     assert_eq!(r.toasts().len(), 1, "the user asked, so the user hears");
+}
+
+#[test]
+fn a_fullscreen_game_puts_off_the_toast_but_not_the_offer() {
+    let r = rig_with("update-busy", true, false);
+    *r.shell.busy.lock().unwrap() = true;
+    r.publish("2.1.0");
+    let now = std::time::SystemTime::now();
+    r.app.update_tick(now);
+    assert_eq!(r.app.update_status()["available"], "2.1.0");
+    assert!(r.tray_has_update(), "the tray interrupts nobody");
+    assert!(r.toasts().is_empty());
+
+    r.app.update_tick(now + Duration::from_secs(3600));
+    assert!(r.toasts().is_empty(), "still playing");
+    assert_eq!(r.requests_of("latest.json"), 2, "and no extra requests: one manifest, one signature");
+
+    *r.shell.busy.lock().unwrap() = false;
+    r.app.update_tick(now + Duration::from_secs(7200));
+    assert_eq!(r.toasts().len(), 1, "the game is over, so now it can say so");
+    assert_eq!(r.toasts()[0].kind, "update");
+    r.app.update_tick(now + Duration::from_secs(10800));
+    assert_eq!(r.toasts().len(), 1, "once");
+}
+
+#[test]
+fn asking_during_a_fullscreen_game_still_gets_an_answer() {
+    let r = rig_with("update-busy-asked", true, false);
+    *r.shell.busy.lock().unwrap() = true;
+    r.publish("2.1.0");
+    r.app.check_for_update(true);
+    assert_eq!(r.toasts().len(), 1);
 }
 
 #[test]

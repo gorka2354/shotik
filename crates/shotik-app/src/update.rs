@@ -64,7 +64,7 @@ pub(crate) struct UpdateState {
     last_success: Option<SystemTime>,
     /// The last failure, until the next attempt.
     error: Option<String>,
-    /// Which version the user has been told about. The tray and main window keep saying it; a toast says it once.
+    /// Which version a toast has told the user about. The tray and main window keep saying it; a toast says it once.
     announced: Option<Version>,
 }
 
@@ -123,7 +123,26 @@ impl App {
         let last_success = self.state().update.last_success;
         if self.settings().check_updates && check_is_due(last_success, now) {
             self.check_for_update(false);
+        } else if let Some(toast) = self.available_update().and_then(|version| self.announcement(version, false)) {
+            self.ports.ui.show_toast(toast);
         }
+    }
+
+    /// A toast about this version, if one should appear now. Unasked, it appears once, when it interrupts nothing: until
+    /// then the tray and main window carry the offer, and the hourly look tries again. A test instance has no user to
+    /// consider, only somebody's real desktop to depend on.
+    fn announcement(&self, version: Version, manual: bool) -> Option<Toast> {
+        let news = self.state().update.announced != Some(version);
+        if !manual && !(news && self.settings().show_toast && (self.env.test_mode || self.ports.shell.notifications_welcome())) {
+            return None;
+        }
+        self.state().update.announced = Some(version);
+        Some(self.update_toast(
+            "update",
+            self.t_args("updateAvailableTitle", &[&version.to_string()]),
+            self.t("updateAvailableBody"),
+            Some(self.t("updateAction")),
+        ))
     }
 
     /// One look at the latest release. `manual` means the user asked and is waiting to hear the answer.
@@ -161,7 +180,6 @@ impl App {
     }
 
     fn finish_check(&self, found: Result<Option<Manifest>>, manual: bool) -> Option<Toast> {
-        let show_toast = self.settings().show_toast;
         let mut state = self.state();
         let update = &mut state.update;
         update.checking = false;
@@ -178,24 +196,15 @@ impl App {
                 update.available = None;
                 update.last_success = Some(SystemTime::now());
                 drop(state);
-                manual.then(|| self.update_toast("update", self.t("updateLatestTitle"), String::new(), None))
+                manual.then(|| self.update_toast("update-done", self.t("updateLatestTitle"), String::new(), None))
             }
             Ok(Some(manifest)) => {
                 let version = manifest.version;
-                let first_time = update.announced != Some(version);
                 update.error = None;
                 update.available = Some(manifest);
-                update.announced = Some(version);
                 update.last_success = Some(SystemTime::now());
                 drop(state);
-                (manual || (first_time && show_toast)).then(|| {
-                    self.update_toast(
-                        "update",
-                        self.t_args("updateAvailableTitle", &[&version.to_string()]),
-                        self.t("updateAvailableBody"),
-                        Some(self.t("updateAction")),
-                    )
-                })
+                self.announcement(version, manual)
             }
         }
     }

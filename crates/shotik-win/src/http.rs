@@ -237,6 +237,18 @@ mod tests {
         assert!(!error.contains("127.0.0.1"), "{error}");
     }
 
+    /// The kind of address an update downloads from, redirected to another host, at the size of a real installer. It needs the
+    /// network, so it is left out of a normal run: `cargo test -p shotik-win --lib -- --ignored github_release`.
+    #[test]
+    #[ignore = "needs the network"]
+    fn github_release_downloads_follow_redirects() {
+        let url = "https://github.com/gorka2354/shotik/releases/download/v2.0.1/Shotik-Setup-2.0.1.exe";
+        let reply = WinHttp.send(HttpRequest { method: "GET", url, headers: &[], body: None, timeout_ms: 60_000 }).unwrap();
+        assert_eq!(reply.status, 200);
+        assert!(reply.body.len() > 1024 * 1024, "{} bytes", reply.body.len());
+        assert_eq!(&reply.body[..2], b"MZ", "an executable, not a page");
+    }
+
     #[test]
     fn urls_parse_or_fail_clearly() {
         let t = parse_url("https://translate.googleapis.com/translate_a/single?q=1").unwrap();

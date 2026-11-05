@@ -197,6 +197,8 @@ pub trait Shell: Send + Sync {
     /// Starts a verified installer on `install_dir` and returns at once: it stops this process, replaces the
     /// executable and starts the new one, with the main window open when `show_main` says so.
     fn run_installer(&self, installer: &Path, install_dir: &Path, show_main: bool) -> Result<()>;
+    /// False while a notification nobody asked for would interrupt: a fullscreen game or presentation, a locked screen.
+    fn notifications_welcome(&self) -> bool;
 }
 
 pub trait Dialogs: Send + Sync {
