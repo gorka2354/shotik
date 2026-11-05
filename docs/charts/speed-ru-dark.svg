@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="422" viewBox="0 0 760 422" role="img" aria-labelledby="t d" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">
+<title id="t">Скорость: меньше — лучше</title>
+<desc id="d">Запуск до готовности: Electron 465 мс, Rust 32 мс; Показ оверлея: Electron 753 мс, Rust 51 мс; take_screenshot: Electron 1 677 мс, Rust 162 мс; capture_window: Electron 999 мс, Rust 41 мс; OCR выделения: Electron 685 мс, Rust 57 мс; Старт записи видео: Electron 2 507 мс, Rust 497 мс</desc>
+<rect x="0.5" y="0.5" width="759" height="421" rx="10" fill="#1a1a19" stroke="#33322e"/>
+<text x="20" y="32" font-size="16" fill="#f0efec" font-weight="600">Скорость: меньше — лучше</text>
+<text x="20" y="52" font-size="12" fill="#c3c2b7" >Медиана времени, мс. Electron: лучшая из 1.3.0 и 1.3.1.</text>
+<rect x="232" y="64" width="10" height="10" rx="2" fill="#3987e5"/>
+<text x="247" y="73" font-size="12" fill="#c3c2b7" >Electron</text>
+<rect x="316" y="64" width="10" height="10" rx="2" fill="#d95926"/>
+<text x="331" y="73" font-size="12" fill="#c3c2b7" >Rust</text>
+<text x="20" y="109" font-size="13" fill="#f0efec" >Запуск до готовности</text>
+<path d="M232 88h75.4a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-75.4z" fill="#3987e5"/>
+<path d="M232 106h1.5a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-1.5z" fill="#d95926"/>
+<text x="319.38571998404467" y="100" font-size="12" fill="#c3c2b7" >465 мс</text>
+<text x="245.46310331072996" y="118" font-size="12" fill="#f0efec" font-weight="600">32 мс</text>
+<text x="20" y="159" font-size="13" fill="#f0efec" >Показ оверлея</text>
+<path d="M232 138h124.6a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-124.6z" fill="#3987e5"/>
+<path d="M232 156h4.7a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-4.7z" fill="#d95926"/>
+<text x="368.55364978061425" y="150" font-size="12" fill="#c3c2b7" >753 мс</text>
+<text x="248.70682090147588" y="168" font-size="12" fill="#f0efec" font-weight="600">51 мс</text>
+<text x="20" y="209" font-size="13" fill="#f0efec" >take_screenshot</text>
+<path d="M232 188h282.3a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-282.3z" fill="#3987e5"/>
+<path d="M232 206h23.7a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-23.7z" fill="#d95926"/>
+<text x="526.3007578779418" y="200" font-size="12" fill="#c3c2b7" >1 677 мс</text>
+<text x="267.6569605105704" y="218" font-size="12" fill="#f0efec" font-weight="600">162 мс</text>
+<text x="20" y="259" font-size="13" fill="#f0efec" >capture_window</text>
+<path d="M232 238h166.6a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-166.6z" fill="#3987e5"/>
+<path d="M232 256h3.0a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-3.0z" fill="#d95926"/>
+<text x="410.5512564818508" y="250" font-size="12" fill="#c3c2b7" >999 мс</text>
+<text x="246.99960111687275" y="268" font-size="12" fill="#f0efec" font-weight="600">41 мс</text>
+<text x="20" y="309" font-size="13" fill="#f0efec" >OCR выделения</text>
+<path d="M232 288h112.9a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-112.9z" fill="#3987e5"/>
+<path d="M232 306h5.7a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-5.7z" fill="#d95926"/>
+<text x="356.9445552453131" y="300" font-size="12" fill="#c3c2b7" >685 мс</text>
+<text x="249.73115277223772" y="318" font-size="12" fill="#f0efec" font-weight="600">57 мс</text>
+<text x="20" y="359" font-size="13" fill="#f0efec" >Старт записи видео</text>
+<path d="M232 338h424.0a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-424.0z" fill="#3987e5"/>
+<path d="M232 356h80.8a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-80.8z" fill="#d95926"/>
+<text x="668" y="350" font-size="12" fill="#c3c2b7" >2 507 мс</text>
+<text x="324.84882329477466" y="368" font-size="12" fill="#f0efec" font-weight="600">497 мс</text>
+<line x1="232" y1="84" x2="232" y2="376" stroke="#33322e"/>
+<text x="20" y="408" font-size="11" fill="#9c9b91" >Бенчмарк в ghost-режиме. На настоящем столе оверлей Rust появляется примерно через 150 мс после нажатия.</text>
+</svg>
