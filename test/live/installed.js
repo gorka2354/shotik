@@ -3,7 +3,7 @@
 // closes them again, so nothing is saved, copied or translated.
 //   node test/live/installed.js [--min-idle 120]
 const { spawn, spawnSync, execFileSync } = require('child_process');
-const { Live, UserBack, until, sleep, VK, SCRATCH, fs, path, os } = require('./lib');
+const { Live, UserBack, trayIcon, until, sleep, VK, SCRATCH, fs, path, os } = require('./lib');
 
 const argOf = (n, d) => { const i = process.argv.indexOf('--' + n); return i === -1 ? d : process.argv[i + 1]; };
 const L = new Live({ minIdleSec: Number(argOf('min-idle', 120)) });
@@ -16,12 +16,6 @@ function installedPid() {
   const out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
     `(Get-Process Shotik -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq '${EXE.replace(/'/g, "''")}' } | Select-Object -First 1).Id`], { encoding: 'utf8', windowsHide: true });
   return Number(out.trim());
-}
-
-// Where the shell draws the icon, whether on the taskbar or in the flyout of hidden icons.
-function findIcon() {
-  const out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(SCRATCH, 'tray-icon.ps1')], { encoding: 'utf8', windowsHide: true });
-  return JSON.parse(out.trim().split(/\r?\n/).pop());
 }
 
 (async () => {
@@ -67,31 +61,11 @@ function findIcon() {
     // A real click on the real tray icon.
     const t = await call('tray', { cls: 'Shotik.NativeTray', pid });
     if (L.check('the tray icon exists', t.found && t.hr === 0, JSON.stringify(t))) {
-      const realClick = async (x, y, down, up) => {
-        await L.move(x, y);
-        await sleep(300);
-        await L.guard();
-        await L.assertCursor(x, y);
-        L.mark(await call('btn', { flags: down }));
-        await sleep(60);
-        L.mark(await call('btn', { flags: up }));
-      };
-      // Windows hides a new icon in the flyout, and the rectangle it reports is then the arrow's. The arrow
-      // moves as other icons come and go, so the rectangle is read right before the click.
-      const openFlyout = async () => {
-        let found = findIcon();
-        if (found.found) return found;
-        const arrow = await call('tray', { cls: 'Shotik.NativeTray', pid });
-        await realClick(arrow.x + Math.floor(arrow.w / 2), arrow.y + Math.floor(arrow.h / 2), 0x0002, 0x0004);
-        await until(async () => /Overflow/.test((await call('fg')).cls), 2000, 50);
-        await sleep(250);
-        found = findIcon();
-        return found;
-      };
-      const icon = await openFlyout();
+      const tray = trayIcon(L, pid);
+      const icon = await tray.reveal();
       L.note('icon ' + JSON.stringify(icon));
       if (L.check('the shell shows it', icon.found)) {
-        await realClick(icon.x, icon.y, 0x0002, 0x0004);
+        await tray.leftClick(icon);
         const main = await until(async () => (await list()).find((x) => x.w > 800 && x.h > 500), 2500, 60);
         if (L.check('a real click opens the main window', !!main)) {
           await sleep(500);
@@ -101,9 +75,9 @@ function findIcon() {
           await until(async () => (await list()).length === 0, 1500, 40);
           await sleep(200);
         }
-        const again = await openFlyout();
+        const again = await tray.reveal();
         if (L.check('the shell shows it again', again.found)) {
-          await realClick(again.x, again.y, 0x0008, 0x0010);
+          await tray.rightClick(again);
           const menu = await until(async () => (await list()).find((x) => x.cls === '#32768'), 2500, 60);
           if (L.check('a real right click opens the menu', !!menu)) {
             await sleep(200);
