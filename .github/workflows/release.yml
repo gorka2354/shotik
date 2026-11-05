@@ -65,6 +65,9 @@ jobs:
           & $makensis "/DVERSION=$env:CRATE_VERSION" "/DEXE=$exe" "/DOUT=$out" installer\shotik.nsi
           if ($LASTEXITCODE -ne 0) { throw "makensis failed with $LASTEXITCODE" }
           Copy-Item $exe "dist\Shotik-$env:CRATE_VERSION-portable.exe"
+      - name: Installer does what it says
+        shell: powershell
+        run: installer\smoke.ps1 -Setup (Resolve-Path "dist\Shotik-Setup-$env:CRATE_VERSION.exe").Path
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: shotik-windows
