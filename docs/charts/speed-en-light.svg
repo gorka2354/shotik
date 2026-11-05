@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="422" viewBox="0 0 760 422" role="img" aria-labelledby="t d" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">
+<title id="t">Speed: less is better</title>
+<desc id="d">Startup to ready: Electron 465 ms, Rust 32 ms; Overlay shown: Electron 753 ms, Rust 51 ms; take_screenshot: Electron 1,677 ms, Rust 162 ms; capture_window: Electron 999 ms, Rust 41 ms; OCR of a selection: Electron 685 ms, Rust 57 ms; Video recording starts: Electron 2,507 ms, Rust 497 ms</desc>
+<rect x="0.5" y="0.5" width="759" height="421" rx="10" fill="#fcfcfb" stroke="#e8e7e3"/>
+<text x="20" y="32" font-size="16" fill="#0b0b0b" font-weight="600">Speed: less is better</text>
+<text x="20" y="52" font-size="12" fill="#52514e" >Median time, ms. Electron is the better of 1.3.0 and 1.3.1.</text>
+<rect x="232" y="64" width="10" height="10" rx="2" fill="#2a78d6"/>
+<text x="247" y="73" font-size="12" fill="#52514e" >Electron</text>
+<rect x="316" y="64" width="10" height="10" rx="2" fill="#eb6834"/>
+<text x="331" y="73" font-size="12" fill="#52514e" >Rust</text>
+<text x="20" y="109" font-size="13" fill="#0b0b0b" >Startup to ready</text>
+<path d="M232 88h75.4a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-75.4z" fill="#2a78d6"/>
+<path d="M232 106h1.5a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-1.5z" fill="#eb6834"/>
+<text x="319.38571998404467" y="100" font-size="12" fill="#52514e" >465 ms</text>
+<text x="245.46310331072996" y="118" font-size="12" fill="#0b0b0b" font-weight="600">32 ms</text>
+<text x="20" y="159" font-size="13" fill="#0b0b0b" >Overlay shown</text>
+<path d="M232 138h124.6a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-124.6z" fill="#2a78d6"/>
+<path d="M232 156h4.7a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-4.7z" fill="#eb6834"/>
+<text x="368.55364978061425" y="150" font-size="12" fill="#52514e" >753 ms</text>
+<text x="248.70682090147588" y="168" font-size="12" fill="#0b0b0b" font-weight="600">51 ms</text>
+<text x="20" y="209" font-size="13" fill="#0b0b0b" >take_screenshot</text>
+<path d="M232 188h282.3a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-282.3z" fill="#2a78d6"/>
+<path d="M232 206h23.7a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-23.7z" fill="#eb6834"/>
+<text x="526.3007578779418" y="200" font-size="12" fill="#52514e" >1,677 ms</text>
+<text x="267.6569605105704" y="218" font-size="12" fill="#0b0b0b" font-weight="600">162 ms</text>
+<text x="20" y="259" font-size="13" fill="#0b0b0b" >capture_window</text>
+<path d="M232 238h166.6a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-166.6z" fill="#2a78d6"/>
+<path d="M232 256h3.0a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-3.0z" fill="#eb6834"/>
+<text x="410.5512564818508" y="250" font-size="12" fill="#52514e" >999 ms</text>
+<text x="246.99960111687275" y="268" font-size="12" fill="#0b0b0b" font-weight="600">41 ms</text>
+<text x="20" y="309" font-size="13" fill="#0b0b0b" >OCR of a selection</text>
+<path d="M232 288h112.9a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-112.9z" fill="#2a78d6"/>
+<path d="M232 306h5.7a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-5.7z" fill="#eb6834"/>
+<text x="356.9445552453131" y="300" font-size="12" fill="#52514e" >685 ms</text>
+<text x="249.73115277223772" y="318" font-size="12" fill="#0b0b0b" font-weight="600">57 ms</text>
+<text x="20" y="359" font-size="13" fill="#0b0b0b" >Video recording starts</text>
+<path d="M232 338h424.0a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-424.0z" fill="#2a78d6"/>
+<path d="M232 356h80.8a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-80.8z" fill="#eb6834"/>
+<text x="668" y="350" font-size="12" fill="#52514e" >2,507 ms</text>
+<text x="324.84882329477466" y="368" font-size="12" fill="#0b0b0b" font-weight="600">497 ms</text>
+<line x1="232" y1="84" x2="232" y2="376" stroke="#e8e7e3"/>
+<text x="20" y="408" font-size="11" fill="#6f6e69" >Benchmark, in ghost mode. On a real desktop the Rust overlay appears about 150 ms after the key press.</text>
+</svg>
