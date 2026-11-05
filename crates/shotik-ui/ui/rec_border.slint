@@ -1,0 +1,10 @@
+// Frame around the recorded region. Reference: src/record/border.html.
+import { Theme } from "theme.slint";
+
+export component RecBorder inherits Window {
+    no-frame: true;
+    background: transparent;
+    default-font-family: Theme.font;
+    in property <float> pulse: 1;
+    Rectangle { border-width: 3px; border-color: #ff4d4d.with-alpha(root.pulse); background: transparent; }
+}

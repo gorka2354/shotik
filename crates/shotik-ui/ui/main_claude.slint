@@ -1,0 +1,84 @@
+import { Theme } from "theme.slint";
+import { Card, Button, Switch } from "fluent.slint";
+
+export struct MainLogEntry { time: string, tool: string, elapsed: string, ok: bool }
+
+component ToolCode inherits Rectangle {
+    in property <string> text;
+    height: 19px; width: label.preferred-width + 14px; border-radius: 4px; background: Theme.main-code;
+    label := Text { text: root.text; color: Theme.text; font-family: "Cascadia Mono"; font-size: 11.5px; horizontal-alignment: center; vertical-alignment: center; }
+}
+
+export component MainClaudePage inherits Rectangle {
+    in property <string> status;
+    in property <string> command;
+    in property <bool> enabled;
+    in property <[MainLogEntry]> logs;
+    in property <bool> copied;
+    pure callback lookup(string) -> string;
+    callback toggled(bool);
+    callback copy();
+    height: calls.y + calls.height;
+    Card {
+        y: 48px; width: parent.width; height: 71px;
+        Text { x: 18px; y: 14px; height: 20px; text: root.lookup("mcpCardTitle"); color: Theme.text; font-size: 14px; font-weight: 600; }
+        Text { x: 18px; y: 37px; height: 20px; text: root.status; color: Theme.text-secondary; font-size: 12.5px; }
+        Switch { x: parent.width - 58px; y: 25px; checked: root.enabled; label: root.lookup("mcpCardTitle"); toggled(value) => { root.toggled(value); } }
+    }
+    Card {
+        y: 131px; width: parent.width; height: 122px;
+        title := Text { x: 18px; y: 14px; height: 20px; text: root.lookup("connectTitle"); color: Theme.text; font-size: 14px; font-weight: 600; }
+        Rectangle { x: title.x + title.preferred-width + 8px; y: 14px; height: 20px; width: once.preferred-width + 14px; border-radius: 3px; background: Theme.accent.with-alpha(0.12);
+            once := Text { text: root.lookup("connectOnce"); color: Theme.accent; font-size: 10.5px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; }
+        }
+        Rectangle { x: 18px; y: 44px; width: parent.width - copy-button.width - 44px; height: 33px; border-radius: 5px; background: Theme.main-code; border-width: 1px; border-color: Theme.main-stroke;
+            TextInput { x: 12px; width: parent.width - 24px; height: parent.height; text: root.command; color: Theme.text; font-family: "Cascadia Mono"; font-size: 12px; vertical-alignment: center;
+                single-line: true; read-only: true; selection-background-color: Theme.accent; selection-foreground-color: Theme.accent-text; }
+        }
+        copy-button := Button { x: parent.width - self.width - 18px; y: 44px; width: max(52px,self.preferred-width); small: true; text: root.lookup(root.copied ? "btnCopiedCmd" : "btnCopyCmd"); clicked => { root.copy(); } }
+        Text { x: 18px; y: 88px; height: 20px; width: parent.width - 36px; text: root.lookup("connectSub"); color: Theme.text-secondary; font-size: 12.5px; overflow: elide; }
+    }
+    tools := Card {
+        y: 265px; width: parent.width; height: 256px;
+        Text { x: 18px; y: 14px; height: 20px; text: root.lookup("toolsTitle"); color: Theme.text; font-size: 14px; font-weight: 600; }
+        for tool[i] in ["take_screenshot", "ask_user_to_select_region", "get_last_screenshot"]: Rectangle {
+            x: 18px; y: 44px + i * 26px; width: parent.width - 36px; height: 20px;
+            code := ToolCode { x: 0px; y: 0px; text: tool; }
+            Text { x: code.width + 8px; y: 0px; height: 20px; text: "— " + root.lookup(i == 0 ? "toolDesc1" : i == 1 ? "toolDesc2" : "toolDesc3"); color: Theme.text-secondary; font-size: 13px; vertical-alignment: center; }
+        }
+        HorizontalLayout { x: 18px; y: 122px; height: 20px; spacing: 5px; alignment: start;
+            ToolCode { text: "take_screenshot_region"; } Text { text: "·"; color: Theme.text-secondary; }
+            ToolCode { text: "list_screenshots"; } Text { text: "·"; color: Theme.text-secondary; } ToolCode { text: "list_displays"; }
+        }
+        HorizontalLayout { x: 18px; y: 148px; height: 20px; spacing: 5px; alignment: start;
+            ToolCode { text: "list_recordings"; } Text { text: "·"; color: Theme.text-secondary; } ToolCode { text: "get_last_recording"; }
+            Text { text: "— " + root.lookup("toolDescRec"); color: Theme.text-secondary; font-size: 13px; vertical-alignment: center; }
+        }
+        Rectangle { x: 18px; y: 182px; width: parent.width - 36px; height: 60px; border-radius: 5px;
+            background: Theme.accent.with-alpha(0.07); border-width: 1px; border-color: Theme.accent.with-alpha(0.22);
+            Text { x: 13px; y: 10px; width: parent.width - 26px; height: 40px; text: root.lookup("hintBox"); color: Theme.text-secondary; font-size: 12.5px; wrap: word-wrap; }
+        }
+    }
+    calls := Card {
+        y: tools.y + tools.height + 12px; width: parent.width; height: 48px + (root.logs.length == 0 ? 30px : min(260px, root.logs.length * 32px));
+        Text { x: 18px; y: 14px; height: 20px; text: root.lookup("logTitle"); color: Theme.text; font-size: 14px; font-weight: 600; }
+        if root.logs.length == 0: Text { x: 18px; y: 42px; height: 20px; text: root.lookup("logEmpty"); color: Theme.text-tertiary; font-size: 12.5px; }
+        Rectangle {
+            visible: root.logs.length > 0; x: 18px; y: 40px; width: parent.width - 36px; height: parent.height - 54px;
+            clip: true;
+            Flickable {
+                width: parent.width; height: parent.height;
+                content-width: self.width; content-height: root.logs.length * 32px;
+                for item[i] in root.logs: Rectangle {
+                    y: i * 32px; height: 28px; width: parent.width; background: Theme.main-code; border-radius: 4px;
+                    HorizontalLayout { padding-left: 10px; padding-right: 10px; spacing: 10px;
+                        Text { text: item.time; color: Theme.text-tertiary; font-family: "Cascadia Mono"; font-size: 12px; vertical-alignment: center; }
+                        Text { text: item.tool; color: Theme.text; font-family: "Cascadia Mono"; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; }
+                        Text { text: item.elapsed; color: Theme.text-tertiary; font-family: "Cascadia Mono"; font-size: 12px; vertical-alignment: center; }
+                        Text { text: item.ok ? "✓" : "✕"; color: item.ok ? #2e9e5b : #c42b1c; vertical-alignment: center; }
+                    }
+                }
+            }
+        }
+    }
+}

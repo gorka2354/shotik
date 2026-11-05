@@ -1,0 +1,37 @@
+[
+ {
+  "id": "legacy",
+  "file": "$FIXTURE/legacy.png",
+  "thumb": null,
+  "width": 100,
+  "height": 80,
+  "ts": 1700000000000,
+  "source": "region",
+  "future": {
+   "note": "kept"
+  }
+ },
+ {
+  "id": "video",
+  "file": "$FIXTURE/record.mp4",
+  "thumb": "$FIXTURE/record.jpg",
+  "width": 1920,
+  "height": 1080,
+  "ts": 1699999999000,
+  "source": "record",
+  "kind": "video",
+  "duration": 12.3,
+  "future": 9
+ },
+ {
+  "id": "audio",
+  "file": "$FIXTURE/call.m4a",
+  "thumb": null,
+  "width": 0,
+  "height": 0,
+  "ts": 1699999998000,
+  "source": "record",
+  "kind": "audio",
+  "duration": 42.1
+ }
+]

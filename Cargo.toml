@@ -1,0 +1,34 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "2.0.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/gorka2354/shotik"
+
+[workspace.dependencies]
+shotik-core = { path = "crates/shotik-core" }
+shotik-fake = { path = "crates/shotik-fake" }
+shotik-win = { path = "crates/shotik-win" }
+shotik-mcp = { path = "crates/shotik-mcp" }
+shotik-recorder = { path = "crates/shotik-recorder" }
+shotik-ui = { path = "crates/shotik-ui" }
+shotik-app = { path = "crates/shotik-app" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[profile.dev]
+debug = "line-tables-only"
+
+# Capture, image and encoding code is unusably slow at opt-level 0.
+[profile.dev.package."*"]
+opt-level = 2
+debug = false
+
+[profile.release]
+lto = "thin"
+strip = "symbols"

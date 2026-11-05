@@ -1,0 +1,193 @@
+{
+  "label": "electron-1.3.1",
+  "impl": "electron",
+  "quick": false,
+  "measuredAt": "2026-11-04T21:09:11.937Z",
+  "machine": {
+    "ramFreeGB": 21,
+    "ramTotalGB": 63,
+    "loadPercent": 3,
+    "threads": 32,
+    "os": "�������� Windows 11 Pro",
+    "cpu": "AMD Ryzen 9 7950X3D 16-Core Processor          "
+  },
+  "artifact": {
+    "exeMB": 180,
+    "installDirMB": 269
+  },
+  "startup": {
+    "readyMs": {
+      "n": 7,
+      "min": 451,
+      "median": 465,
+      "p95": 685,
+      "max": 685
+    },
+    "first": 685
+  },
+  "afterStartup5s": {
+    "treePrivateMB": {
+      "n": 7,
+      "min": 421,
+      "median": 422,
+      "p95": 425,
+      "max": 425
+    },
+    "procs": 6
+  },
+  "displays": [
+    {
+      "w": 1920,
+      "h": 1080,
+      "scale": 1,
+      "primary": false
+    },
+    {
+      "w": 2560,
+      "h": 1440,
+      "scale": 1,
+      "primary": false
+    },
+    {
+      "w": 2560,
+      "h": 1440,
+      "scale": 1.5,
+      "primary": true
+    }
+  ],
+  "idle": {
+    "procs": 6,
+    "rootPrivateMB": 78,
+    "treePrivateMB": 404,
+    "treeWorkingSetMB": 681,
+    "cpuMsPerSec": 2
+  },
+  "overlay": {
+    "coldShowMs": 3113,
+    "warmShowMs": {
+      "n": 29,
+      "min": 3113,
+      "median": 6460,
+      "p95": 6706,
+      "max": 6715
+    },
+    "warmStagesMs": {
+      "grab": {
+        "n": 29,
+        "min": 2624,
+        "median": 6026,
+        "p95": 6266,
+        "max": 6286
+      },
+      "winCreate": {
+        "n": 29,
+        "min": 2638,
+        "median": 6041,
+        "p95": 6285,
+        "max": 6302
+      },
+      "load": {
+        "n": 29,
+        "min": 2995,
+        "median": 6358,
+        "p95": 6607,
+        "max": 6613
+      },
+      "frameSent": {
+        "n": 29,
+        "min": 3033,
+        "median": 6383,
+        "p95": 6628,
+        "max": 6637
+      },
+      "painted": {
+        "n": 29,
+        "min": 3110,
+        "median": 6457,
+        "p95": 6703,
+        "max": 6712
+      },
+      "show": {
+        "n": 29,
+        "min": 3113,
+        "median": 6460,
+        "p95": 6706,
+        "max": 6715
+      }
+    },
+    "peakTreePrivateMB": 6163,
+    "treePrivateBeforeMB": 404,
+    "treePrivateAfterSettleMB": 6072,
+    "growthKBPerSession": 193468,
+    "note": "up to show(); in ghost mode the window is off-screen and not focused, on-screen painting is not included"
+  },
+  "mcp": {
+    "takeScreenshotMs": {
+      "n": 20,
+      "min": 3708,
+      "median": 3804,
+      "p95": 4442,
+      "max": 4442
+    },
+    "takeScreenshotFullResMs": {
+      "n": 20,
+      "min": 4343,
+      "median": 4679,
+      "p95": 4935,
+      "max": 4935
+    },
+    "listWindowsMs": {
+      "n": 15,
+      "min": 1050,
+      "median": 1211,
+      "p95": 1694,
+      "max": 1694
+    },
+    "captureWindowMs": {
+      "n": 15,
+      "min": 1517,
+      "median": 1714,
+      "p95": 3039,
+      "max": 3039
+    },
+    "captureWindowTarget": "external off-screen test window",
+    "growthKBPerShot": 1357
+  },
+  "ocr": {
+    "selectionMs": {
+      "n": 10,
+      "min": 648,
+      "median": 698,
+      "p95": 880,
+      "max": 880
+    },
+    "recognizedChars": 100,
+    "fixture": "test/fake-screen.png"
+  },
+  "video": {
+    "startMs": 11591,
+    "cpuMsPerSec": 617,
+    "peakTreePrivateMB": 6782,
+    "stopMs": 802,
+    "sizeMB": 1.5,
+    "container": "webm",
+    "seconds": 15,
+    "mbPerMinute": 6
+  },
+  "gif": {
+    "exportMs": 12535,
+    "sizeMB": 3.5,
+    "ok": true
+  },
+  "audio": {
+    "startMs": 644,
+    "cpuMsPerSec": 37,
+    "peakTreePrivateMB": 6637,
+    "sizeKB": 194
+  },
+  "afterAll": {
+    "procs": 69,
+    "treePrivateMB": 6269,
+    "treeWorkingSetMB": 11108
+  }
+}

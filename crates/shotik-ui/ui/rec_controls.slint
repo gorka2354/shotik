@@ -1,0 +1,73 @@
+// Timer, level meters, pause, stop, cancel. Reference: src/record/controls.*.
+import { Theme } from "theme.slint";
+
+component Meter inherits Rectangle {
+    in property <bool> microphone;
+    in property <float> fraction;
+    in property <bool> clipping;
+    out property <float> track-dip: track.width / 1px;
+    out property <float> fill-dip: fill.width / 1px;
+    width: 39px; height: 20px; background: transparent;
+    Path { x: 0px; y: 3px; width: 13px; height: 13px; viewbox-width: 24; viewbox-height: 24;
+        commands: root.microphone ? "M9 6a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0z M5 11a7 7 0 0 0 14 0 M12 18v3" : "M4 9v6h4l5 4V5L8 9H4z M16.5 8.5a5 5 0 0 1 0 7";
+        fill: transparent; stroke: #9aa1b0; stroke-width: 2px; }
+    track := Rectangle { x: 17px; y: 8px; width: 22px; height: 4px; border-radius: 2px;
+        background: #ffffff24;
+        fill := Rectangle { width: parent.width * root.fraction; height: parent.height; border-radius: 2px;
+            background: root.clipping ? #ff4d4d : #3ddc84; }
+    }
+}
+
+export component RecControls inherits Window {
+    no-frame: true;
+    preferred-width: 328px; preferred-height: 48px;
+    background: #18181c;
+    default-font-family: Theme.font;
+    in property <string> time: "0:00";
+    in property <bool> paused;
+    in property <float> dot-opacity: 1;
+    in property <bool> system-enabled;
+    in property <bool> microphone-enabled;
+    in property <float> system-fraction;
+    in property <float> microphone-fraction;
+    in property <bool> system-clip;
+    in property <bool> microphone-clip;
+    out property <float> system-track: system-meter.track-dip;
+    out property <float> system-fill: system-meter.fill-dip;
+    out property <float> microphone-track: microphone-meter.track-dip;
+    out property <float> microphone-fill: microphone-meter.fill-dip;
+    callback stop();
+    callback pause();
+    callback cancel();
+    callback drag();
+    Rectangle { border-radius: 10px; border-width: 1px; border-color: #ffffff1a; background: transparent; }
+    TouchArea { width: root.width - 108px;
+        pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.drag(); } } }
+    Rectangle { x: 18px; y: 19px; width: 10px; height: 10px; border-radius: 5px;
+        background: (root.paused ? #ffb02e : #ff4d4d).with-alpha(root.dot-opacity); }
+    Text { x: 36px; y: 14px; width: 44px; height: 20px; text: root.time;
+        font-family: "Consolas"; font-size: 13px; color: #eef0f6; }
+    system-meter := Meter { x: 88px; y: 14px; visible: root.system-enabled;
+        fraction: root.system-fraction; clipping: root.system-clip; }
+    microphone-meter := Meter { x: root.system-enabled ? 135px : 88px; y: 14px;
+        visible: root.microphone-enabled; microphone: true;
+        fraction: root.microphone-fraction; clipping: root.microphone-clip; }
+    Rectangle { x: root.width - 110px; y: 10px; width: 28px; height: 28px; border-radius: 7px;
+        background: pause-touch.has-hover ? #ffffff1a : transparent;
+        Path { x: 7px; y: 7px; width: 15px; height: 15px; viewbox-width: 24; viewbox-height: 24;
+            commands: root.paused ? "M7 5l12 7-12 7z" : "M7 5v14 M17 5v14";
+            fill: root.paused ? #d5d9e2 : transparent; stroke: #d5d9e2; stroke-width: 2px; }
+        pause-touch := TouchArea { mouse-cursor: pointer; clicked => { root.pause(); } }
+    }
+    Rectangle { x: root.width - 74px; y: 10px; width: 28px; height: 28px; border-radius: 7px;
+        background: stop-touch.has-hover ? #ff6666 : #ff4d4d;
+        Rectangle { x: 9px; y: 9px; width: 10px; height: 10px; border-radius: 2px; background: #ffffff; }
+        stop-touch := TouchArea { mouse-cursor: pointer; clicked => { root.stop(); } }
+    }
+    Rectangle { x: root.width - 38px; y: 10px; width: 28px; height: 28px; border-radius: 7px;
+        background: cancel-touch.has-hover ? #ffffff1a : transparent;
+        Path { x: 7px; y: 7px; width: 15px; height: 15px; viewbox-width: 24; viewbox-height: 24;
+            commands: "M6 6l12 12 M18 6L6 18"; fill: transparent; stroke: #d5d9e2; stroke-width: 2px; }
+        cancel-touch := TouchArea { mouse-cursor: pointer; clicked => { root.cancel(); } }
+    }
+}

@@ -1,0 +1,124 @@
+import { Theme } from "theme.slint";
+import { Icon, NavItem } from "fluent.slint";
+import { MainTextPage } from "main_text.slint";
+import { MainClaudePage, MainLogEntry } from "main_claude.slint";
+import { MainSettingsPage, MainSection, MainSetting } from "main_settings.slint";
+import { MainShotsPage, MainShot, MainCaptureButton } from "main_shots.slint";
+
+export component MainWindow inherits Window {
+    no-frame: true; preferred-width: 1120px; preferred-height: 740px; min-width: 880px; min-height: 600px;
+    in property <string> native-title: "Shotik";
+    title: native-title; background: Theme.window-bg;
+    default-font-family: Theme.main-font; default-font-size: 14px;
+    in property <string> page: "history";
+    in property <string> version;
+    in property <int> language-revision;
+    in property <bool> mcp-running;
+    in property <bool> mcp-enabled;
+    in property <string> mcp-status;
+    in property <string> mcp-command;
+    in property <bool> command-copied;
+    in property <bool> text-copied;
+    in property <[MainLogEntry]> logs;
+    in property <[MainSection]> sections;
+    in property <string> hotkey-warning;
+    in property <string> focused-hotkey;
+    in property <[MainShot]> shots;
+    in property <[MainCaptureButton]> captures;
+    in property <string> empty-body;
+    in property <string> text-input;
+    in property <string> text-result;
+    in property <string> text-meta;
+    in property <bool> text-loading;
+    in property <bool> text-visible;
+    in property <int> text-target;
+    in property <[string]> languages;
+    in property <string> translate-hotkey;
+    in property <string> text-hotkey;
+    in-out property <bool> chrome-maximized;
+    out property <bool> region-focused: settings.region-focused;
+    pure callback lookup(string) -> string;
+    callback navigate(string);
+    callback caption(string);
+    callback capture(string);
+    callback history-action(string, string);
+    callback setting(string, string);
+    callback hotkey-focus(string, bool);
+    callback input-edited(string);
+    callback target-selected(int);
+    callback translate();
+    callback copy-text();
+    callback copy-command();
+    public pure function tr(key: string) -> string { return root.language-revision >= 0 ? root.lookup(key) : key; }
+    public function focus-region() { scroll.content-y = 0px; settings.focus-region(); }
+    public function blur-region() { settings.blur-region(); }
+    public function blur-hotkeys() { blur-sink.enabled = true; blur-sink.focus(); blur-sink.clear-focus(); blur-sink.enabled = false; }
+    public function reset-scroll() { scroll.content-y = 0px; }
+    blur-sink := FocusScope { width: 1px; height: 1px; enabled: false; }
+
+    // WM_NCHITTEST owns the title area; caption callbacks also serve accessibility.
+    for name[i] in ["minimize", "maximize", "close"]: Rectangle {
+        x: root.width - (3 - i) * 46px; y: 0px; width: 46px; height: 44px;
+        background: cap.has-hover ? (i == 2 ? #c42b1c : Theme.hover) : transparent;
+        Icon { x: 16px; y: 15px; width: 14px; height: 14px; name: i == 1 && root.chrome-maximized ? "restore" : name; ink: cap.has-hover && i == 2 ? white : Theme.text-secondary; }
+        accessible-role: button; accessible-label: root.tr(name == "close" ? "pinClose" : name); accessible-action-default => { root.caption(name); }
+        cap := TouchArea { x: 0px; y: 0px; width: parent.width; height: parent.height; clicked => { root.caption(name); } }
+    }
+    Rectangle {
+        x: 0px; y: 44px; width: 230px; height: root.height - 44px;
+        Image { x: 20px; y: 13px; width: 34px; height: 34px; source: @image-url("../../../assets/icon-64.png"); }
+        Text { x: 64px; y: 12px; height: 21px; text: "Shotik"; color: Theme.text; font-weight: 600; font-size: 15px; }
+        Text { x: 64px; y: 34px; height: 15px; text: root.tr("logoSub"); color: Theme.text-tertiary; font-size: 11px; }
+        for item[i] in [{page:"history",key:"navShots"},{page:"text",key:"navText"},{page:"claude",key:"navClaude"},{page:"settings",key:"navSettings"}]: NavItem {
+            x: 8px; y: 64px + i * 38px; width: 214px;
+            text: root.tr(item.key); icon: item.page; active: root.page == item.page;
+            show-status: item.page == "claude"; status: root.mcp-running;
+            clicked => { root.navigate(item.page); }
+        }
+        Text { x: 20px; y: parent.height - 28px; height: 20px; text: "v" + root.version + " · MIT"; color: Theme.text-tertiary; font-size: 11.5px; }
+    }
+    Rectangle {
+        x: 230px; y: 44px; width: root.width - 230px; height: root.height - 44px;
+        clip: true;
+        scroll := Flickable {
+            x: 0px; y: 0px; width: parent.width; height: parent.height;
+            content-width: self.width; content-height: max(self.height, body.height + 38px);
+            body := Rectangle {
+                x: 28px; y: 10px; width: min(960px, scroll.width - 56px - (root.page == "settings" ? 12px : 0px));
+                height: root.page == "settings" ? settings.height : root.page == "text" ? text.height : root.page == "claude" ? claude.height : shots.height;
+                Text { x: 0px; y: 0px; width: parent.width; height: 30px; text: root.tr(root.page == "history" ? "shotsTitle" : root.page == "text" ? "textPageTitle" : root.page == "claude" ? "claudePageTitle" : "settingsTitle");
+                    color: Theme.text; font-family: "Segoe UI Variable Display"; font-size: 22px; font-weight: 600; vertical-alignment: center; }
+                shots := MainShotsPage {
+                    visible: root.page == "history"; width: parent.width; shots: root.shots; captures: root.captures;
+                    empty-title: root.tr("emptyTitle"); empty-body: root.empty-body;
+                    capture(mode) => { root.capture(mode); } action(id, operation) => { root.history-action(id, operation); }
+                }
+                text := MainTextPage {
+                    visible: root.page == "text"; width: parent.width;
+                    input: root.text-input; result: root.text-result; result-visible: root.text-visible; loading: root.text-loading;
+                    meta: root.text-meta; target: root.text-target; languages: root.languages;
+                    translate-hotkey: root.translate-hotkey; text-hotkey: root.text-hotkey; copied: root.text-copied;
+                    lookup(key) => { return root.tr(key); }
+                    edited(value) => { root.input-edited(value); } selected(index) => { root.target-selected(index); }
+                    translate => { root.translate(); } copy => { root.copy-text(); }
+                }
+                claude := MainClaudePage {
+                    visible: root.page == "claude"; width: parent.width;
+                    status: root.mcp-status; command: root.mcp-command; enabled: root.mcp-enabled; logs: root.logs; copied: root.command-copied;
+                    lookup(key) => { return root.tr(key); } toggled(value) => { root.setting("mcp.enabled", value ? "true" : "false"); } copy => { root.copy-command(); }
+                }
+                settings := MainSettingsPage {
+                    visible: root.page == "settings"; width: parent.width; sections: root.sections;
+                    focused-hotkey: root.focused-hotkey; warning: root.hotkey-warning;
+                    changed-setting(key, value) => { root.setting(key, value); } hotkey-focus(field, focused) => { root.hotkey-focus(field, focused); }
+                }
+            }
+        }
+    }
+    if scroll.content-height > scroll.height: Rectangle {
+        x: parent.width - 8px; y: 48px - scroll.content-y * (scroll.height - 8px) / scroll.content-height;
+        width: 4px; height: max(24px, (scroll.height - 8px) * scroll.height / scroll.content-height);
+        border-radius: 2px; background: Theme.main-stroke-strong;
+    }
+}
+export { MainSection, MainSetting, MainShot, MainCaptureButton, MainLogEntry }

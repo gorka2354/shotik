@@ -1,0 +1,71 @@
+{
+  "saveDir": "C:/Screenshots",
+  "fileNamePattern": "Shot_{date}_{time}",
+  "autoSave": false,
+  "showToast": true,
+  "hotkeys": {
+    "region": "Alt+F8",
+    "fullscreen": "Ctrl+PrintScreen",
+    "repeatLast": "Shift+PrintScreen",
+    "textGrab": "Ctrl+Shift+PrintScreen",
+    "record": "Ctrl+Alt+PrintScreen",
+    "recordAudio": "Ctrl+Alt+Shift+R",
+    "translateSelection": "Ctrl+Alt+T",
+    "futureHotkey": "Ctrl+F9"
+  },
+  "translate": {
+    "target": "de",
+    "provider": "free",
+    "deeplKey": "",
+    "autoBubble": true,
+    "ocrFallback": true,
+    "futureTranslate": {
+      "mode": 2
+    }
+  },
+  "recording": {
+    "fps": 60,
+    "format": "auto",
+    "systemAudio": false,
+    "microphone": false,
+    "microphoneDeviceId": "default",
+    "countdown": true,
+    "futureRecorder": [
+      "x",
+      1
+    ]
+  },
+  "audioRecording": {
+    "systemAudio": true,
+    "microphone": true,
+    "futureAudio": true
+  },
+  "mcp": {
+    "enabled": true,
+    "port": 7499,
+    "futureServer": "kept"
+  },
+  "language": "ru",
+  "launchAtStartup": false,
+  "downscaleForAI": true,
+  "lastRegion": {
+    "displayId": 42,
+    "rectPhys": {
+      "x": -10,
+      "y": 3,
+      "width": 100,
+      "height": 80,
+      "futureRect": 7
+    },
+    "futureRegion": "kept"
+  },
+  "futureTop": {
+    "items": [
+      1,
+      null,
+      {
+        "enabled": false
+      }
+    ]
+  }
+}

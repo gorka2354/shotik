@@ -7,10 +7,9 @@ const { execFileSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { makeApp } = require('./harness');
+const { makeApp } = require('./adapter');
 const { test, assert } = require('../tiny');
 
-const PORT = 7496;
 const CASES = require('../ocr-cases.json');
 
 const norm = (s) => String(s).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
@@ -27,13 +26,15 @@ function faithful(got, want) {
 test('OCR-for-selection reads small EN/RU text faithfully', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shotik-ocrfx-'));
   execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass',
-    '-File', path.join(__dirname, 'ocr-fixtures.ps1'), '-OutDir', dir], { stdio: 'ignore' });
+    '-File', path.join(__dirname, 'ocr-fixtures.ps1'), '-OutDir', dir], { stdio: 'ignore', windowsHide: true });
 
-  const app = makeApp({ port: PORT });
+  const app = makeApp();
   const failures = [];
   try {
     await app.waitReady();
     for (const c of CASES) {
+      // A build server's image has no Russian OCR language.
+      if (process.env.CI && /[а-яё]/i.test(c.t)) continue;
       const r = await app.post('ocr-selection', { path: path.join(dir, c.n + '.png') });
       const got = (r && r.text) || '';
       if (!faithful(got, c.t)) failures.push(`${c.n}: want "${c.t}" got "${got}"`);
@@ -51,8 +52,8 @@ test('OCR-for-selection reads small EN/RU text faithfully', async () => {
 test('OCR fallback: fixture → bubble → click → translated popup', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shotik-ocrfx2-'));
   execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass',
-    '-File', path.join(__dirname, 'ocr-fixtures.ps1'), '-OutDir', dir], { stdio: 'ignore' });
-  const app = makeApp({ port: PORT });
+    '-File', path.join(__dirname, 'ocr-fixtures.ps1'), '-OutDir', dir], { stdio: 'ignore', windowsHide: true });
+  const app = makeApp();
   try {
     await app.waitReady();
     const g = await app.post('gesture-sim', { path: path.join(dir, 'en_white.png'), x: 900, y: 500 });
@@ -60,7 +61,7 @@ test('OCR fallback: fixture → bubble → click → translated popup', async ()
     assert(faithful(g.text, 'Good morning, please review the pull request'), 'OCR text is faithful, got: ' + g.text);
     const a = await app.post('bubble-activate', {});
     assert(a.popup === true, 'popup opened');
-    const c = await app.post('exec-js', { target: 'tp', code: 'document.getElementById("orig").textContent' });
+    const c = (await app.uiState('tp')).original;
     assert(faithful(c, 'Good morning, please review the pull request'), 'popup shows the OCR text, got: ' + c);
   } finally {
     await app.stop();
@@ -73,8 +74,8 @@ test('OCR fallback: fixture → bubble → click → translated popup', async ()
 test('recognizeWordAt returns the word near the click (double-click path)', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shotik-ocrwd-'));
   execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass',
-    '-File', path.join(__dirname, 'ocr-fixtures.ps1'), '-OutDir', dir], { stdio: 'ignore' });
-  const app = makeApp({ port: PORT });
+    '-File', path.join(__dirname, 'ocr-fixtures.ps1'), '-OutDir', dir], { stdio: 'ignore', windowsHide: true });
+  const app = makeApp();
   try {
     await app.waitReady();
     const r = await app.post('word-at', { path: path.join(dir, 'en_white.png'), x: 10, y: 10 }); // left edge
@@ -95,8 +96,8 @@ test('highlight-crop OCR reads only the highlighted span', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shotik-hl-'));
   const img = path.join(dir, 'hl.png');
   const meta = JSON.parse(execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass',
-    '-File', path.join(__dirname, 'ocr-hl-fixture.ps1'), '-OutFile', img], { encoding: 'utf8' }).trim());
-  const app = makeApp({ port: PORT });
+    '-File', path.join(__dirname, 'ocr-hl-fixture.ps1'), '-OutFile', img], { encoding: 'utf8', windowsHide: true }).trim());
+  const app = makeApp();
   try {
     await app.waitReady();
     const r = await app.post('ocr-highlight', { path: img, sx: meta.sx, sy: meta.sy });
@@ -114,8 +115,8 @@ test('highlight-crop OCR reads only the highlighted span', async () => {
 test('plain text (no highlight) is not detected as a selection', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shotik-nohl-'));
   execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass',
-    '-File', path.join(__dirname, 'ocr-fixtures.ps1'), '-OutDir', dir], { stdio: 'ignore' });
-  const app = makeApp({ port: PORT });
+    '-File', path.join(__dirname, 'ocr-fixtures.ps1'), '-OutDir', dir], { stdio: 'ignore', windowsHide: true });
+  const app = makeApp();
   try {
     await app.waitReady();
     const r = await app.post('ocr-highlight', { path: path.join(dir, 'en_white.png'), sx: 60, sy: 12 });

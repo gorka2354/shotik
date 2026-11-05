@@ -1,0 +1,58 @@
+// Notification with thumbnail. Reference: src/toast/ and showToast in src/main/windows.js.
+import { Theme } from "theme.slint";
+
+export component Toast inherits Window {
+    no-frame: true;
+    preferred-width: 380px;
+    preferred-height: 92px;
+    background: Theme.dark ? #202022 : #f9f9fa;
+    default-font-family: Theme.font;
+    in property <string> heading;
+    in property <string> message;
+    in property <image> thumbnail;
+    in property <bool> has-thumbnail;
+    in property <string> glyph;
+    in property <color> swatch: #262a36;
+    callback dismiss();
+    callback open-file();
+    callback hover(bool);
+    Rectangle {
+        border-width: 1px;
+        border-color: Theme.card-border;
+        border-radius: 8px;
+        background: transparent;
+        whole := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.open-file(); }
+        }
+        Rectangle {
+            x: 16px; y: 16px; width: 84px; height: 60px;
+            border-radius: 5px; clip: true;
+            background: root.swatch;
+            border-width: 1px; border-color: Theme.card-border;
+            Image { width: parent.width; height: parent.height;
+                visible: root.has-thumbnail; source: root.thumbnail; image-fit: cover; }
+            Text { visible: !root.has-thumbnail && root.glyph != "⎘"; text: root.glyph; font-size: 24px;
+                color: #000000; horizontal-alignment: center; vertical-alignment: center; }
+            Path { visible: !root.has-thumbnail && root.glyph == "⎘";
+                x: 32px; y: 19px; width: 20px; height: 22px; viewbox-width: 24; viewbox-height: 24;
+                commands: "M8 7h12v14H8z M16 4V2H3v15h2 M11 11h6 M11 15h6";
+                fill: transparent; stroke: #000000; stroke-width: 1px; }
+        }
+        Rectangle { x: 112px; y: 33px; width: 6px; height: 6px; border-radius: 3px; background: Theme.accent; }
+        Text { x: 125px; y: 26px; width: 202px; height: 19px;
+            text: root.heading; color: Theme.text; font-size: 13px; font-weight: 600; overflow: elide; }
+        Text { x: 112px; y: 48px; width: 215px; height: 18px;
+            text: root.message; color: Theme.text-secondary; font-size: 12px; overflow: elide; }
+        Rectangle {
+            x: root.width - 45px; y: 34px; width: 24px; height: 24px; border-radius: 5px;
+            background: close.has-hover ? Theme.hover : transparent;
+            Path { x: 6px; y: 6px; width: 12px; height: 12px; viewbox-width: 24; viewbox-height: 24;
+                commands: "M4 4l16 16 M20 4L4 20"; fill: transparent; stroke: Theme.text-secondary; stroke-width: 1px; }
+            close := TouchArea { mouse-cursor: pointer; clicked => { root.dismiss(); } }
+        }
+        // One enclosing hover state also covers the close button and image.
+        out property <bool> hovering: whole.has-hover || close.has-hover;
+        changed hovering => { root.hover(self.hovering); }
+    }
+}

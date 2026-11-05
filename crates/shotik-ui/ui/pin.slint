@@ -1,0 +1,52 @@
+// Pinned screenshot. Reference: src/pin/ and createPin in src/main/windows.js.
+import { Theme } from "theme.slint";
+
+export component Pin inherits Window {
+    no-frame: true;
+    background: #11141a;
+    default-font-family: Theme.font;
+    in property <image> picture;
+    in property <int> percent: 100;
+    in property <string> close-label;
+    callback dismiss();
+    callback reset();
+    callback zoom(int);
+    callback context-menu();
+    callback drag();
+    forward-focus: keys;
+    Image { width: parent.width; height: parent.height; source: root.picture; image-fit: fill; }
+    Rectangle { border-width: 1px; border-color: whole.has-hover ? Theme.accent : Theme.card-border;
+        border-radius: 8px; background: transparent; }
+    keys := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) { root.dismiss(); return accept; }
+            if (event.text == "0") { root.reset(); return accept; }
+            return reject;
+        }
+        whole := TouchArea {
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) { root.drag(); }
+                if (event.kind == PointerEventKind.up && event.button == PointerEventButton.right) { root.context-menu(); }
+            }
+            double-clicked => { root.dismiss(); }
+            scroll-event(event) => { root.zoom(event.delta-y > 0px ? 1 : -1); return accept; }
+        }
+    }
+    Rectangle {
+        x: root.width - 86px; y: 6px; width: 52px; height: 22px;
+        visible: whole.has-hover || close.has-hover;
+        border-radius: 6px; background: #0a0c12d9;
+        Text { text: "\{root.percent}%"; color: #cdd3e0; font-size: 11px;
+            horizontal-alignment: center; vertical-alignment: center; }
+    }
+    Rectangle {
+        x: root.width - 28px; y: 6px; width: 22px; height: 22px;
+        visible: whole.has-hover || close.has-hover;
+        border-radius: 6px; background: close.has-hover ? #ff4d5ed9 : #0a0c12d9;
+        accessible-role: button;
+        accessible-label: root.close-label;
+        Path { x: 6px; y: 6px; width: 10px; height: 10px; viewbox-width: 24; viewbox-height: 24;
+            commands: "M4 4l16 16 M20 4L4 20"; fill: transparent; stroke: #cdd3e0; stroke-width: 1px; }
+        close := TouchArea { mouse-cursor: pointer; clicked => { root.dismiss(); } }
+    }
+}
