@@ -27,19 +27,25 @@ it into an update. The key is `SHOTIK_UPDATE_KEY` in `.env` at the repository ro
 
 What this does not stop:
 
+- **A malicious commit nobody notices.** CI builds what is in the repository, and a signature vouches for the file that was
+  checked, not for how it was built. So read what went into a release before signing it.
 - **A stolen key.** Rotate it as below. Copies that have not updated yet trust the old one until they do.
 - **Holding copies back.** Whoever controls the release page can keep serving an older signed manifest, or nothing. A copy never
   goes below the version it runs: only a strictly newer version is offered.
 - **A copy on a compromised machine.** Anything running as the user can replace the executable without any of this.
+- **Downloads by hand.** The signature protects the button. An installer or portable file taken from the release page by hand is
+  checked by nothing, and whoever controls the page can replace those.
 - **SmartScreen and antivirus.** The installer is not code-signed. A file the application downloads itself carries no mark of the
   web, so SmartScreen does not ask; an antivirus may still block it, and then the application says so and keeps running.
 
 ## Publishing
 
 1. Raise the version, merge, push the tag. CI builds a draft, without the signed files.
-2. Download the installer from the draft, install it, check it.
-3. `node installer/publish-release.js v2.1.0 --notes-file inc/release-notes-2.1.0.md` signs the installer from the draft, attaches
-   the signed files, publishes, and checks that `latest.json` is live.
+2. Download the installer from the draft, install it, check it. Keep that file.
+3. `node installer/publish-release.js v2.1.0 --installer <that file> --notes-file inc/release-notes-2.1.0.md` signs that file and
+   nothing else. It refuses if the installer on the draft has become a different file since: whoever controls the repository can
+   swap it at any moment, and a signature on their file is the whole attack. Then it attaches the signed files, publishes, and
+   checks that `latest.json` is live.
 
 A release published any other way has no `latest.json`, so copies fail their check, say so in the settings and stay where they
 are: they keep working and pick up the next properly signed release.

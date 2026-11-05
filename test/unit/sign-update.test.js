@@ -7,6 +7,7 @@ const os = require('os');
 const path = require('path');
 const { test, assert, eq } = require('../tiny');
 const { signRelease, publicKeyHex } = require('../../installer/sign-update');
+const { assertSameFile } = require('../../installer/publish-release');
 
 const SCRIPT = path.join(__dirname, '..', '..', 'installer', 'sign-update.js');
 const SEED = '07'.repeat(32);
@@ -55,6 +56,18 @@ test('sign-update: a key other than the shipped one is refused, and says nothing
   assert(/does not match/.test(result.stderr), result.stderr);
   assert(!result.stderr.includes(SEED) && !result.stdout.includes(SEED), 'the key must not be printed');
   assert(!fs.existsSync(path.join(dir, 'latest.json')), 'no release without a signature it can stand behind');
+}));
+
+test('publish-release: only the file that was checked gets signed', () => inTemp((dir) => {
+  const tested = path.join(dir, 'tested.exe');
+  const drafted = path.join(dir, 'drafted.exe');
+  fs.writeFileSync(tested, 'the installer that was checked');
+  fs.writeFileSync(drafted, 'the installer that was checked');
+  assertSameFile(tested, drafted);
+  fs.writeFileSync(drafted, 'swapped on the draft afterwards');
+  let error = null;
+  try { assertSameFile(tested, drafted); } catch (e) { error = e; }
+  assert(error && /not the file you checked/.test(error.message), String(error));
 }));
 
 test('sign-update: no key is an error, not an unsigned release', () => inTemp((dir) => {
