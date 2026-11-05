@@ -6,3 +6,4 @@ target/
 *.stackdump
 Thumbs.db
 .env
+__pycache__/
