@@ -6,7 +6,7 @@
 use std::fs;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -87,6 +87,8 @@ struct Inner {
     trace: Trace,
     control: Mutex<Option<Arc<Control>>>,
     started: Instant,
+    /// Session workers still running.
+    unfinished: AtomicUsize,
 }
 
 pub struct Recorder {
@@ -126,6 +128,7 @@ impl Recorder {
                 trace: Trace::default(),
                 control: Mutex::new(None),
                 started: Instant::now(),
+                unfinished: AtomicUsize::new(0),
             }),
         }
     }
@@ -240,6 +243,15 @@ impl SessionEvents for WorkerEvents {
     }
 }
 
+/// Held by a session's worker for as long as it runs, however it ends.
+struct UnfinishedFile(Arc<Inner>);
+
+impl Drop for UnfinishedFile {
+    fn drop(&mut self) {
+        self.0.unfinished.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 /// A start that returns early must not leave the machine in `Starting`.
 struct StartGuard<'a>(&'a Inner);
 
@@ -287,9 +299,12 @@ impl RecorderControl for Recorder {
         let status = inner.status();
         inner.emit(RecorderEvent::State(status.clone()));
 
+        inner.unfinished.fetch_add(1, Ordering::SeqCst);
+        let unfinished = UnfinishedFile(Arc::clone(inner));
         let worker = {
             let inner = Arc::clone(inner);
             thread::Builder::new().name("shotik-rec-session".into()).spawn(move || {
+                let _unfinished = unfinished;
                 let events = WorkerEvents { inner: Arc::clone(&inner), id };
                 // a panic in a session must not leave the recorder busy for good
                 let outcome = panic::catch_unwind(AssertUnwindSafe(|| {
@@ -352,6 +367,10 @@ impl RecorderControl for Recorder {
 
     fn is_recording(&self) -> bool {
         self.inner.machine.lock().unwrap().is_recording()
+    }
+
+    fn has_unfinished_file(&self) -> bool {
+        self.inner.unfinished.load(Ordering::SeqCst) > 0
     }
 
     fn status(&self) -> RecStatus {

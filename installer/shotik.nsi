@@ -86,19 +86,21 @@ Section "Shotik"
 
   SetOutPath "$INSTDIR"
   SetOverwrite on
-  ; Written beside the old one first: a full disk or a failed write must not cost the user a working program. An
-  ; update runs unattended, and nobody would be there to reinstall.
+  ; Written beside the old one first, then moved over it in one call: a full disk, a failed write or an install cut
+  ; off halfway must not cost the user a working program. An update runs unattended, and nobody would be there to
+  ; reinstall. It tries for a few seconds, because a scanner may be holding the old file for a moment.
   ClearErrors
   File "/oname=Shotik.exe.new" "${EXE}"
   IfErrors not_replaced
-  Delete "$INSTDIR\Shotik.exe.old"
-  ClearErrors
-  IfFileExists "$INSTDIR\Shotik.exe" 0 +2
-    Rename "$INSTDIR\Shotik.exe" "$INSTDIR\Shotik.exe.old"
-  IfErrors not_replaced
-  Rename "$INSTDIR\Shotik.exe.new" "$INSTDIR\Shotik.exe"
-  IfErrors 0 replaced
-    Rename "$INSTDIR\Shotik.exe.old" "$INSTDIR\Shotik.exe"
+  StrCpy $1 0
+  swap:
+    ; MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH
+    System::Call 'Kernel32::MoveFileEx(t "$INSTDIR\Shotik.exe.new", t "$INSTDIR\Shotik.exe", i 9) i .r0'
+    StrCmp $0 "0" 0 replaced
+    IntOp $1 $1 + 1
+    IntCmp $1 10 not_replaced
+    Sleep 300
+    Goto swap
   not_replaced:
     ; Silently keeping the old executable would look like a successful update.
     Delete "$INSTDIR\Shotik.exe.new"
@@ -108,7 +110,6 @@ Section "Shotik"
     SetErrorLevel 2
     Abort
   replaced:
-  Delete "$INSTDIR\Shotik.exe.old"
   File "/oname=LICENSE" "..\LICENSE"
   WriteUninstaller "$INSTDIR\Uninstall Shotik.exe"
 
@@ -163,7 +164,6 @@ Section "Uninstall"
   !endif
   Delete "$INSTDIR\Shotik.exe"
   Delete "$INSTDIR\Shotik.exe.new"
-  Delete "$INSTDIR\Shotik.exe.old"
   Delete "$INSTDIR\LICENSE"
   Delete "$INSTDIR\Uninstall Shotik.exe"
   RMDir "$INSTDIR"

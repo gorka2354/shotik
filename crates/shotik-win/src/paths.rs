@@ -52,6 +52,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn only_a_copy_beside_its_uninstaller_counts_as_installed() {
+        let dir = std::env::temp_dir().join(format!("shotik-paths-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let exe = dir.join("Shotik.exe");
+        assert_eq!(install_dir_of(&exe), None, "portable: an installer would add a second copy elsewhere");
+        std::fs::write(dir.join("Uninstall Shotik.exe"), b"").unwrap();
+        assert_eq!(install_dir_of(&exe), Some(dir.clone()));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn system_folders_and_locale_answer() {
         assert!(pictures().unwrap().is_absolute());
         assert!(known_folder(&FOLDERID_RoamingAppData).unwrap().is_absolute());

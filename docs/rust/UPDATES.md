@@ -68,7 +68,8 @@ Rotation, while the old key is still safe:
 The application runs `Setup.exe /S /RESTART [/SHOWMAIN] /D=<the folder it runs from>` and quits.
 
 - `/D=` comes last and takes no quotes, even with spaces: this is NSIS's rule, so it goes in as one raw argument.
-- The new executable is written next to the old one and renamed into place, so a full disk costs nothing.
+- The new executable is written next to the old one and moved over it in one call (`MoveFileEx`), so neither a full disk nor an
+  install cut off halfway leaves no program. If the new one then fails to start, nothing brings the old one back: it is gone.
 - It gives the application a moment to leave on its own, then stops whatever still runs from that exact folder.
 - When it is done it starts the application with `--updated`; if it could not replace the executable, with `--update-failed`, and
   exit code 2. `--hidden` unless `/SHOWMAIN` was given, which the application passes when its main window was open.
@@ -86,8 +87,9 @@ offer meanwhile. With notifications turned off in the settings it never appears 
 
 ## Not installing now
 
-The button refuses while recording or with the capture overlay open, before downloading, and again after: a recording may have
-started meanwhile. The offer stays.
+The button refuses while recording, while a recording is still being written after its safety timeout, or with the capture overlay
+open. It looks before downloading and again after, since a recording may have started meanwhile. From that last look until the
+process leaves, new recordings and overlays are refused, so nothing can start in the gap and be cut off. The offer stays.
 
 Checking is quiet in the background: no network is no reason for a toast. A failure goes to the log and to the settings row, and
 is retried within the hour. A check the user asked for always gets an answer.

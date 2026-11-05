@@ -395,6 +395,9 @@ pub trait RecorderControl: Send + Sync {
     fn cancel(&self);
     /// True from the first moment of a start until the file is finalized.
     fn is_recording(&self) -> bool;
+    /// True until every session has written its file. Unlike `is_recording`, it stays true after the safety timeout
+    /// gave up on one, whose worker goes on writing: ending the process then would lose that file.
+    fn has_unfinished_file(&self) -> bool;
     fn status(&self) -> RecStatus;
     fn set_listener(&self, events: Callback<RecorderEvent>);
 }

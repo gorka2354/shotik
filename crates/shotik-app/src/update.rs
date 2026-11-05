@@ -61,6 +61,9 @@ pub(crate) struct UpdateState {
     available: Option<Manifest>,
     checking: bool,
     installing: bool,
+    /// From the last look before starting the installer until this process leaves. New recordings and overlays are
+    /// refused, so what starts before that look is seen by it, and what starts after it cannot be cut off.
+    pub(crate) handing_over: bool,
     last_success: Option<SystemTime>,
     /// The last failure, until the next attempt.
     error: Option<String>,
@@ -120,8 +123,11 @@ impl App {
     }
 
     pub(crate) fn update_tick(self: &Arc<Self>, now: SystemTime) {
-        let last_success = self.state().update.last_success;
-        if self.settings().check_updates && check_is_due(last_success, now) {
+        let (last_success, failed) = {
+            let state = self.state();
+            (state.update.last_success, state.update.error.is_some())
+        };
+        if self.settings().check_updates && (failed || check_is_due(last_success, now)) {
             self.check_for_update(false);
         } else if let Some(toast) = self.available_update().and_then(|version| self.announcement(version, false)) {
             self.ports.ui.show_toast(toast);
@@ -220,11 +226,12 @@ impl App {
         self.ports.ui.show_toast(self.update_toast("update-failed", self.t("updateFailedTitle"), message, None));
     }
 
-    /// Why a restart would cost the user something now: it would cut a recording or drop a capture in progress.
+    /// Why a restart would cost the user something now: it would cut a recording, lose a file still being written, or
+    /// drop a capture in progress.
     fn update_blocked(&self) -> Option<String> {
-        if self.is_recording() {
+        if self.is_recording() || self.ports.recorder.has_unfinished_file() {
             Some(self.t("updateBusyRecording"))
-        } else if self.ports.ui.overlay_is_open() {
+        } else if self.state().overlay_sessions > 0 || self.ports.ui.overlay_is_open() {
             Some(self.t("updateBusyOverlay"))
         } else {
             None
@@ -302,11 +309,16 @@ impl App {
     fn start_installer(&self, dir: &Path, installer: &[u8], manifest: &Manifest, install_dir: &Path) -> Result<()> {
         let path = dir.join(installer_name(manifest.version));
         std::fs::write(&path, installer).map_err(|e| Error::io("write the update", &path, e))?;
-        // The download took a while, and a recording may have started meanwhile.
-        if let Some(reason) = self.update_blocked() {
-            return Err(Error::msg(reason));
+        // The download took a while, and a recording may have started meanwhile. The flag goes up first: see `handing_over`.
+        self.state().update.handing_over = true;
+        let result = match self.update_blocked() {
+            Some(reason) => Err(Error::msg(reason)),
+            None => self.ports.shell.run_installer(&path, install_dir, self.ports.ui.main_visible()),
+        };
+        if result.is_err() {
+            self.state().update.handing_over = false;
         }
-        self.ports.shell.run_installer(&path, install_dir, self.ports.ui.main_visible())
+        result
     }
 
     /// An installer cannot delete itself, so the version it installed cleans up after it, once it has surely exited.

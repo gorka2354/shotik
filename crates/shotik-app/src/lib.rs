@@ -100,6 +100,8 @@ struct State {
     /// `set-theme` in tests.
     forced_theme: Option<Theme>,
     update: update::UpdateState,
+    /// Overlays from the moment they begin to open until the user is done.
+    overlay_sessions: u32,
 }
 
 pub struct App {

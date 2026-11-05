@@ -244,6 +244,13 @@ mod tests {
     }
 
     #[test]
+    fn nothing_is_parsed_before_the_signature_holds() {
+        let thief = SigningKey::from_bytes(&[9u8; 32]);
+        let error = verify_manifest(b"not json", &sign_with(&thief, b"not json"), &public()).unwrap_err();
+        assert!(error.to_string().contains("signature does not match"), "a parser saw it first: {error}");
+    }
+
+    #[test]
     fn a_signature_made_for_something_else_is_refused() {
         // The same key over the bare bytes, without the domain.
         let bytes = manifest_for(b"installer", "2.1.0");

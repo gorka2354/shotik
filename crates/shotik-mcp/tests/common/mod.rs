@@ -291,6 +291,9 @@ impl RecorderControl for FakeRecorder {
     fn is_recording(&self) -> bool {
         self.0.lock().unwrap().recording
     }
+    fn has_unfinished_file(&self) -> bool {
+        self.is_recording()
+    }
     fn status(&self) -> RecStatus {
         self.0.lock().unwrap().clone()
     }

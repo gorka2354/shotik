@@ -301,6 +301,7 @@ impl AudioDevices for NoAudio {
 #[derive(Default)]
 struct FakeRecorder {
     recording: Mutex<bool>,
+    unfinished: Mutex<bool>,
     starts: Mutex<Vec<RecordOptions>>,
     stops: Mutex<u32>,
     cancels: Mutex<u32>,
@@ -333,6 +334,9 @@ impl RecorderControl for FakeRecorder {
     fn is_recording(&self) -> bool {
         *self.recording.lock().unwrap()
     }
+    fn has_unfinished_file(&self) -> bool {
+        *self.unfinished.lock().unwrap()
+    }
     fn status(&self) -> RecStatus {
         RecStatus { recording: self.is_recording(), ..RecStatus::default() }
     }
@@ -358,6 +362,8 @@ struct FakeUi {
     marks: Mutex<Option<MarkSink>>,
     main_open: Mutex<bool>,
     update_pushed: Mutex<Option<Value>>,
+    /// Runs at the last moment before the installer starts, for what the user does then.
+    at_main_visible: Mutex<Option<Box<dyn FnOnce() + Send>>>,
 }
 impl UiPort for FakeUi {
     fn overlay_begin(&self, _mode: OverlayMode, marks: MarkSink, done: Once<OverlayOutcome>) -> Result<u64> {
@@ -406,6 +412,9 @@ impl UiPort for FakeUi {
     }
     fn hide_main(&self) {}
     fn main_visible(&self) -> bool {
+        if let Some(moment) = self.at_main_visible.lock().unwrap().take() {
+            moment();
+        }
         *self.main_open.lock().unwrap()
     }
     fn send_to_main(&self, event: MainEvent) {
@@ -1356,6 +1365,104 @@ fn a_recording_started_during_the_download_stops_the_install() {
     assert_eq!(r.quit_count(), 0, "the recording goes on");
     assert_eq!(r.download_folders(), 0);
     assert_eq!(r.app.update_status()["installing"], false);
+}
+
+#[test]
+fn an_overlay_opened_during_the_download_stops_the_install() {
+    let r = rig("update-race-overlay");
+    r.publish("2.1.0");
+    r.app.check_for_update(false);
+    let ui = r.ui.clone();
+    *r.http.during.lock().unwrap() = Some(Box::new(move |url| {
+        if url.contains("Shotik-Setup") {
+            *ui.overlay_open.lock().unwrap() = true;
+        }
+    }));
+    r.app.install_update();
+    assert!(r.shell.installers.lock().unwrap().is_empty());
+    assert_eq!(r.quit_count(), 0, "the capture goes on");
+}
+
+#[test]
+fn a_file_still_being_written_stops_the_install() {
+    let r = rig("update-late-file");
+    r.publish("2.1.0");
+    r.app.check_for_update(false);
+    assert!(!r.app.is_recording());
+    *r.recorder.unfinished.lock().unwrap() = true;
+    r.app.install_update();
+    assert_eq!(r.requests_of("Shotik-Setup"), 0);
+    assert_eq!(r.quit_count(), 0, "leaving now would lose the recording");
+    assert_eq!(r.toasts().last().unwrap().body, r.app.t("updateBusyRecording"));
+    *r.recorder.unfinished.lock().unwrap() = false;
+    r.app.install_update();
+    assert_eq!(r.quit_count(), 1, "and it goes through once the file is written");
+}
+
+#[test]
+fn an_overlay_on_its_way_up_stops_the_install() {
+    let r = rig("update-overlay-opening");
+    r.publish("2.1.0");
+    r.app.check_for_update(false);
+    r.app.state().overlay_sessions = 1;
+    r.app.install_update();
+    assert_eq!(r.quit_count(), 0);
+    assert_eq!(r.toasts().last().unwrap().body, r.app.t("updateBusyOverlay"));
+}
+
+#[test]
+fn a_recording_asked_for_at_the_last_moment_is_refused() {
+    let r = rig("update-last-recording");
+    r.publish("2.1.0");
+    r.app.check_for_update(false);
+    let app = r.app.clone();
+    *r.ui.at_main_visible.lock().unwrap() = Some(Box::new(move || {
+        assert!(app.start_recording(RecordTarget::AudioOnly).unwrap().is_none());
+    }));
+    r.app.install_update();
+    assert!(r.recorder.starts.lock().unwrap().is_empty(), "it would be cut off a moment later");
+    assert_eq!(r.shell.installers.lock().unwrap().len(), 1);
+    assert_eq!(r.quit_count(), 1);
+}
+
+#[test]
+fn an_overlay_asked_for_at_the_last_moment_is_refused() {
+    let r = rig("update-last-overlay");
+    r.publish("2.1.0");
+    r.app.check_for_update(false);
+    let app = r.app.clone();
+    *r.ui.at_main_visible.lock().unwrap() = Some(Box::new(move || {
+        assert!(matches!(app.run_overlay(OverlayMode::default()), crate::overlay::OverlayResult::Busy));
+    }));
+    r.app.install_update();
+    assert!(!*r.ui.overlay_open.lock().unwrap(), "it would be cut off a moment later");
+    assert_eq!(r.quit_count(), 1);
+}
+
+#[test]
+fn captures_work_again_if_the_installer_does_not_start() {
+    let r = rig("update-recover");
+    r.publish("2.1.0");
+    r.app.check_for_update(false);
+    *r.shell.installer_error.lock().unwrap() = Some("blocked".into());
+    r.app.install_update();
+    assert!(r.app.start_recording(RecordTarget::AudioOnly).unwrap().is_some());
+}
+
+#[test]
+fn a_failed_check_is_tried_again_within_the_hour_even_after_a_success() {
+    let r = rig("update-retry");
+    r.publish("2.0.0");
+    r.app.check_for_update(true);
+    r.http.routes.lock().unwrap().clear();
+    r.app.check_for_update(true);
+    assert!(r.app.update_status()["error"].is_string());
+    let attempts = r.requests_of("latest.json");
+    let hour_later = std::time::SystemTime::now() + Duration::from_secs(3600);
+    r.publish("2.0.0");
+    r.app.update_tick(hour_later);
+    assert!(r.requests_of("latest.json") > attempts);
+    assert_eq!(r.app.update_status()["error"], Value::Null);
 }
 
 #[test]

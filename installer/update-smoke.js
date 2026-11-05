@@ -178,7 +178,7 @@ async function main(setup) {
     check(true, 'the installer brings it back and it says it was updated');
     check(fs.statSync(exe).mtime.getTime() !== marker.getTime(), 'the executable really was replaced');
     check(sha256(exe) === original, 'with the bytes from the installer');
-    check(!fs.existsSync(exe + '.new') && !fs.existsSync(exe + '.old'), 'no working copies left in the install folder');
+    check(!fs.existsSync(exe + '.new'), 'no working copy left in the install folder');
     let state = await post('state');
     check(state.mainVisible === false, 'a hidden application stays hidden');
     check(state.mcp.running === true, 'the MCP server is back on its port');
@@ -210,7 +210,7 @@ async function main(setup) {
     try {
       check(runSetup('/S', '/RESTART', '/D=' + inst) === 2, 'an installer that cannot replace the executable reports failure');
       check(sha256(exe) === before, 'and leaves the working one in place');
-      check(!fs.existsSync(exe + '.new') && !fs.existsSync(exe + '.old'), 'with nothing else left behind');
+      check(!fs.existsSync(exe + '.new'), 'with nothing else left behind');
       await until('the old version to say the update failed',
         async () => (await lastToast())?.kind === 'update-failed', 60000);
       check(true, 'and the old version comes back and says so');

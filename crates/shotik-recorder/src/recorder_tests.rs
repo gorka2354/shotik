@@ -957,10 +957,13 @@ fn the_finalize_timeout_frees_the_recorder_and_a_late_file_still_arrives() {
     );
     f.start_video(false, false).unwrap();
     f.wait_running();
+    assert!(f.recorder.has_unfinished_file());
     f.recorder.stop();
     let error = f.wait_error();
     assert!(error.contains("did not finish"), "{error}");
     f.wait_idle();
+    assert!(!f.recorder.is_recording());
+    assert!(f.recorder.has_unfinished_file(), "the worker is still writing: ending the process would lose the file");
     assert!(f.trace().iter().any(|l| l.starts_with("finalize timed out")), "{:?}", f.trace());
 
     assert!(f.start_audio(true, false).is_some(), "the recorder is free again");
@@ -970,6 +973,13 @@ fn the_finalize_timeout_frees_the_recorder_and_a_late_file_still_arrives() {
     assert!(f.recorder.is_recording(), "the second session goes on");
     f.recorder.stop();
     f.wait_idle();
+    for _ in 0..500 {
+        if !f.recorder.has_unfinished_file() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(!f.recorder.has_unfinished_file(), "every file written, nothing left to lose");
 }
 
 #[test]

@@ -116,7 +116,7 @@ const version = () => ps(`(Get-ItemProperty '${UNINSTALL}').DisplayVersion`);
     }
     L.check('  and has not taken the keyboard', (await call('fg')).pid === focused.pid);
     L.check('still in the tray only: no main window opened', !(await list(back)).some((w) => w.w > 800 && w.h > 500));
-    L.check('no working copies left in the install folder', !fs.existsSync(EXE + '.new') && !fs.existsSync(EXE + '.old'));
+    L.check('no working copy left in the install folder', !fs.existsSync(EXE + '.new'));
 
     const after = installState();
     for (const key of Object.keys(before)) L.check(`${key} is as it was`, before[key] === after[key], String(after[key]).slice(0, 16));
