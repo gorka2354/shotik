@@ -7,11 +7,7 @@ display/audio device in these tests.
 
 The harness creates a fresh private `%APPDATA%/Shotik-Test`, `%TEMP%`, save
 directory and history for **each** app. Rust test mode must respect the child
-process's `APPDATA`, `TEMP` and `SHOTIK_SAVE_DIR`. The Electron-only bootstrap
-sets the equivalent app paths before loading the unchanged reference app. It
-also makes ghost windows nonfocusable before their initial show and disables
-off-screen background throttling so recording controls can be captured. No
-existing settings/history are copied. An STA clipboard helper eagerly saves all
+process's `APPDATA`, `TEMP` and `SHOTIK_SAVE_DIR`. No existing settings/history are copied. An STA clipboard helper eagerly saves all
 original formats in memory and restores them at teardown. Occupied ports are
 errors; the harness never attaches to or quits the occupant.
 Adapter readiness waits for both the owned HTTP listener and `main.ready`.
@@ -69,7 +65,7 @@ It supports `main`, `overlay`, `toast`, `pin`, `tp`, `bubble`, `rec-controls`,
 |---|---|
 | `ready: boolean` | Settings and localized microphone label are loaded; `recorder.test.js`, reference generator. False while booting/reloading. |
 | `page: "history"\|"text"\|"claude"\|"settings"\|null` | Active navigation page; reference generator checks navigation before capture. `null` only before initialization. |
-| `title: string` | Actual native window title (Electron `document.title`); MCP window enumeration test sets a unique title. |
+| `title: string` | Actual native window title; MCP window enumeration test sets a unique title. |
 | `text.input: string` | Text entered in the manual translation input; reference state. |
 | `text.result: string` | Currently displayed result, including localized loading/error text; `texttab.test.js` checks the stub text. Do not return a cached successful translation while loading. |
 | `text.resultVisible: boolean` | Result panel is unhidden; `texttab.test.js` explicitly asserts it. Independent of which navigation page is active. |
@@ -123,14 +119,6 @@ click-away logic for both bubble and translate popup; do not click the desktop
 and do not activate the bubble. `bubble.test.js` verifies that an outside press
 hides the bubble/popup, while an inside press leaves the bubble visible.
 
-Electron converts DIP to physical pixels in a windowless helper before calling
-`sim-down`, because `onMouseDown` converts physical to DIP. At x+20000 the native
-conversions can choose different nearest monitors: the helper verifies the
-round trip and corrects its physical point against `screenToDipPoint`. A single
-`devicePixelRatio` multiplier (or unchecked `dipToScreenPoint`) is insufficient
-on the reference three-monitor 150% primary layout. Rust's semantic action
-starts in DIP and must test the same bounds/hide logic.
-
 ## `rec-controls` state
 
 ```json
@@ -161,7 +149,7 @@ or when ghost mode omits controls.
 | Field | Meaning / consumer |
 |---|---|
 | `audioCodec: "aac"\|null` | AAC audio-only encoder was actually started; `audio-recording.test.js`. Null before startup or for another codec. Electron derives this from the exact AAC start trace previously asserted. |
-| `indexed: boolean` | Final duration/seek index successfully written. Electron's `index ok` becomes true; Rust becomes true only after successful container finalization. `audio-recording.test.js`, `recording-seek.test.js`. False before finalization or on failure. |
+| `indexed: boolean` | Final duration/seek index successfully written. It becomes true only after successful container finalization. `audio-recording.test.js`, `recording-seek.test.js`. False before finalization or on failure. |
 | `screenVideoTracks: number\|null` | Video tracks obtained from the screen source (not output tracks); microphone-only audio requires zero, proving no screen acquisition. Null before the source is known. |
 | `screenAudioTracks: number\|null` | Audio tracks obtained from that same screen source, excluding the separate microphone; microphone-only audio requires zero. Both track counts are checked in `audio-recording.test.js`. |
 
@@ -246,13 +234,9 @@ There are no pin ui-actions; `main/history-pin` creates the pin.
 All other test routes used by the suite (`state`, selection/translate routes,
 OCR routes, `trigger`, `record-status`, `record-stop`, toast/hotkey routes,
 `overlay-timing`, `sim-action`, `set-theme`, `pins`, `quit`, etc.) keep the
-reference `CONTRACT.md` behavior. `show-main` must respect ghost mode; Electron's
-adapter instead uses an off-screen capture to avoid the legacy route's focus.
+`CONTRACT.md` behavior. `show-main` respects ghost mode.
 
-Accepted implementation differences are limited to `CONTRACT.md`: Rust's
-default video extension is `.mp4`; Electron's is `.webm`. A forced window-capture
-fallback must report a non-PrintWindow method (Electron specifically reports
-`desktopCapturer`). These change expected representation, not assertion strength.
+The default video extension is `.mp4`. A forced window-capture fallback reports a non-PrintWindow method.
 
 ## Media checks without a renderer
 
@@ -268,8 +252,7 @@ Frequencies remain 440 Hz system and 880 Hz mic; enabled amplitudes must exceed
 0.035, disabled amplitudes must be below 0.015, exactly as before. Duration is
 decoded sample count / sample rate.
 
-Electron still probes its muted player through its existing route. Rust uses
-ffprobe's finite container duration, then the same muted, windowless Media
+`probeMedia` uses ffprobe's finite container duration, then a muted, windowless Media
 Foundation seek check. `probeMedia` returns `{duration,seekTo,seeked,position}`;
 `seeked` is true only when MF can seek and the actual position is within 0.2 s.
 The original tests also independently check MF's duration (0.1 s tolerance) and
