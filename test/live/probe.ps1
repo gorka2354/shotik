@@ -234,7 +234,11 @@ function Handle($c) {
     }
     'clip' {
       $img = $null
-      try { $img = [System.Windows.Forms.Clipboard]::GetImage() } catch {}
+      # Another process may hold the clipboard for a moment: Windows' own history reads it after every write.
+      for ($try = 0; $try -lt 4 -and -not $img; $try++) {
+        try { $img = [System.Windows.Forms.Clipboard]::GetImage() } catch {}
+        if (-not $img) { Start-Sleep -Milliseconds 120 }
+      }
       $o = @{ formats = [W]::ClipFormats(); hasImage = $null -ne $img; text = $null }
       if ($img) { $o.w = $img.Width; $o.h = $img.Height; $img.Dispose() }
       try { if ([System.Windows.Forms.Clipboard]::ContainsText()) { $o.text = [System.Windows.Forms.Clipboard]::GetText() } } catch {}

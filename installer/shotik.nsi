@@ -32,8 +32,9 @@ UninstPage instfiles
 !macro StopRunningShotik
   ; Only this install's own executable: nothing else named Shotik on the machine is touched. The path goes
   ; through the environment, because a folder name may hold a quote and a command line would break on it.
+  ; It asks WMI, because NSIS is 32-bit, so this PowerShell is too, and it cannot read the path of a 64-bit process.
   System::Call 'Kernel32::SetEnvironmentVariable(t "SHOTIK_INSTDIR", t "$INSTDIR")'
-  nsExec::Exec `powershell.exe -NoProfile -NonInteractive -Command "Get-Process Shotik -ErrorAction SilentlyContinue | Where-Object { $$_.Path -eq ($$env:SHOTIK_INSTDIR + '\Shotik.exe') } | Stop-Process -Force; Start-Sleep -Milliseconds 500"`
+  nsExec::Exec `powershell.exe -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Process -Filter \"Name='Shotik.exe'\" | Where-Object { $$_.ExecutablePath -eq ($$env:SHOTIK_INSTDIR + '\Shotik.exe') } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force }; Start-Sleep -Milliseconds 500"`
   Pop $0
 !macroend
 
@@ -61,7 +62,14 @@ Section "Shotik"
 
   SetOutPath "$INSTDIR"
   SetOverwrite on
+  ClearErrors
   File "/oname=Shotik.exe" "${EXE}"
+  ; Silently keeping the old executable would look like a successful update.
+  IfErrors 0 replaced
+    MessageBox MB_ICONSTOP|MB_OK "Shotik.exe is in use and could not be replaced. Quit Shotik and run the installer again." /SD IDOK
+    SetErrorLevel 2
+    Abort
+  replaced:
   File "/oname=LICENSE" "..\LICENSE"
   WriteUninstaller "$INSTDIR\Uninstall Shotik.exe"
 
