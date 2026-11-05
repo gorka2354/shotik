@@ -25,9 +25,10 @@
 ---
 
 <p align="center">
-  <img src="docs/promo.gif" width="88%" alt="Shotik: захват → аннотации → OCR → одна клавиша до Claude">
+  <img src="docs/promo.ru.gif" width="88%" alt="Shotik: снимок и пометки, отправка в Claude одной клавишей, перевод выделенного текста и текста на картинках, запись экрана и созвонов">
 </p>
-<p align="center"><i>захват → аннотации → OCR → одна клавиша до Claude · <a href="docs/promo.mp4">mp4 в полном качестве</a></i></p>
+<p align="center"><i>снимок → пометки → одна клавиша до Claude → перевод чего угодно → запись · <a href="docs/promo.ru.mp4">mp4</a><br>
+Все окна Shotik здесь настоящие, ими управляет скрипт, и перевод настоящий. Остальные приложения и терминал постановочные.</i></p>
 
 <p align="center">
   <img src="docs/app-dark.ru.png" width="46%" alt="Тёмная тема">
@@ -257,6 +258,7 @@ npm test                          # контрактные тесты по HTTP 
 node bench/run.js --impl rust --exe target/release/shotik.exe --label mine   # цифры из таблицы выше
 node bench/charts.js              # перерисовывает графики из bench/results
 SHOTIK_BIN=target/release/shotik.exe node docs/make-screenshots.js   # переснимает окна приложения в ghost-режиме
+python docs/promo/make_promo.py target/release/shotik.exe            # переснимает ролик вверху, в ghost-режиме
 ```
 
 Набор покрывает то, что легко испортить незаметно: точность OCR (мелкий текст апскейлится; латиница и

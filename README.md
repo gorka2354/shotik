@@ -25,9 +25,10 @@
 ---
 
 <p align="center">
-  <img src="docs/promo.gif" width="88%" alt="Shotik: capture → annotate → OCR → one keypress to Claude">
+  <img src="docs/promo.gif" width="88%" alt="Shotik: capture and mark up, send to Claude with one key, translate selected text and text inside pictures, record the screen or a call">
 </p>
-<p align="center"><i>capture → annotate → OCR → one keypress to Claude · <a href="docs/promo.mp4">full-quality mp4</a></i></p>
+<p align="center"><i>capture → mark up → one key to Claude → translate anything → record · <a href="docs/promo.mp4">mp4</a><br>
+Every Shotik window here is the real app, driven by a script, with a real translation. The other apps and the terminal are staged.</i></p>
 
 <p align="center">
   <img src="docs/app-dark.png" width="46%" alt="Dark theme">
@@ -254,6 +255,7 @@ npm test                          # contract tests over HTTP against the built b
 node bench/run.js --impl rust --exe target/release/shotik.exe --label mine   # the numbers above
 node bench/charts.js              # redraws the charts from bench/results
 SHOTIK_BIN=target/release/shotik.exe node docs/make-screenshots.js   # retakes the app screenshots, in ghost mode
+python docs/promo/make_promo.py target/release/shotik.exe            # re-shoots the film at the top, in ghost mode
 ```
 
 The suite covers the parts that are easy to get subtly wrong: OCR faithfulness (small text is upscaled;
