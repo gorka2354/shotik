@@ -377,17 +377,6 @@ fn drive(backend: &dyn Backend, job: &Job, ctl: &Control, trace: &Trace, events:
     let duration_sec = ctl.end().unwrap_or(0) as f64 / TICKS_PER_SEC as f64;
     trace.push(format!("index ok mp4 duration={duration_sec:.3}"));
     let ext = if audio_only { "m4a" } else { "mp4" };
-    // The visible local name can be reused as soon as the user moves a call. Identify the
-    // finalized private file, where even a disappearing save volume cannot change its identity.
-    let audio_content = if audio_only {
-        std::fs::File::open(&job.part)
-            .and_then(shotik_core::recording_copy::Content::read)
-            .inspect_err(|e| trace.push(format!("cannot identify finalized audio: {e}")))
-            .ok()
-            .map(Box::new)
-    } else {
-        None
-    };
     let file = match move_into_place(&job.part, &job.save_base, ext) {
         Ok(file) => file,
         // The folder is gone or full, but the recording is complete and this is its only copy. It stays in
@@ -412,7 +401,7 @@ fn drive(backend: &dyn Backend, job: &Job, ctl: &Control, trace: &Trace, events:
         RecordTarget::Region { rect_dip, .. } => (rect_dip.width.max(0) as u32, rect_dip.height.max(0) as u32),
         RecordTarget::AudioOnly => (0, 0),
     };
-    Outcome::Done(RecordingDone { file, audio_content, audio_only, first_frame_jpeg: thumb, width, height, duration_sec })
+    Outcome::Done(RecordingDone { file, audio_content: None, audio_only, first_frame_jpeg: thumb, width, height, duration_sec })
 }
 
 #[allow(clippy::too_many_arguments)]

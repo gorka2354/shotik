@@ -500,12 +500,22 @@ fn audio_only_never_touches_the_screen_and_records_aac_m4a() {
     f.wait_running();
     assert_eq!(f.recorder.status().audio, Some(RecAudioInfo { system: true, microphone: true, tracks: 1 }));
     thread::sleep(Duration::from_millis(50));
+    // Linux updates this old access time on a read, including one served from the page cache.
+    #[cfg(target_os = "linux")]
+    let old_access = {
+        let part = f.log.sinks.lock().unwrap()[0].path.clone();
+        let accessed = std::time::UNIX_EPOCH + Duration::from_secs(86_400);
+        fs::File::options().write(true).open(part).unwrap()
+            .set_times(fs::FileTimes::new().set_accessed(accessed)).unwrap();
+        accessed
+    };
     f.recorder.stop();
     let done = f.wait_done();
     assert_eq!(done.file.extension().unwrap(), "m4a");
     assert!(done.audio_only);
-    let saved = shotik_core::recording_copy::Content::read(fs::File::open(&done.file).unwrap()).unwrap();
-    assert_eq!(done.audio_content.as_deref(), Some(&saved));
+    #[cfg(target_os = "linux")]
+    assert_eq!(fs::metadata(&done.file).unwrap().accessed().unwrap(), old_access);
+    assert!(done.audio_content.is_none());
     assert_eq!((done.width, done.height), (0, 0));
     assert_eq!(done.first_frame_jpeg, None);
     assert_eq!(f.log.video_opened.load(Ordering::SeqCst), 0);

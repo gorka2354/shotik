@@ -923,15 +923,12 @@ fn startup_delivers_the_saved_queue_and_logs_a_missing_local_recording() {
     let folder = r.dir.join("calls");
     r.app.ports.settings.set(json!({"audioRecording":{"copyDir":folder},"mcp":{"enabled":false}})).unwrap();
     *r.recording_copy.failure.lock().unwrap() = Some(std::io::ErrorKind::NotConnected);
-    let kept = finish_recording(&r, "kept.m4a", true);
+    finish_recording(&r, "kept.m4a", true);
     let missing = finish_recording(&r, "gone.m4a", true);
     assert!(eventually(|| r.ui.toasts.lock().unwrap().iter().filter(|t| t.body.contains("папка недоступна")).count() == 2));
     let previous = Arc::downgrade(&r.app);
     r.app = App::new(r.app.ports.clone(), r.app.env.clone(), r.app.rt.clone()).unwrap();
     assert!(eventually(|| previous.upgrade().is_none()));
-    // An earlier Shotik stored only paths; startup must keep and bind its waiting calls.
-    let queue = r.dir.join("recording-copies.json");
-    std::fs::write(&queue, serde_json::to_vec(&[&kept, &missing]).unwrap()).unwrap();
     r.recording_copy.files.lock().unwrap().remove(&missing);
     std::fs::remove_file(&missing).unwrap();
     *r.recording_copy.failure.lock().unwrap() = None;

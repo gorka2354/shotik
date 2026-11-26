@@ -1,12 +1,13 @@
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, ErrorKind, Seek};
+use std::io::{self, ErrorKind};
 use std::mem::{offset_of, size_of, size_of_val};
 use std::os::windows::fs::OpenOptionsExt;
 use std::os::windows::io::AsRawHandle;
 use std::path::{Path, Prefix};
+use std::time::SystemTime;
 
 use shotik_core::ports::{RecordingCopy, RecordingPart};
-use shotik_core::recording_copy::{part_path, Content};
+use shotik_core::recording_copy::{part_path, Content, SourceCheck};
 use windows::Win32::Foundation::{
     ERROR_BAD_NETPATH, ERROR_BAD_NET_NAME, ERROR_CONNECTION_UNAVAIL, ERROR_HANDLE_DISK_FULL, ERROR_INVALID_DRIVE,
     ERROR_INVALID_PASSWORD, ERROR_LOCK_VIOLATION, ERROR_LOGON_FAILURE, ERROR_NETNAME_DELETED,
@@ -85,9 +86,20 @@ impl RecordingCopy for WindowsRecordingCopy {
         open_recording(path).and_then(Content::read).map_err(share_error)
     }
 
+    fn identify_source(&self, path: &Path) -> io::Result<(Content, Option<SystemTime>)> {
+        let input = open_recording(path).map_err(share_error)?;
+        let modified = input.metadata().and_then(|meta| meta.modified()).map_err(share_error)?;
+        Ok((Content::read(input).map_err(share_error)?, Some(modified)))
+    }
+
     fn publish(&self, source: &Path, destination: &Path) -> io::Result<()> {
-        let content = self.fingerprint(source)?;
-        let part = self.stage(source, &part_path(destination), content)?;
+        let (content, modified) = self.identify_source(source)?;
+        let part = self.stage_source(
+            source,
+            &part_path(destination),
+            content,
+            &mut modified.map(SourceCheck::matched),
+        )?;
         let result = part.publish(destination);
         if result.is_err() {
             part.discard()?;
@@ -96,15 +108,23 @@ impl RecordingCopy for WindowsRecordingCopy {
     }
 
     fn stage(&self, source: &Path, path: &Path, content: Content) -> io::Result<Box<dyn RecordingPart + '_>> {
-        let mut input = open_recording(source).map_err(share_error)?;
-        // Check the same handle that will be copied, before any replacement bytes reach the share.
-        Content::read(&mut input).map_err(share_error)?.verify(content)?;
-        input.rewind().map_err(share_error)?;
-        let mut file = create_part(path).map_err(share_error)?;
-        let result = Content::copy(input, &mut file)
-            .and_then(|actual| actual.verify(content))
-            .and_then(|()| file.sync_all());
-        let part = WindowsPart(file);
+        self.stage_source(source, path, content, &mut None)
+    }
+
+    fn stage_source(
+        &self,
+        source: &Path,
+        path: &Path,
+        content: Content,
+        checked: &mut Option<SourceCheck>,
+    ) -> io::Result<Box<dyn RecordingPart + '_>> {
+        let mut part = WindowsPart(create_part(path).map_err(share_error)?);
+        let result = (|| {
+            let mut input = open_recording(source)?;
+            SourceCheck::verify(&mut input, content, checked)?;
+            io::copy(&mut input, &mut part.0)?;
+            part.0.sync_all()
+        })();
         if let Err(e) = result {
             part.discard()?;
             return Err(share_error(e));

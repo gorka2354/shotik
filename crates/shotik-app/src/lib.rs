@@ -119,6 +119,12 @@ pub struct App {
     pub(crate) me: Weak<App>,
 }
 
+impl Drop for App {
+    fn drop(&mut self) {
+        self.flush_unsaved_enqueue();
+    }
+}
+
 impl App {
     pub fn new(ports: Ports, env: Environment, rt: Handle) -> Result<Arc<Self>> {
         let diag = Diagnostics::new(&env.temp_dir);

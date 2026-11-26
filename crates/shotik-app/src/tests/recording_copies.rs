@@ -4,8 +4,11 @@ use super::*;
 use shotik_core::recording_copy::{part_path, Content, CopyQueue};
 use std::{fs, io};
 
+type FingerprintHook = Box<dyn FnOnce() -> io::Result<()> + Send>;
+
 #[derive(Default)]
 struct Files {
+    before_fingerprint: Mutex<Option<FingerprintHook>>,
     after_publish: Mutex<Option<Box<dyn FnOnce() + Send>>>,
     after_stage: Mutex<Option<Box<dyn FnOnce() + Send>>>,
     after_absence: Mutex<Option<Box<dyn FnOnce() + Send>>>,
@@ -23,6 +26,9 @@ impl RecordingCopy for Files {
     }
 
     fn fingerprint(&self, path: &Path) -> io::Result<Content> {
+        if let Some(hook) = self.before_fingerprint.lock().unwrap().take() {
+            hook()?;
+        }
         Content::read(fs::File::open(path)?)
     }
 
@@ -356,4 +362,131 @@ fn restart_remembers_the_published_suffix_when_a_lower_name_is_freed() {
     c.wait_toast("Sent after retry: 1");
     assert_eq!(c.waiting(), 0);
     assert!(!lower.exists(), "the same bytes appeared under two names");
+}
+
+#[test]
+fn a_blocked_fingerprint_does_not_hold_up_the_local_save_event() {
+    use std::sync::mpsc::channel;
+
+    let c = Calls::new("mirror-hash-after-save");
+    fs::create_dir(&c.target).unwrap();
+    let (hashing, started) = channel();
+    let (resume, wait) = channel();
+    *c.files.before_fingerprint.lock().unwrap() = Some(Box::new(move || {
+        hashing.send(()).unwrap();
+        wait.recv_timeout(Duration::from_secs(10)).unwrap();
+        Ok(())
+    }));
+    std::thread::scope(|scope| {
+        let (saved, done) = channel();
+        let calls = &c;
+        scope.spawn(move || {
+            let _ = saved.send(calls.finish("Rec.m4a", b"local call"));
+        });
+        started.recv_timeout(Duration::from_secs(10)).unwrap();
+        let local = done.recv_timeout(Duration::from_secs(2));
+        resume.send(()).unwrap();
+        assert_eq!(
+            fs::read(local.expect("save waited for the hash")).unwrap(),
+            b"local call"
+        );
+    });
+    c.wait_toast("Sent to ");
+}
+
+#[test]
+fn an_unidentified_call_is_read_from_the_saved_file_on_the_next_pass() {
+    let mut c = Calls::new("mirror-identify-later");
+    fs::create_dir(&c.target).unwrap();
+    *c.files.before_fingerprint.lock().unwrap() = Some(Box::new(|| Err(io::ErrorKind::PermissionDenied.into())));
+    let local = c.finish("Rec.m4a", b"original call");
+    c.wait_failures(1);
+    assert_eq!(c.waiting(), 1);
+    assert!(!c.target.join("Rec.m4a").exists());
+    c.restart();
+    c.wait_toast("Sent after retry: 1");
+    assert_eq!(fs::read(local).unwrap(), b"original call");
+    assert_eq!(fs::read(c.target.join("Rec.m4a")).unwrap(), b"original call");
+    assert_eq!(c.waiting(), 0);
+}
+
+#[test]
+fn a_blocked_enqueue_is_saved_after_unlock_and_delivered_after_restart() {
+    let mut c = Calls::new("mirror-enqueue-write");
+    // Load the empty queue before blocking its replacement. No other job will wake the worker.
+    fs::create_dir(&c.target).unwrap();
+    c.finish("first.m4a", b"first");
+    c.wait_toast("Sent to ");
+    let previous = c.queue.with_extension("locked");
+    fs::rename(&c.queue, &previous).unwrap();
+    fs::create_dir(&c.queue).unwrap();
+    let transient = c.finish("brief-lock.m4a", b"brief lock");
+    fs::remove_dir(&c.queue).unwrap();
+    fs::rename(&previous, &c.queue).unwrap();
+    assert!(eventually(|| c.rig.ui.last_toast().is_some_and(|t| t.file.as_ref()
+        == Some(&transient)
+        && t.body.contains("Sent to "))));
+    assert!(!c
+        .rig
+        .ui
+        .toasts
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|t| t.body.contains("could not be saved")));
+
+    fs::rename(&c.target, c.rig.dir.join("offline")).unwrap();
+    fs::rename(&c.queue, &previous).unwrap();
+    fs::create_dir(&c.queue).unwrap();
+    c.finish("Rec.m4a", b"queued during the lock");
+    c.wait_toast("retry queue could not be saved to disk");
+    fs::remove_dir(&c.queue).unwrap();
+    fs::rename(previous, &c.queue).unwrap();
+    assert!(
+        eventually(|| c.waiting() == 1),
+        "no automatic save after the lock cleared"
+    );
+    fs::create_dir(&c.target).unwrap();
+    c.restart();
+    c.wait_toast("Sent after retry: 1");
+    assert_eq!(fs::read(c.target.join("Rec.m4a")).unwrap(), b"queued during the lock");
+    assert_eq!(c.waiting(), 0);
+}
+
+#[test]
+fn quitting_before_the_next_save_retries_the_in_memory_enqueue() {
+    for (name, quit_from_tray) in [("mirror-enqueue-release", false), ("mirror-enqueue-quit", true)] {
+        let mut c = Calls::new(name);
+        fs::create_dir(&c.queue).unwrap();
+        c.finish("Rec.m4a", b"saved before quit");
+        c.wait_toast("retry queue could not be saved to disk");
+        fs::remove_dir(&c.queue).unwrap();
+        if quit_from_tray {
+            c.rig.app.shutdown();
+            assert_eq!(c.waiting(), 1);
+        }
+        fs::create_dir(&c.target).unwrap();
+        c.restart();
+        c.wait_toast("Sent after retry: 1");
+        assert_eq!(fs::read(c.target.join("Rec.m4a")).unwrap(), b"saved before quit");
+    }
+}
+
+#[test]
+fn an_unreleased_path_only_queue_is_ignored_and_logged() {
+    let mut c = Calls::new("mirror-old-queue");
+    fs::create_dir(&c.target).unwrap();
+    let old = c.rig.dir.join("local/old.m4a");
+    fs::write(&old, b"old call").unwrap();
+    fs::write(&c.queue, serde_json::to_vec(&[old]).unwrap()).unwrap();
+    c.restart();
+    let log = c.rig.dir.join("shotik-bubble.log");
+    assert!(eventually(|| fs::read_to_string(&log)
+        .unwrap()
+        .contains("ignoring path-only recording copy queue")));
+    c.finish("new.m4a", b"new call");
+    c.wait_toast("Sent to ");
+    assert_eq!(c.waiting(), 0);
+    assert!(!c.target.join("old.m4a").exists());
+    assert_eq!(fs::read(c.target.join("new.m4a")).unwrap(), b"new call");
 }

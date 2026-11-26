@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Mutex, Weak};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use shotik_core::ports::Toast;
 use shotik_core::recording_copy::{
@@ -13,23 +13,27 @@ use shotik_core::recording_copy::{
 use shotik_core::{Error, Result};
 
 use crate::actions::{file_name, text_toast};
-use crate::App;
+use crate::{App, Diagnostics};
+
+// An enqueue that exists only in memory must not wait for the five-minute delivery timer.
+const ENQUEUE_SAVE_RETRY: Duration = Duration::from_secs(1);
 
 #[derive(Default)]
 struct Pending {
     queue: CopyQueue,
     loaded: bool,
     dirty: bool,
+    retry_enqueue_at: Option<Instant>,
     /// Only the first attempt adds to the ordinary saved toast. A restart is always a retry.
     first: HashMap<Recording, Option<Toast>>,
     has_receipt: bool,
 }
 
 impl Pending {
-    fn sync(&mut self, path: &Path) -> Result<()> {
+    fn sync(&mut self, path: &Path, diag: &Diagnostics) -> Result<()> {
         let receipt_path = path.with_extension("receipt");
         if !self.loaded {
-            let mut stored = CopyQueue::load(path)?;
+            let mut stored = CopyQueue::load_with_log(path, |message| diag.log(message))?;
             if let Some(sent) = load_receipt(&receipt_path)? {
                 stored.acknowledge(&sent);
                 self.has_receipt = true;
@@ -44,6 +48,7 @@ impl Pending {
         if self.dirty {
             self.queue.save(path)?;
             self.dirty = false;
+            self.retry_enqueue_at = None;
         }
         if self.has_receipt {
             match std::fs::remove_file(&receipt_path) {
@@ -102,22 +107,32 @@ pub(super) fn start_worker(app: Weak<App>, wakeups: mpsc::Receiver<()>) -> Resul
 }
 
 impl App {
-    pub(super) fn queue_audio_copy(&self, file: &Path, content: Option<Content>, toast: Option<Toast>) {
-        let content = content.or_else(|| match self.ports.recording_copy.fingerprint(file) {
-            Ok(content) => Some(content),
-            Err(e) => {
-                self.diag
-                    .log(&format!("cannot identify recording {}: {e}", file.display()));
-                None
+    pub(super) fn flush_unsaved_enqueue(&self) {
+        let Ok(mut pending) = self.copies.pending.lock() else {
+            self.diag
+                .log("cannot flush recording copy queue: its mutex was poisoned");
+            return;
+        };
+        if pending.retry_enqueue_at.is_some() {
+            if let Err(e) = pending.sync(&self.copies.path, &self.diag) {
+                self.diag.log(&e.to_string());
             }
-        });
+        }
+    }
+
+    pub(super) fn queue_audio_copy(&self, file: &Path, content: Option<Content>, toast: Option<Toast>) {
         let recording = Recording::new(file, content);
         let mut pending = self.copies.pending.lock().unwrap();
         pending.queue.enqueue(recording.clone());
         pending.first.insert(recording, toast);
         pending.dirty = true;
-        if let Err(e) = pending.sync(&self.copies.path) {
+        if let Err(e) = pending.sync(&self.copies.path, &self.diag) {
             self.diag.log(&e.to_string());
+            if pending.dirty {
+                pending
+                    .retry_enqueue_at
+                    .get_or_insert_with(|| Instant::now() + ENQUEUE_SAVE_RETRY);
+            }
         }
         drop(pending);
         self.copies.wake();
@@ -125,8 +140,43 @@ impl App {
 
     fn send_pending_recordings(&self) -> Option<Duration> {
         let folder = self.settings().audio_recording.copy_dir;
+        let paused = folder.as_os_str().is_empty();
         let mut pending = self.copies.pending.lock().unwrap();
-        if folder.as_os_str().is_empty() {
+        if let Some(delay) = pending
+            .retry_enqueue_at
+            .and_then(|at| at.checked_duration_since(Instant::now()))
+        {
+            return Some(delay);
+        }
+        let storage_error = if !paused || pending.retry_enqueue_at.is_some() {
+            pending.sync(&self.copies.path, &self.diag).err()
+        } else {
+            None
+        };
+        if let Some(e) = &storage_error {
+            if pending.retry_enqueue_at.is_some() {
+                // Keep the whole queue in memory and try its local save again, even when copying is paused.
+                pending.retry_enqueue_at = Some(Instant::now() + ENQUEUE_SAVE_RETRY);
+                let first = std::mem::take(&mut pending.first);
+                drop(pending);
+                if !first.is_empty() {
+                    self.diag.log(&e.to_string());
+                    let status = if paused {
+                        self.t("audioCopyPaused")
+                    } else {
+                        self.t_args("audioCopyFailed", &[&e.to_string()])
+                    };
+                    let warning = self.t("audioCopyQueueUnsaved");
+                    for mut toast in first.into_values().flatten() {
+                        toast.body.push_str(&format!("\n{status}\n{warning}"));
+                        self.ports.ui.show_toast(toast);
+                    }
+                }
+                return Some(ENQUEUE_SAVE_RETRY);
+            }
+            self.diag.log(&e.to_string());
+        }
+        if paused {
             let first = std::mem::take(&mut pending.first);
             drop(pending);
             for mut toast in first.into_values().flatten() {
@@ -134,10 +184,6 @@ impl App {
                 self.ports.ui.show_toast(toast);
             }
             return None;
-        }
-        let storage_error = pending.sync(&self.copies.path).err();
-        if let Some(e) = &storage_error {
-            self.diag.log(&e.to_string());
         }
         let files: Vec<_> = pending.queue.pending().iter().map(|e| e.recording.clone()).collect();
         drop(pending);
@@ -187,7 +233,7 @@ impl App {
         let mut key = recording.clone();
         let mut queue_saved = true;
         let mut sync = |pending: &mut Pending| {
-            pending.sync(path).map_err(|e| {
+            pending.sync(path, &self.diag).map_err(|e| {
                 queue_saved = false;
                 self.diag.log(&e.to_string());
                 io::Error::other(e)
@@ -228,7 +274,7 @@ impl App {
             }
             pending.queue.finish(&key);
             pending.dirty = true;
-            if let Err(e) = pending.sync(path) {
+            if let Err(e) = pending.sync(path, &self.diag) {
                 self.diag.log(&e.to_string());
             }
         }

@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::fs;
-use std::io::{self, ErrorKind, Read, Write};
+use std::io::{self, ErrorKind, Read, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
@@ -25,7 +25,7 @@ impl Content {
         Self::copy(input, io::sink())
     }
 
-    /// Hash the exact bytes written, including when a source is replaced during a retry.
+    /// Hash the exact bytes written to the output.
     pub fn copy(mut input: impl Read, mut output: impl Write) -> io::Result<Self> {
         let mut hash = Sha256::new();
         let mut size = 0;
@@ -49,9 +49,53 @@ impl Content {
 
     pub fn verify(self, expected: Self) -> io::Result<()> {
         if self != expected {
-            return Err(io::Error::new(ErrorKind::InvalidData, "recording content changed"));
+            return Err(changed_content());
         }
         Ok(())
+    }
+}
+
+fn changed_content() -> io::Error {
+    io::Error::new(ErrorKind::InvalidData, "recording content changed")
+}
+
+/// The result of comparing a source of the expected size to the queued digest.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceCheck {
+    modified: SystemTime,
+    matches: bool,
+}
+
+impl SourceCheck {
+    pub fn matched(modified: SystemTime) -> Self {
+        Self {
+            modified,
+            matches: true,
+        }
+    }
+
+    /// The caller excludes writers for the lifetime of this handle, including the subsequent copy.
+    pub fn verify(input: &mut fs::File, expected: Content, cached: &mut Option<Self>) -> io::Result<()> {
+        let metadata = input.metadata()?;
+        if metadata.len() != expected.size {
+            *cached = None;
+            return Err(changed_content());
+        }
+        let modified = metadata.modified()?;
+        let matches = match cached {
+            Some(check) if check.modified == modified => check.matches,
+            _ => {
+                let matches = Content::read(&mut *input)? == expected;
+                *cached = Some(Self { modified, matches });
+                input.rewind()?;
+                matches
+            }
+        };
+        if matches {
+            Ok(())
+        } else {
+            Err(changed_content())
+        }
     }
 }
 
@@ -59,9 +103,7 @@ impl Content {
 #[serde(rename_all = "camelCase")]
 enum Identity {
     Content(Content),
-    LegacyPath,
-    // Neither the recorder's private file nor the visible file was readable at enqueue.
-    // Retain the call, but never attach another recording's bytes to it on a later retry.
+    // Distinguish pending saves until the worker can read the local file.
     Unidentified(SystemTime),
 }
 
@@ -79,13 +121,6 @@ impl Recording {
             identity,
         }
     }
-
-    fn legacy(source: PathBuf) -> Self {
-        Self {
-            source,
-            identity: Identity::LegacyPath,
-        }
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -101,6 +136,8 @@ pub struct QueuedCopy {
     #[serde(flatten)]
     pub recording: Recording,
     handoff: Option<Handoff>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source_check: Option<SourceCheck>,
 }
 
 impl QueuedCopy {
@@ -108,6 +145,7 @@ impl QueuedCopy {
         Self {
             recording,
             handoff: None,
+            source_check: None,
         }
     }
 
@@ -116,35 +154,32 @@ impl QueuedCopy {
     }
 }
 
-#[derive(Default, Serialize)]
+#[derive(Default, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct CopyQueue(Vec<QueuedCopy>);
 
 impl CopyQueue {
     pub fn load(path: &Path) -> Result<Self> {
-        // The original queue stored just the local paths. Bind each such entry on its first read.
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Stored {
-            Entry(QueuedCopy),
-            Path(PathBuf),
-        }
+        Self::load_with_log(path, |message| eprintln!("{message}"))
+    }
+
+    pub fn load_with_log(path: &Path, log: impl FnOnce(&str)) -> Result<Self> {
         let bytes = match fs::read(path) {
             Ok(bytes) => bytes,
             Err(e) if e.kind() == ErrorKind::NotFound => return Ok(Self::default()),
             Err(e) => return Err(Error::io("read recording copy queue", path, e)),
         };
-        let stored: Vec<Stored> = serde_json::from_slice(&bytes)
-            .map_err(|e| Error::msg(format!("cannot read recording copy queue {}: {e}", path.display())))?;
-        Ok(Self(
-            stored
-                .into_iter()
-                .map(|item| match item {
-                    Stored::Entry(entry) => entry,
-                    Stored::Path(source) => QueuedCopy::new(Recording::legacy(source)),
-                })
-                .collect(),
-        ))
+        match serde_json::from_slice(&bytes) {
+            Ok(queue) => Ok(queue),
+            Err(_) if serde_json::from_slice::<Vec<String>>(&bytes).is_ok() => {
+                log(&format!("ignoring path-only recording copy queue {}", path.display()));
+                Ok(Self::default())
+            }
+            Err(e) => Err(Error::msg(format!(
+                "cannot read recording copy queue {}: {e}",
+                path.display()
+            ))),
+        }
     }
 
     pub fn save(&self, path: &Path) -> Result<()> {
@@ -152,13 +187,6 @@ impl CopyQueue {
     }
 
     pub fn enqueue(&mut self, recording: Recording) {
-        // A new finish at an old path is positive evidence that an unbound legacy entry
-        // can no longer be identified by reading that path.
-        for old in self.0.iter_mut().filter(|e| e.recording.source == recording.source) {
-            if old.recording.identity == Identity::LegacyPath {
-                old.recording.identity = Identity::Unidentified(SystemTime::now());
-            }
-        }
         if !self.0.iter().any(|entry| entry.recording == recording) {
             self.0.push(QueuedCopy::new(recording));
         }
@@ -303,17 +331,12 @@ fn send(
 ) -> io::Result<()> {
     let content = match entry.recording.identity {
         Identity::Content(content) => content,
-        Identity::LegacyPath => {
-            let content = port.fingerprint(&entry.recording.source)?;
+        Identity::Unidentified(_) => {
+            let (content, modified) = port.identify_source(&entry.recording.source)?;
             entry.recording.identity = Identity::Content(content);
+            entry.source_check = modified.map(SourceCheck::matched);
             persist(entry)?;
             content
-        }
-        Identity::Unidentified(_) => {
-            return Err(io::Error::new(
-                ErrorKind::InvalidData,
-                "original recording could not be identified",
-            ))
         }
     };
 
@@ -374,12 +397,17 @@ fn send(
         // the old bytes until their replacement and its name are durable.
         let (path, part, old_part) = match staged.take() {
             Some((previous, part)) if previous.parent() == Some(folder) => (previous, part, None),
-            old => {
-                let source = old
-                    .as_ref()
-                    .map_or(entry.recording.source.as_path(), |(p, _)| p.as_path());
-                let part = port.stage(source, &path, content)?;
-                (path, part, old)
+            Some((previous, old)) => {
+                let part = port.stage(&previous, &path, content)?;
+                (path, part, Some((previous, old)))
+            }
+            None => {
+                let previous = entry.source_check;
+                let part = port.stage_source(&entry.recording.source, &path, content, &mut entry.source_check);
+                if part.is_err() && entry.source_check != previous {
+                    persist(entry)?;
+                }
+                (path, part?, None)
             }
         };
         entry.handoff = Some(Handoff {
@@ -419,7 +447,7 @@ pub fn deliver_queued(
 
 /// One-shot delivery for callers without a persistent queue.
 pub fn deliver(port: &dyn RecordingCopy, source: &Path, folder: &Path) -> io::Result<Delivery> {
-    let mut entry = QueuedCopy::new(Recording::legacy(source.to_owned()));
+    let mut entry = QueuedCopy::new(Recording::new(source, None));
     deliver_queued(port, &mut entry, folder, &HashMap::new(), |_| Ok(()))
 }
 
