@@ -1,53 +1,222 @@
-//! Pending audio recordings and the delivery decision, independent of the filesystem and clock.
+//! The identity of a finished call, its durable queue and the decision to publish it.
 
+use std::collections::HashMap;
 use std::fs;
-use std::io::{self, ErrorKind};
+use std::io::{self, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
-use crate::ports::RecordingCopy;
+use crate::ports::{RecordingCopy, RecordingPart};
 use crate::{storage, Error, Result};
 
 pub const RETRY_DELAY: Duration = Duration::from_secs(5 * 60);
 
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Content {
+    size: u64,
+    sha256: [u8; 32],
+}
+
+impl Content {
+    pub fn read(input: impl Read) -> io::Result<Self> {
+        Self::copy(input, io::sink())
+    }
+
+    /// Hash the exact bytes written, including when a source is replaced during a retry.
+    pub fn copy(mut input: impl Read, mut output: impl Write) -> io::Result<Self> {
+        let mut hash = Sha256::new();
+        let mut size = 0;
+        let mut buffer = [0; 64 * 1024];
+        loop {
+            let count = match input.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(n) => n,
+                Err(e) if e.kind() == ErrorKind::Interrupted => continue,
+                Err(e) => return Err(e),
+            };
+            output.write_all(&buffer[..count])?;
+            hash.update(&buffer[..count]);
+            size += count as u64;
+        }
+        Ok(Self {
+            size,
+            sha256: hash.finalize().into(),
+        })
+    }
+
+    pub fn verify(self, expected: Self) -> io::Result<()> {
+        if self != expected {
+            return Err(io::Error::new(ErrorKind::InvalidData, "recording content changed"));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum Identity {
+    Content(Content),
+    LegacyPath,
+    // Neither the recorder's private file nor the visible file was readable at enqueue.
+    // Retain the call, but never attach another recording's bytes to it on a later retry.
+    Unidentified(SystemTime),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Recording {
+    pub source: PathBuf,
+    identity: Identity,
+}
+
+impl Recording {
+    pub fn new(source: &Path, content: Option<Content>) -> Self {
+        let identity = content.map_or_else(|| Identity::Unidentified(SystemTime::now()), Identity::Content);
+        Self {
+            source: source.to_owned(),
+            identity,
+        }
+    }
+
+    fn legacy(source: PathBuf) -> Self {
+        Self {
+            source,
+            identity: Identity::LegacyPath,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct Handoff {
+    target: PathBuf,
+    /// Normally <target>.part. A concurrent collision can change the final name after staging.
+    /// None records a final file whose bytes have already been verified.
+    part: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QueuedCopy {
+    #[serde(flatten)]
+    pub recording: Recording,
+    handoff: Option<Handoff>,
+}
+
+impl QueuedCopy {
+    fn new(recording: Recording) -> Self {
+        Self {
+            recording,
+            handoff: None,
+        }
+    }
+
+    pub fn target(&self) -> Option<&Path> {
+        self.handoff.as_ref().map(|h| h.target.as_path())
+    }
+}
+
+#[derive(Default, Serialize)]
 #[serde(transparent)]
-pub struct CopyQueue(Vec<PathBuf>);
+pub struct CopyQueue(Vec<QueuedCopy>);
 
 impl CopyQueue {
     pub fn load(path: &Path) -> Result<Self> {
-        match fs::read(path) {
-            Ok(bytes) => serde_json::from_slice(&bytes)
-                .map_err(|e| Error::msg(format!("cannot read recording copy queue {}: {e}", path.display()))),
-            Err(e) if e.kind() == ErrorKind::NotFound => Ok(Self::default()),
-            Err(e) => Err(Error::io("read recording copy queue", path, e)),
+        // The original queue stored just the local paths. Bind each such entry on its first read.
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Stored {
+            Entry(QueuedCopy),
+            Path(PathBuf),
         }
+        let bytes = match fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(e) if e.kind() == ErrorKind::NotFound => return Ok(Self::default()),
+            Err(e) => return Err(Error::io("read recording copy queue", path, e)),
+        };
+        let stored: Vec<Stored> = serde_json::from_slice(&bytes)
+            .map_err(|e| Error::msg(format!("cannot read recording copy queue {}: {e}", path.display())))?;
+        Ok(Self(
+            stored
+                .into_iter()
+                .map(|item| match item {
+                    Stored::Entry(entry) => entry,
+                    Stored::Path(source) => QueuedCopy::new(Recording::legacy(source)),
+                })
+                .collect(),
+        ))
     }
 
     pub fn save(&self, path: &Path) -> Result<()> {
         storage::write_json(path, self)
     }
 
-    pub fn enqueue(&mut self, file: &Path) {
-        if !self.0.iter().any(|p| p == file) {
-            self.0.push(file.to_owned());
+    pub fn enqueue(&mut self, recording: Recording) {
+        // A new finish at an old path is positive evidence that an unbound legacy entry
+        // can no longer be identified by reading that path.
+        for old in self.0.iter_mut().filter(|e| e.recording.source == recording.source) {
+            if old.recording.identity == Identity::LegacyPath {
+                old.recording.identity = Identity::Unidentified(SystemTime::now());
+            }
+        }
+        if !self.0.iter().any(|entry| entry.recording == recording) {
+            self.0.push(QueuedCopy::new(recording));
         }
     }
 
-    pub fn pending(&self) -> &[PathBuf] {
+    pub fn pending(&self) -> &[QueuedCopy] {
         &self.0
     }
 
-    pub fn finish(&mut self, file: &Path, result: &io::Result<Delivery>) {
-        if result.is_ok() {
-            self.0.retain(|p| p != file);
+    pub fn reserved_by_others(&self, current: &Recording) -> HashMap<PathBuf, Content> {
+        let mut names = HashMap::new();
+        for entry in self.0.iter().filter(|e| &e.recording != current) {
+            if let (Some(handoff), Identity::Content(content)) = (&entry.handoff, &entry.recording.identity) {
+                names.insert(handoff.target.clone(), *content);
+                if let Some(part) = &handoff.part {
+                    names.insert(part.clone(), *content);
+                }
+            }
         }
+        names
+    }
+
+    pub fn update(&mut self, previous: &Recording, entry: &QueuedCopy) -> io::Result<()> {
+        let current = self
+            .0
+            .iter_mut()
+            .find(|e| &e.recording == previous)
+            .ok_or_else(|| io::Error::other("recording is no longer queued"))?;
+        *current = entry.clone();
+        Ok(())
+    }
+
+    pub fn acknowledge(&mut self, receipt: &QueuedCopy) {
+        self.0.retain(|e| e != receipt);
+    }
+
+    pub fn finish(&mut self, recording: &Recording) {
+        self.0.retain(|e| e.recording != *recording);
     }
 
     pub fn retry_after(&self) -> Option<Duration> {
         (!self.0.is_empty()).then_some(RETRY_DELAY)
+    }
+}
+
+/// One worker writes the receipt before retiring its entry. A failed replacement of the queue
+/// cannot erase this confirmation, even if the receiver immediately archives the recording.
+pub fn save_receipt(path: &Path, entry: &QueuedCopy) -> Result<()> {
+    storage::write_json(path, entry)
+}
+
+pub fn load_receipt(path: &Path) -> Result<Option<QueuedCopy>> {
+    match fs::read(path) {
+        Ok(bytes) => serde_json::from_slice(&bytes)
+            .map(Some)
+            .map_err(|e| Error::msg(format!("cannot read recording copy receipt {}: {e}", path.display()))),
+        Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(Error::io("read recording copy receipt", path, e)),
     }
 }
 
@@ -60,13 +229,13 @@ pub enum Delivery {
 #[derive(PartialEq, Eq)]
 enum Destination {
     Free,
-    SameSize,
+    Same,
     Taken,
 }
 
-fn inspect(port: &dyn RecordingCopy, path: &Path, size: u64) -> io::Result<Destination> {
+fn inspect(port: &dyn RecordingCopy, path: &Path, content: Content) -> io::Result<Destination> {
     match port.file_size(path) {
-        Ok(other) if other == size => Ok(Destination::SameSize),
+        Ok(size) if size == content.size && port.fingerprint(path)? == content => Ok(Destination::Same),
         Ok(_) => Ok(Destination::Taken),
         Err(e) if e.kind() == ErrorKind::IsADirectory => Ok(Destination::Taken),
         Err(e) if e.kind() == ErrorKind::NotFound => Ok(Destination::Free),
@@ -74,43 +243,184 @@ fn inspect(port: &dyn RecordingCopy, path: &Path, size: u64) -> io::Result<Desti
     }
 }
 
-/// Check every candidate's size, including numbered copies from a previous attempt.
-pub fn deliver(port: &dyn RecordingCopy, source: &Path, folder: &Path) -> io::Result<Delivery> {
-    let size = match port.file_size(source) {
-        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(Delivery::SourceGone),
-        result => result?,
-    };
-    let name = source.file_name().ok_or(ErrorKind::InvalidInput)?;
-    let stem = source.file_stem().ok_or(ErrorKind::InvalidInput)?;
-    for number in 1_u64.. {
-        let destination = if number == 1 {
-            folder.join(name)
-        } else {
-            let mut candidate = stem.to_owned();
-            candidate.push(format!("-{number}"));
-            if let Some(ext) = source.extension() {
-                candidate.push(".");
-                candidate.push(ext);
-            }
-            folder.join(candidate)
-        };
-        match inspect(port, &destination, size)? {
-            Destination::SameSize => return Ok(Delivery::Sent),
-            Destination::Taken => continue,
-            Destination::Free => {}
-        }
-        match port.publish(source, &destination) {
-            Ok(()) => return Ok(Delivery::Sent),
-            Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
-            Err(e) => return Err(e),
-        }
-        // Another writer claimed this name. Recheck it once, even if the share still caches
-        // the earlier negative lookup or the receiver already took the file.
-        if inspect(port, &destination, size)? == Destination::SameSize {
-            return Ok(Delivery::Sent);
+/// A failed metadata lookup can also mean that the entire drive disappeared. A completed
+/// directory listing distinguishes that from an absent filename (including broken links).
+pub fn absent_from_parent(path: &Path) -> io::Result<bool> {
+    let name = path.file_name().ok_or(ErrorKind::InvalidInput)?;
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    for entry in fs::read_dir(parent)? {
+        if entry?.file_name() == name {
+            return Ok(false);
         }
     }
+    Ok(true)
+}
+
+pub fn part_path(destination: &Path) -> PathBuf {
+    let mut name = destination.as_os_str().to_owned();
+    name.push(".part");
+    name.into()
+}
+
+fn candidate(source: &Path, folder: &Path, number: u64) -> io::Result<PathBuf> {
+    if number == 1 {
+        return Ok(folder.join(source.file_name().ok_or(ErrorKind::InvalidInput)?));
+    }
+    let mut name = source.file_stem().ok_or(ErrorKind::InvalidInput)?.to_owned();
+    name.push(format!("-{number}"));
+    if let Some(ext) = source.extension() {
+        name.push(".");
+        name.push(ext);
+    }
+    Ok(folder.join(name))
+}
+
+/// False only for a verified collision. A negative lookup after AlreadyExists is inconclusive.
+fn publish(port: &dyn RecordingCopy, part: &dyn RecordingPart, target: &Path, content: Content) -> io::Result<bool> {
+    match part.publish(target) {
+        Ok(()) => Ok(true),
+        Err(e) if e.kind() == ErrorKind::AlreadyExists => match inspect(port, target, content)? {
+            Destination::Same => {
+                part.discard()?;
+                Ok(true)
+            }
+            Destination::Taken => Ok(false),
+            Destination::Free => Err(e),
+        },
+        Err(e) => Err(e),
+    }
+}
+
+fn send(
+    port: &dyn RecordingCopy,
+    entry: &mut QueuedCopy,
+    folder: &Path,
+    reserved: &HashMap<PathBuf, Content>,
+    persist: &mut impl FnMut(&QueuedCopy) -> io::Result<()>,
+) -> io::Result<()> {
+    let content = match entry.recording.identity {
+        Identity::Content(content) => content,
+        Identity::LegacyPath => {
+            let content = port.fingerprint(&entry.recording.source)?;
+            entry.recording.identity = Identity::Content(content);
+            persist(entry)?;
+            content
+        }
+        Identity::Unidentified(_) => {
+            return Err(io::Error::new(
+                ErrorKind::InvalidData,
+                "original recording could not be identified",
+            ))
+        }
+    };
+
+    let mut staged = None;
+    if let Some(handoff) = &entry.handoff {
+        let Some(path) = &handoff.part else { return Ok(()) }; // Already verified at its final name.
+        if path.parent() != handoff.target.parent()
+            || path.extension() != Some("part".as_ref())
+            || path == &entry.recording.source
+        {
+            return Err(io::Error::new(ErrorKind::InvalidData, "invalid queued recording part"));
+        }
+        let destination = inspect(port, &handoff.target, content)?;
+        if destination == Destination::Same {
+            return Ok(());
+        }
+        // Never reconstruct a committed part from the source. It may have been renamed and
+        // consumed before a crash. Only the verified, still-unpublished bytes can be renamed.
+        let part = port.reopen_part(path, content).map_err(|e| {
+            io::Error::new(
+                e.kind(),
+                format!("cannot confirm delivery to {}: {e}", handoff.target.display()),
+            )
+        })?;
+        if handoff.target.parent() == Some(folder)
+            && destination == Destination::Free
+            && publish(port, part.as_ref(), &handoff.target, content)?
+        {
+            return Ok(());
+        }
+        staged = Some((path.clone(), part));
+    }
+
+    for number in 1_u64.. {
+        let target = candidate(&entry.recording.source, folder, number)?;
+        let path = part_path(&target);
+        match inspect(port, &target, content)? {
+            Destination::Taken => continue,
+            Destination::Same => {
+                entry.handoff = Some(Handoff { target, part: None });
+                persist(entry)?;
+                if let Some((_, part)) = staged {
+                    part.discard()?;
+                }
+                return Ok(());
+            }
+            Destination::Free => {}
+        }
+
+        if let Some(other) = reserved.get(&target).or_else(|| reserved.get(&path)) {
+            if other == &content {
+                return Err(ErrorKind::ResourceBusy.into());
+            }
+            continue;
+        }
+
+        // On a settings change transfer a prepared part to the newly selected folder. Keep
+        // the old bytes until their replacement and its name are durable.
+        let (path, part, old_part) = match staged.take() {
+            Some((previous, part)) if previous.parent() == Some(folder) => (previous, part, None),
+            old => {
+                let source = old
+                    .as_ref()
+                    .map_or(entry.recording.source.as_path(), |(p, _)| p.as_path());
+                let part = port.stage(source, &path, content)?;
+                (path, part, old)
+            }
+        };
+        entry.handoff = Some(Handoff {
+            target: target.clone(),
+            part: Some(path.clone()),
+        });
+        persist(entry)?;
+        if let Some((_, old)) = old_part {
+            old.discard()?;
+        }
+        if publish(port, part.as_ref(), &target, content)? {
+            return Ok(());
+        }
+        staged = Some((path, part));
+    }
     Err(io::Error::other("no recording filename available"))
+}
+
+pub fn deliver_queued(
+    port: &dyn RecordingCopy,
+    entry: &mut QueuedCopy,
+    folder: &Path,
+    reserved: &HashMap<PathBuf, Content>,
+    mut persist: impl FnMut(&QueuedCopy) -> io::Result<()>,
+) -> io::Result<Delivery> {
+    match send(port, entry, folder, reserved, &mut persist) {
+        Ok(()) => Ok(Delivery::Sent),
+        Err(error) => {
+            let source = &entry.recording.source;
+            if port.file_size(source).is_err_and(|e| e.kind() == ErrorKind::NotFound) && port.source_absent(source)? {
+                return Ok(Delivery::SourceGone);
+            }
+            Err(error)
+        }
+    }
+}
+
+/// One-shot delivery for callers without a persistent queue.
+pub fn deliver(port: &dyn RecordingCopy, source: &Path, folder: &Path) -> io::Result<Delivery> {
+    let mut entry = QueuedCopy::new(Recording::legacy(source.to_owned()));
+    deliver_queued(port, &mut entry, folder, &HashMap::new(), |_| Ok(()))
 }
 
 #[cfg(test)]
@@ -137,6 +447,18 @@ mod tests {
             }
         }
 
+        fn fingerprint(&self, path: &Path) -> io::Result<Content> {
+            Content::read(io::repeat(1).take(self.file_size(path)?))
+        }
+
+        fn stage(&self, _: &Path, _: &Path, _: Content) -> io::Result<Box<dyn RecordingPart + '_>> {
+            Ok(Box::new(self))
+        }
+
+        fn reopen_part(&self, _: &Path, _: Content) -> io::Result<Box<dyn RecordingPart + '_>> {
+            Ok(Box::new(self))
+        }
+
         fn publish(&self, _: &Path, destination: &Path) -> io::Result<()> {
             if destination == Path::new("shared/call.m4a") {
                 self.claimed.store(true, Ordering::SeqCst);
@@ -144,6 +466,16 @@ mod tests {
             }
             assert_eq!(destination, Path::new("shared/call-2.m4a"));
             self.numbered.store(true, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    impl RecordingPart for &OtherWriter {
+        fn publish(&self, destination: &Path) -> io::Result<()> {
+            RecordingCopy::publish(*self, Path::new("local/call.m4a"), destination)
+        }
+
+        fn discard(&self) -> io::Result<()> {
             Ok(())
         }
     }
@@ -168,20 +500,24 @@ mod tests {
     fn failures_wait_five_minutes_and_survive_restart_until_sent_or_missing() {
         let dir = TestDir::new();
         let path = dir.path().join("queue.json");
-        let (a, b) = (Path::new("first.m4a"), Path::new("second.m4a"));
+        let a = Recording::new(Path::new("first.m4a"), Some(Content::read(&b"one"[..]).unwrap()));
+        let b = Recording::new(Path::new("second.m4a"), Some(Content::read(&b"two"[..]).unwrap()));
         let mut queue = CopyQueue::load(&path).unwrap();
         assert_eq!(queue.retry_after(), None);
-        queue.enqueue(a);
-        queue.enqueue(a);
-        queue.enqueue(b);
-        queue.finish(a, &Err(ErrorKind::NetworkUnreachable.into()));
+        queue.enqueue(a.clone());
+        queue.enqueue(a.clone());
+        queue.enqueue(b.clone());
         queue.save(&path).unwrap();
         let mut reloaded = CopyQueue::load(&path).unwrap();
-        assert_eq!(reloaded.pending(), &[a, b]);
+        assert_eq!(
+            reloaded.pending().iter().map(|e| &e.recording).collect::<Vec<_>>(),
+            [&a, &b]
+        );
         assert_eq!(reloaded.retry_after(), Some(Duration::from_secs(300)));
-        reloaded.finish(b, &Ok(Delivery::SourceGone));
-        assert_eq!(reloaded.pending(), &[a]);
-        reloaded.finish(a, &Ok(Delivery::Sent));
+        reloaded.finish(&b);
+        assert_eq!(reloaded.pending().len(), 1);
+        assert_eq!(reloaded.pending()[0].recording, a);
+        reloaded.finish(&a);
         reloaded.save(&path).unwrap();
         assert_eq!(CopyQueue::load(&path).unwrap().retry_after(), None);
     }

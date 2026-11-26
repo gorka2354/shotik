@@ -180,7 +180,7 @@ impl App {
             }
         };
         if copy_audio {
-            self.queue_audio_copy(&done.file, toast);
+            self.queue_audio_copy(&done.file, done.audio_content.as_deref().copied(), toast);
         } else {
             if let Some(toast) = toast {
                 self.ports.ui.show_toast(toast);

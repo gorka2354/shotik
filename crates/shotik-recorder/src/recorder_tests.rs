@@ -504,6 +504,8 @@ fn audio_only_never_touches_the_screen_and_records_aac_m4a() {
     let done = f.wait_done();
     assert_eq!(done.file.extension().unwrap(), "m4a");
     assert!(done.audio_only);
+    let saved = shotik_core::recording_copy::Content::read(fs::File::open(&done.file).unwrap()).unwrap();
+    assert_eq!(done.audio_content.as_deref(), Some(&saved));
     assert_eq!((done.width, done.height), (0, 0));
     assert_eq!(done.first_frame_jpeg, None);
     assert_eq!(f.log.video_opened.load(Ordering::SeqCst), 0);
@@ -733,6 +735,7 @@ fn stop_delivers_the_file_with_the_dip_size_of_the_region() {
     let done = f.wait_done();
     assert_eq!((done.width, done.height), (214, 120), "DIP, as recorder.js gives history");
     assert!(!done.audio_only);
+    assert!(done.audio_content.is_none());
     assert!(done.duration_sec > 0.1 && done.duration_sec < 2.0, "{}", done.duration_sec);
     assert_eq!(done.file.parent().unwrap(), f.save_dir);
     assert_eq!(done.file.file_name().unwrap(), "Rec_2026-11-04_12-00-00.mp4");

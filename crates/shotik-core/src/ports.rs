@@ -17,6 +17,7 @@ use crate::error::Result;
 use crate::frame::Frame;
 use crate::geom::{Display, DisplayId, Point, PointF, Rect};
 use crate::history::HistoryEntry;
+use crate::recording_copy::Content;
 use crate::settings::Settings;
 
 pub type Callback<T> = Arc<dyn Fn(T) + Send + Sync>;
@@ -35,6 +36,20 @@ pub trait SettingsStore: Send + Sync {
 pub trait RecordingCopy: Send + Sync {
     fn file_size(&self, path: &Path) -> std::io::Result<u64>;
     fn publish(&self, source: &Path, destination: &Path) -> std::io::Result<()>;
+    fn fingerprint(&self, path: &Path) -> std::io::Result<Content>;
+    /// Confirm absence by listing the parent. A missing or unreadable parent is an I/O error.
+    fn source_absent(&self, path: &Path) -> std::io::Result<bool> {
+        crate::recording_copy::absent_from_parent(path)
+    }
+    /// Both operations return a handle to verified bytes and exclude other writers until dropped.
+    fn stage(&self, source: &Path, part: &Path, content: Content) -> std::io::Result<Box<dyn RecordingPart + '_>>;
+    fn reopen_part(&self, part: &Path, content: Content) -> std::io::Result<Box<dyn RecordingPart + '_>>;
+}
+
+pub trait RecordingPart {
+    /// Atomic rename in the same folder, without replacement. A collision leaves the part intact.
+    fn publish(&self, target: &Path) -> std::io::Result<()>;
+    fn discard(&self) -> std::io::Result<()>;
 }
 
 /// Which entries a history query returns.
@@ -363,6 +378,8 @@ pub struct RecStatus {
 #[derive(Clone, Debug, PartialEq)]
 pub struct RecordingDone {
     pub file: PathBuf,
+    /// Identified before the finalized audio leaves the recorder's private temporary path.
+    pub audio_content: Option<Box<Content>>,
     pub audio_only: bool,
     /// JPEG of the first frame.
     pub first_frame_jpeg: Option<Vec<u8>>,

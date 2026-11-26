@@ -564,6 +564,7 @@ mod tests {
         fs::write(&video, b"synthetic video").unwrap();
         let jpeg = image(16, 9).to_jpeg(82).unwrap();
         let done = RecordingDone {
+            audio_content: None,
             file: video,
             audio_only: false,
             first_frame_jpeg: Some(jpeg.clone()),
@@ -583,6 +584,7 @@ mod tests {
         let audio = dir.path().join("call.m4a");
         fs::write(&audio, b"synthetic audio").unwrap();
         let done = RecordingDone {
+            audio_content: None,
             file: audio,
             audio_only: true,
             first_frame_jpeg: None,
