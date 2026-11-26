@@ -4,11 +4,13 @@ import { Theme } from "theme.slint";
 export component Toast inherits Window {
     no-frame: true;
     preferred-width: 380px;
-    preferred-height: 92px;
+    preferred-height: toast-height;
     background: Theme.dark ? #202022 : #f9f9fa;
     default-font-family: Theme.font;
     in property <string> heading;
     in property <string> message;
+    in property <bool> wrap-message;
+    out property <length> toast-height: root.wrap-message ? max(92px, 60px + body.preferred-height) : 92px;
     in property <image> thumbnail;
     in property <bool> has-thumbnail;
     in property <string> glyph;
@@ -44,8 +46,8 @@ export component Toast inherits Window {
         Rectangle { x: 112px; y: root.action-text == "" ? 33px : 19px; width: 6px; height: 6px; border-radius: 3px; background: Theme.accent; }
         Text { x: 125px; y: root.action-text == "" ? 26px : 12px; width: 202px; height: 19px;
             text: root.heading; color: Theme.text; font-size: 13px; font-weight: 600; overflow: elide; }
-        Text { x: 112px; y: root.action-text == "" ? 48px : 32px; width: 215px; height: 18px;
-            text: root.message; color: Theme.text-secondary; font-size: 12px; overflow: elide; }
+        body := Text { x: 112px; y: root.action-text == "" ? 48px : 32px; width: 215px; height: root.wrap-message ? self.preferred-height : 18px;
+            text: root.message; color: Theme.text-secondary; font-size: 12px; overflow: elide; wrap: root.wrap-message ? word-wrap : no-wrap; }
         Rectangle {
             visible: root.action-text != "";
             x: 112px; y: 56px; width: max(84px, label.preferred-width + 24px); height: 26px; border-radius: 5px;

@@ -145,36 +145,49 @@ impl App {
     }
 
     fn on_recording_done(self: &Arc<Self>, done: &RecordingDone) {
-        let entry = match self.ports.history.add_recording(done) {
-            Ok(entry) => entry,
+        let st = self.settings();
+        let copy_audio = done.audio_only && !st.audio_recording.copy_dir.as_os_str().is_empty();
+        let toast = match self.ports.history.add_recording(done) {
+            Ok(entry) => {
+                self.ports.ui.send_to_main(MainEvent::HistoryChanged);
+                st.show_toast.then(|| {
+                    let body = if done.duration_sec > 0.0 {
+                        let key = if done.audio_only { "recSavedAudioBody" } else { "recSavedBody" };
+                        self.t_args(key, &[&format_dur(done.duration_sec)])
+                    } else {
+                        file_name(&entry.file)
+                    };
+                    Toast {
+                        kind: if done.audio_only { "audio" } else { "video" }.into(),
+                        title: self.t("recSavedTitle"),
+                        body,
+                        thumb: entry.thumb,
+                        file: Some(entry.file),
+                        color: None,
+                        action: None,
+                    }
+                })
+            }
             Err(e) => {
-                // The file exists; history could not take it. The user must hear both.
+                // Registration in history is independent of delivering the already saved file.
                 let body = format!("{}: {e}", done.file.display());
-                self.ports.ui.show_toast(text_toast(self.t("recFailTitle"), body.chars().take(120).collect()));
-                self.set_last_processed("record-done", Some(&done.file));
-                return;
+                let mut toast = text_toast(self.t("recFailTitle"), body.chars().take(120).collect());
+                if copy_audio {
+                    toast.kind = "audio".into();
+                    toast.file = Some(done.file.clone());
+                }
+                Some(toast)
             }
         };
-        self.ports.ui.send_to_main(MainEvent::HistoryChanged);
-        if self.settings().show_toast {
-            let audio = done.audio_only;
-            let body = if done.duration_sec > 0.0 {
-                let key = if audio { "recSavedAudioBody" } else { "recSavedBody" };
-                self.t_args(key, &[&format_dur(done.duration_sec)])
-            } else {
-                file_name(&entry.file)
-            };
-            self.ports.ui.show_toast(Toast {
-                kind: if audio { "audio" } else { "video" }.into(),
-                title: self.t("recSavedTitle"),
-                body,
-                thumb: entry.thumb.clone(),
-                file: Some(entry.file.clone()),
-                color: None,
-                action: None,
-            });
+        if copy_audio {
+            self.queue_audio_copy(&done.file, toast);
+        } else {
+            if let Some(toast) = toast {
+                self.ports.ui.show_toast(toast);
+            }
+            self.copies.wake();
         }
-        self.set_last_processed("record-done", Some(&entry.file));
+        self.set_last_processed("record-done", Some(&done.file));
     }
 
     fn recording_error_text(&self, detail: &str) -> String {

@@ -38,10 +38,11 @@ async function recordAudio(app, audioRecording, { duringRecording } = {}) {
 
 test('audio recording: system audio + microphone → seekable .m4a with both voices', async () => {
   const app = makeApp();
+  const copyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'shotik-call-copies-'));
   let saveDir;
   try {
     await app.waitReady();
-    const rec = await recordAudio(app, { systemAudio: true, microphone: true });
+    const rec = await recordAudio(app, { systemAudio: true, microphone: true, copyDir });
     saveDir = rec.saveDir;
     assert(rec.file.endsWith('.m4a'), 'saved as .m4a: ' + rec.file);
     eq(rec.status.audio, { system: true, microphone: true, tracks: 1 });
@@ -68,10 +69,16 @@ test('audio recording: system audio + microphone → seekable .m4a with both voi
 
     const [entry] = await app.historyList();
     eq([entry.kind, entry.file], ['audio', rec.file], 'history card is an audio entry');
-    const toast = await app.post('last-toast');
-    assert(toast && toast.kind === 'audio' && /^(Audio|Звук) · /.test(toast.body), 'audio toast: ' + JSON.stringify(toast));
+    const toast = await until(app, async () => {
+      const t = await app.post('last-toast');
+      return t && t.kind === 'audio' && t.body.includes(copyDir) && t;
+    }, 'saved toast reports delivery');
+    assert(/^(Audio|Звук) · /.test(toast.body) && /Sent to |Отправлено в /.test(toast.body), 'audio toast: ' + JSON.stringify(toast));
+    eq(fs.readdirSync(copyDir), [path.basename(rec.file)], 'only the final recording is published');
+    assert(fs.readFileSync(path.join(copyDir, path.basename(rec.file))).equals(fs.readFileSync(rec.file)), 'copy matches the local original');
   } finally {
     await app.stop();
+    fs.rmSync(copyDir, { recursive: true, force: true });
     if (saveDir) fs.rmSync(saveDir, { recursive: true, force: true });
   }
 });

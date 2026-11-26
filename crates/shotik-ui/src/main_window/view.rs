@@ -574,12 +574,16 @@ fn setting(key: &str, value: &str) -> Result<()> {
     if key == "update.check" {
         return dispatch(Action::UpdateCheck);
     }
-    if key == "saveDir" {
+    let copy_dir = key == "audioRecording.copyDir";
+    if key == "saveDir" || (copy_dir && value != "false") {
         let host = runtime::host().clone();
         return work(move || {
-            let result = host
-                .settings_choose_dir()
-                .map(|path| path.map(|_| host.app_state()));
+            let chosen = if copy_dir {
+                host.settings_choose_audio_copy_dir()
+            } else {
+                host.settings_choose_dir()
+            };
+            let result = chosen.map(|path| path.map(|_| host.app_state()));
             runtime::on_ui(move || match result {
                 Ok(Some(app)) => report(dispatch(Action::SettingsSaved(app))),
                 Ok(None) => {}
@@ -587,7 +591,9 @@ fn setting(key: &str, value: &str) -> Result<()> {
             });
         });
     }
-    let value = if key == "mcp.port" {
+    let value = if copy_dir {
+        json!("")
+    } else if key == "mcp.port" {
         json!(state::port_from_input(value)?)
     } else if key == "recording.fps" {
         let fps = value
@@ -1068,6 +1074,10 @@ fn settings_sections(state: &State) -> Vec<MainSection> {
     let mut save = row("saveDir", "saveDir", "", "button");
     save.sub = state.string("/saveDir").into();
     save.value = state.tr("btnChange").into();
+    let mut copy_dir = row("audioRecording.copyDir", "audioCopyDir", "", "folder");
+    copy_dir.sub = state.string("/audioRecording/copyDir").into();
+    copy_dir.checked = !copy_dir.sub.is_empty();
+    copy_dir.value = state.tr("btnChange").into();
     let mut check_now = row("update.check", "updateCheckButton", "", "button");
     check_now.label = state.format("updateCheckNow", &[&state.version]).into();
     check_now.sub = state.update_summary().into();
@@ -1185,6 +1195,7 @@ fn settings_sections(state: &State) -> Vec<MainSection> {
                     "audioMicrophoneSub",
                     "switch",
                 ),
+                copy_dir,
             ],
         ),
         ("trTitle", translate),
@@ -1990,6 +2001,7 @@ mod tests {
                                 "recording.countdown",
                                 "audioRecording.systemAudio",
                                 "audioRecording.microphone",
+                                "audioRecording.copyDir",
                                 "translate.autoBubble",
                                 "translate.ocrFallback",
                                 "translate.target",
@@ -2018,6 +2030,9 @@ mod tests {
                         ("recording.countdown", "false"),
                         ("audioRecording.systemAudio", "false"),
                         ("audioRecording.microphone", "true"),
+                        ("audioRecording.copyDir", "true"),
+                        ("audioRecording.copyDir", "false"),
+                        ("audioRecording.copyDir", "true"),
                         ("translate.autoBubble", "false"),
                         ("translate.ocrFallback", "false"),
                         ("translate.target", "de"),
@@ -2042,6 +2057,7 @@ mod tests {
                     assert_eq!(settings["translate"]["provider"], "deepl");
                     assert_eq!(settings["mcp"]["port"], 9000);
                     assert_eq!(settings["mcp"]["enabled"], false);
+                    assert_eq!(settings["audioRecording"]["copyDir"], host.root.join("calls").to_str().unwrap());
                     assert_eq!(
                         settings["saveDir"],
                         host.root.join("chosen").to_str().unwrap()

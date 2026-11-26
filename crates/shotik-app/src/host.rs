@@ -40,6 +40,15 @@ impl AppHost for App {
         Ok(Some(dir))
     }
 
+    fn settings_choose_audio_copy_dir(&self) -> Result<Option<PathBuf>> {
+        let st = self.settings();
+        let current = &st.audio_recording.copy_dir;
+        let initial = if current.as_os_str().is_empty() { &st.save_dir } else { current };
+        let Some(dir) = self.ports.dialogs.pick_directory(initial)? else { return Ok(None) };
+        self.settings_set(json!({ "audioRecording": { "copyDir": dir } }))?;
+        Ok(Some(dir))
+    }
+
     fn i18n(&self) -> Value {
         let lang = self.lang();
         json!({ "lang": lang, "dict": Value::Object(i18n::dict(lang)) })
@@ -327,6 +336,9 @@ impl App {
     pub(crate) fn apply_settings(self: &Arc<Self>, patch: Value) -> Result<Value> {
         let before = self.settings();
         let after = self.ports.settings.set(patch)?;
+        if before.audio_recording.copy_dir != after.audio_recording.copy_dir {
+            self.copies.wake();
+        }
         if before.hotkeys != after.hotkeys {
             self.register_hotkeys();
             self.refresh_tray();

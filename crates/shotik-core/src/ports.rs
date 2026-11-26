@@ -30,6 +30,13 @@ pub trait SettingsStore: Send + Sync {
     fn set(&self, patch: Value) -> Result<Settings>;
 }
 
+/// The file boundary of audio delivery. A publication stages the bytes at `<name>.part`
+/// and renames without replacing an existing destination (`AlreadyExists`).
+pub trait RecordingCopy: Send + Sync {
+    fn file_size(&self, path: &Path) -> std::io::Result<u64>;
+    fn publish(&self, source: &Path, destination: &Path) -> std::io::Result<()>;
+}
+
 /// Which entries a history query returns.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum HistoryFilter {
@@ -606,6 +613,9 @@ pub trait AppHost: Send + Sync {
     /// `settings:set`: merges the patch, applies side effects, returns settings, mcp, hotkeyErrors.
     fn settings_set(&self, patch: Value) -> Result<Value>;
     fn settings_choose_dir(&self) -> Result<Option<PathBuf>>;
+    fn settings_choose_audio_copy_dir(&self) -> Result<Option<PathBuf>> {
+        Err(crate::Error::Unsupported("audio recording folder picker"))
+    }
     fn i18n(&self) -> Value;
     fn theme(&self) -> Theme;
 

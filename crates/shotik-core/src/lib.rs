@@ -14,6 +14,7 @@ pub mod history;
 pub mod i18n;
 pub mod ocr_select;
 pub mod ports;
+pub mod recording_copy;
 pub mod settings;
 pub mod translate;
 pub mod update;

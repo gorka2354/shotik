@@ -128,6 +128,7 @@ fn run(temp: &std::path::Path) -> Result<()> {
         selection,
         audio_devices: Arc::new(WinAudioDevices),
         recorder,
+        recording_copy: Arc::new(shotik_win::recording_copy::WindowsRecordingCopy),
         ui: ui_port.clone(),
         export_gif: Arc::new(|video| shotik_recorder::export_gif(video, 12, 640)),
         quit: Arc::new(Ui::quit),
@@ -145,6 +146,7 @@ fn run(temp: &std::path::Path) -> Result<()> {
         version: env!("CARGO_PKG_VERSION").to_string(),
         platform: "win32",
         locale,
+        data_dir,
         temp_dir: temp.to_path_buf(),
         update: UpdateConfig::resolve(
             test_mode,
@@ -155,7 +157,7 @@ fn run(temp: &std::path::Path) -> Result<()> {
         ),
     };
 
-    let app = App::new(ports, env, rt.handle().clone());
+    let app = App::new(ports, env, rt.handle().clone())?;
     ui_port.set_host(app.host());
     *forwarded.lock().unwrap_or_else(|e| e.into_inner()) = Some(app.clone());
 

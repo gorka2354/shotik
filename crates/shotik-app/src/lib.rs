@@ -9,6 +9,7 @@ mod host;
 mod mcp_wiring;
 mod overlay;
 mod recording;
+mod recording_copies;
 mod selection;
 mod test_routes;
 mod tray;
@@ -20,7 +21,7 @@ use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use serde_json::{json, Value};
 use shotik_core::ports::{
     AppHost, AudioDevices, Autostart, Clipboard, Dialogs, Displays, HistoryStore, Hotkeys, HotkeyAction,
-    HotkeyError, Http, Ocr, RecorderControl, ScreenCapture, SelectionWatcher, SettingsStore, Shell, Theme,
+    HotkeyError, Http, Ocr, RecorderControl, RecordingCopy, ScreenCapture, SelectionWatcher, SettingsStore, Shell, Theme,
     ThemeSource, Tray, UiPort, WindowSource,
 };
 use shotik_core::{i18n, Result, Settings};
@@ -49,6 +50,7 @@ pub struct Environment {
     /// "win32" or "darwin", as the JS version reports it.
     pub platform: &'static str,
     pub locale: String,
+    pub data_dir: PathBuf,
     pub temp_dir: PathBuf,
     pub update: UpdateConfig,
 }
@@ -76,6 +78,7 @@ pub struct Ports {
     pub selection: Arc<dyn SelectionWatcher>,
     pub audio_devices: Arc<dyn AudioDevices>,
     pub recorder: Arc<dyn RecorderControl>,
+    pub recording_copy: Arc<dyn RecordingCopy>,
     pub ui: Arc<dyn UiPort>,
     pub export_gif: ExportGif,
     /// Ends the process's event loop.
@@ -111,22 +114,27 @@ pub struct App {
     state: Mutex<State>,
     pub(crate) mcp: mcp_wiring::McpSlot,
     pub(crate) diag: Diagnostics,
+    copies: recording_copies::RecordingCopies,
     /// `AppHost` methods take `&self` but spawn work that outlives the call.
     pub(crate) me: Weak<App>,
 }
 
 impl App {
-    pub fn new(ports: Ports, env: Environment, rt: Handle) -> Arc<Self> {
+    pub fn new(ports: Ports, env: Environment, rt: Handle) -> Result<Arc<Self>> {
         let diag = Diagnostics::new(&env.temp_dir);
-        Arc::new_cyclic(|me| Self {
+        let (copies, wakeups) = recording_copies::RecordingCopies::new(&env.data_dir);
+        let app = Arc::new_cyclic(|me| Self {
             ports,
             env,
             rt,
             state: Mutex::default(),
             mcp: mcp_wiring::McpSlot::default(),
             diag,
+            copies,
             me: me.clone(),
-        })
+        });
+        recording_copies::start_worker(Arc::downgrade(&app), wakeups)?;
+        Ok(app)
     }
 
     /// Startup after the UI thread runs. `argv` decides the initial capture.
@@ -138,6 +146,7 @@ impl App {
         let app = self.clone();
         self.ports.theme.watch(Arc::new(move |theme| app.ports.ui.apply_theme(theme)));
         self.init_recorder();
+        self.copies.wake();
         let capture = self.ports.capture.clone();
         self.spawn(move |_| capture.warm_up());
         self.start_selection_watcher();
