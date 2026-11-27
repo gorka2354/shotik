@@ -86,6 +86,8 @@ impl App {
     }
 
     pub(crate) fn shutdown(&self) {
+        // UI callbacks can keep the App alive until the process exits.
+        self.flush_unsaved_enqueue();
         self.ports.hotkeys.unregister_all();
         self.stop_selection_watcher();
         (self.ports.quit)();

@@ -17,6 +17,7 @@ use crate::error::Result;
 use crate::frame::Frame;
 use crate::geom::{Display, DisplayId, Point, PointF, Rect};
 use crate::history::HistoryEntry;
+use crate::recording_copy::{Content, SourceCheck};
 use crate::settings::Settings;
 
 pub type Callback<T> = Arc<dyn Fn(T) + Send + Sync>;
@@ -28,6 +29,41 @@ pub trait SettingsStore: Send + Sync {
     fn get(&self) -> Settings;
     /// Deep-merges the patch, saves, returns the result. Rules: `deepMerge` in `src/main/settings.js`.
     fn set(&self, patch: Value) -> Result<Settings>;
+}
+
+/// The file boundary of audio delivery. A publication stages the bytes at `<name>.part`
+/// and renames without replacing an existing destination (`AlreadyExists`).
+pub trait RecordingCopy: Send + Sync {
+    fn file_size(&self, path: &Path) -> std::io::Result<u64>;
+    fn publish(&self, source: &Path, destination: &Path) -> std::io::Result<()>;
+    fn fingerprint(&self, path: &Path) -> std::io::Result<Content>;
+    /// The timestamp, when supplied, comes from the same open file as the digest.
+    fn identify_source(&self, path: &Path) -> std::io::Result<(Content, Option<std::time::SystemTime>)> {
+        self.fingerprint(path).map(|content| (content, None))
+    }
+    /// Confirm absence by listing the parent. A missing or unreadable parent is an I/O error.
+    fn source_absent(&self, path: &Path) -> std::io::Result<bool> {
+        crate::recording_copy::absent_from_parent(path)
+    }
+    /// Both operations return a handle to verified bytes and exclude other writers until dropped.
+    fn stage(&self, source: &Path, part: &Path, content: Content) -> std::io::Result<Box<dyn RecordingPart + '_>>;
+    fn reopen_part(&self, part: &Path, content: Content) -> std::io::Result<Box<dyn RecordingPart + '_>>;
+    /// Reuse a source check only while the open file still has the checked size and timestamp.
+    fn stage_source(
+        &self,
+        source: &Path,
+        part: &Path,
+        content: Content,
+        _checked: &mut Option<SourceCheck>,
+    ) -> std::io::Result<Box<dyn RecordingPart + '_>> {
+        self.stage(source, part, content)
+    }
+}
+
+pub trait RecordingPart {
+    /// Atomic rename in the same folder, without replacement. A collision leaves the part intact.
+    fn publish(&self, target: &Path) -> std::io::Result<()>;
+    fn discard(&self) -> std::io::Result<()>;
 }
 
 /// Which entries a history query returns.
@@ -356,6 +392,8 @@ pub struct RecStatus {
 #[derive(Clone, Debug, PartialEq)]
 pub struct RecordingDone {
     pub file: PathBuf,
+    /// Optional known identity. The copy worker identifies the saved file when absent.
+    pub audio_content: Option<Box<Content>>,
     pub audio_only: bool,
     /// JPEG of the first frame.
     pub first_frame_jpeg: Option<Vec<u8>>,
@@ -606,6 +644,9 @@ pub trait AppHost: Send + Sync {
     /// `settings:set`: merges the patch, applies side effects, returns settings, mcp, hotkeyErrors.
     fn settings_set(&self, patch: Value) -> Result<Value>;
     fn settings_choose_dir(&self) -> Result<Option<PathBuf>>;
+    fn settings_choose_audio_copy_dir(&self) -> Result<Option<PathBuf>> {
+        Err(crate::Error::Unsupported("audio recording folder picker"))
+    }
     fn i18n(&self) -> Value;
     fn theme(&self) -> Theme;
 

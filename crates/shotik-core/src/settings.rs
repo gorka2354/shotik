@@ -56,6 +56,9 @@ pub struct RecordingSettings {
 pub struct AudioRecordingSettings {
     pub system_audio: bool,
     pub microphone: bool,
+    /// An empty path disables the second copy.
+    #[serde(default)]
+    pub copy_dir: PathBuf,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -173,6 +176,7 @@ pub fn defaults(
         audio_recording: AudioRecordingSettings {
             system_audio: true,
             microphone: true,
+            copy_dir: PathBuf::new(),
             extra: Map::new(),
         },
         mcp: McpSettings {
@@ -390,8 +394,9 @@ mod tests {
         assert_eq!(store.get().audio_recording.extra["futureAudio"], true);
         assert_eq!(store.get().mcp.extra["futureServer"], "kept");
         assert_eq!(store.get().extra["futureTop"], original["futureTop"]);
-        let patch = json!({"showToast": false, "translate": {"target": "ru"}, "futureTop": {"added": "value"}});
-        // Everything it had, what was changed, and the one setting Electron never had, at its default.
+        assert!(store.get().audio_recording.copy_dir.as_os_str().is_empty());
+        let patch = json!({"showToast": false, "audioRecording": {"copyDir": r"\\server\share\calls"}, "translate": {"target": "ru"}, "futureTop": {"added": "value"}});
+        // Everything it had, the new directory and the default for update checks.
         let expected = deep_merge(&deep_merge(&original, &json!({"checkUpdates": true})), &patch);
         store.set(patch).unwrap();
         let back: Value = serde_json::from_slice(&fs::read(&file).unwrap()).unwrap();
@@ -470,7 +475,7 @@ mod tests {
         );
         assert_eq!(
             json["audioRecording"],
-            json!({"systemAudio": true, "microphone": true})
+            json!({"systemAudio": true, "microphone": true, "copyDir": ""})
         );
         assert_eq!(json["mcp"], json!({"enabled": true, "port": 7464}));
         assert_eq!(json["lastRegion"], Value::Null);

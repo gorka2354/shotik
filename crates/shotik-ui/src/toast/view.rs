@@ -6,13 +6,14 @@ use shotik_core::{
     Display, Error, Result,
 };
 use slint::ComponentHandle;
-use std::{cell::RefCell, path::Path, time::Duration};
+use std::{cell::RefCell, collections::VecDeque, path::Path, time::Duration};
 
 #[derive(Default)]
 struct View {
     state: State,
     window: Option<Toast>,
     timer: slint::Timer,
+    waiting: VecDeque<(Content, Display)>,
 }
 thread_local! { static VIEW: RefCell<View> = RefCell::default(); }
 
@@ -22,6 +23,9 @@ impl View {
         if let Some(window) = self.window.take() {
             window.set_thumbnail(slint::Image::default());
             runtime::report(window.hide().map_err(|e| Error::msg(format!("cannot hide toast: {e}"))));
+        }
+        if let Some((next, display)) = self.waiting.pop_front() {
+            runtime::report(self.show(next, display));
         }
     }
     fn arm(&self) {
@@ -44,6 +48,14 @@ impl View {
         }
     }
     fn show(&mut self, content: Content, display: Display) -> Result<()> {
+        // A retry can finish in the same pass as a new recording. Let the user read each result.
+        let copy_status = content.kind == "audio" && (content.body.contains('\n') || content.file.is_none());
+        if copy_status && self.state.visible
+            && self.state.last.as_ref().is_some_and(|t| matches!(t.kind.as_str(), "audio" | "video"))
+        {
+            self.waiting.push_back((content, display));
+            return Ok(());
+        }
         let window = if let Some(window) = self.window.as_ref() {
             window.clone_strong()
         } else {
@@ -86,6 +98,7 @@ impl View {
         crate::apply_theme!(window, runtime::current_theme());
         window.set_heading(content.title.as_str().into());
         window.set_message(content.body.as_str().into());
+        window.set_wrap_message(copy_status);
         window.set_action_text(content.action.as_deref().unwrap_or_default().into());
         let thumbnail = content.thumb.as_deref().map(runtime::uncached_image).transpose()?;
         window.set_has_thumbnail(thumbnail.is_some());
@@ -125,7 +138,7 @@ impl View {
                 if view.state.visible && view.window.as_ref().is_some_and(|w| runtime::same_window(w, &window)) {
                     runtime::show_small(
                         window.window(),
-                        state::placement(display.work_area),
+                        state::placement(display.work_area, window.get_toast_height().ceil() as i32),
                         &display,
                         true,
                         true,

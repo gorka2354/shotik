@@ -10,6 +10,9 @@ use std::sync::Mutex;
 use shotik_core::ports::{NativeWindow, ScreenCapture, WindowCaptureMethod, WindowSource};
 use shotik_core::{Display, Error, Frame, Rect, Result};
 
+mod recording_copy;
+pub use recording_copy::FakeRecordingCopy;
+
 /// Serves a fixture image as every display, scaled to the display's physical size.
 pub struct FakeScreen {
     path: PathBuf,

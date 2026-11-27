@@ -42,8 +42,9 @@ impl State {
     }
 }
 
-pub fn placement(area: Rect) -> Rect {
-    Rect::new(area.x + area.width - 380 - 16, area.y + area.height - 92 - 16, 380, 92)
+pub fn placement(area: Rect, height: i32) -> Rect {
+    let height = height.min(area.height);
+    Rect::new(area.x + area.width - 380 - 16, (area.y + area.height - height - 16).max(area.y), 380, height)
 }
 
 /// Shared by native input and test routes; malformed/unknown actions are errors.
@@ -130,9 +131,10 @@ mod tests {
     #[test]
     fn bottom_right_uses_work_area_in_global_dip() {
         assert_eq!(
-            placement(Rect::new(-2560, 279, 2560, 1400)),
+            placement(Rect::new(-2560, 279, 2560, 1400), 92),
             Rect::new(-396, 1571, 380, 92)
         );
+        assert_eq!(placement(Rect::new(0, 0, 800, 600), 136), Rect::new(404, 448, 380, 136));
     }
 
     #[test]

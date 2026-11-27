@@ -109,6 +109,11 @@ impl AppHost for PreviewHost {
         self.settings.lock().unwrap()["saveDir"] = json!(path);
         Ok(Some(path))
     }
+    fn settings_choose_audio_copy_dir(&self) -> Result<Option<PathBuf>> {
+        let path = self.root.join("calls");
+        self.settings.lock().unwrap()["audioRecording"]["copyDir"] = json!(path);
+        Ok(Some(path))
+    }
     fn i18n(&self) -> Value {
         self.stub.i18n()
     }

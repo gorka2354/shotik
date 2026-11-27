@@ -12,6 +12,7 @@ pub mod dialogs;
 pub mod autostart;
 pub mod ocr;
 pub mod paths;
+pub mod recording_copy;
 pub mod selection;
 pub mod hotkeys;
 pub mod http;

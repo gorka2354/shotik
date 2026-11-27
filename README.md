@@ -185,6 +185,12 @@ input** sits above the taskbar, so an hour of silence is caught in the first sec
 **Settings → Audio recording**. Ready for transcription as is: `ffmpeg -i call.m4a -ac 1 -ar 16000 call.wav`.
 Ask the other participants before recording a call.
 
+**Automatic copies.** In **Settings → Audio recording**, turn on **Also copy recordings to a folder**
+and choose a local folder or a network share such as `\\server\share\calls`. Shotik keeps the original
+`.m4a` and tells you whether the copy arrived. If the folder is unavailable, Shotik keeps the recording
+in a queue and retries at startup, after each recording and every five minutes. The switch is off by
+default. Turning it off pauses pending copies. When enabled again, they go to the selected folder.
+
 ### ✦ PowerToys Command Palette / Win+S
 The installer adds Start Menu commands that show up in PowerToys Command Palette and Windows search:
 **Area Screenshot**, **Full Screen**, **Repeat Last Area**, **Translate Selection**, **Record Audio**.
@@ -238,7 +244,7 @@ and your settings, history, autostart and shortcuts stay.
 Shotik is meant to disappear into the tray and cost nothing while it's there. Every number in this README comes from one script,
 [bench/run.js](bench/run.js), with the raw results in [bench/results](bench/results). The full table is in [docs/PERF.md](docs/PERF.md).
 
-- **No telemetry, no account.** Two things reach the network: the translation call you trigger (free service or your DeepL key), and a once-a-day look at GitHub for a newer version, which you can turn off in Settings. Screenshots stay on your disk.
+- **No telemetry, no account.** Shotik uses the network for translations you request (free service or your DeepL key) and the daily check for updates on GitHub, which you can turn off in Settings. If you choose a network folder for audio copies, finished calls go to that share. Screenshots stay on your disk.
 - **Updates in one click, and only on your click.** Updates are signed with a key that is not on GitHub, so taking over the repository is not enough to reach your machine. Details: [docs/rust/UPDATES.md](docs/rust/UPDATES.md).
 - **One executable, no runtime.** The overlay stays out of memory until you need it: after you close it, the app is back to a few megabytes.
 - **The select-to-translate watcher** runs inside the app and uses Windows UI Automation to read *whether* text is selected. It never logs keystrokes and never touches the clipboard. It runs **only** while "Translate bubble on selection" is on, and you can turn it off in Settings.

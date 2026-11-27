@@ -1,5 +1,7 @@
 //! Orchestration against fake ports: what the user gets from each action, without a window.
 
+mod recording_copies;
+
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -201,13 +203,18 @@ impl Shell for FakeShell {
     }
 }
 
-struct NoDialogs;
-impl Dialogs for NoDialogs {
+#[derive(Default)]
+struct FakeDialogs {
+    chosen: Mutex<Option<PathBuf>>,
+    opened_at: Mutex<Vec<PathBuf>>,
+}
+impl Dialogs for FakeDialogs {
     fn save_png(&self, _default_path: &Path) -> Result<Option<PathBuf>> {
         Ok(None)
     }
-    fn pick_directory(&self, _default_path: &Path) -> Result<Option<PathBuf>> {
-        Ok(None)
+    fn pick_directory(&self, default_path: &Path) -> Result<Option<PathBuf>> {
+        self.opened_at.lock().unwrap().push(default_path.to_owned());
+        Ok(self.chosen.lock().unwrap().take())
     }
 }
 
@@ -500,6 +507,8 @@ struct Rig {
     ui: Arc<FakeUi>,
     clipboard: Arc<FakeClipboard>,
     recorder: Arc<FakeRecorder>,
+    recording_copy: Arc<shotik_fake::FakeRecordingCopy>,
+    dialogs: Arc<FakeDialogs>,
     displays: Arc<FakeDisplays>,
     capture: Arc<FakeCapture>,
     hotkeys: Arc<FakeHotkeys>,
@@ -535,6 +544,8 @@ fn rig_installed(name: &str, ghost: bool, test_mode: bool, installed: bool) -> R
     let ui = Arc::new(FakeUi::default());
     let clipboard = Arc::new(FakeClipboard::default());
     let recorder = Arc::new(FakeRecorder::default());
+    let recording_copy = Arc::new(shotik_fake::FakeRecordingCopy::default());
+    let dialogs = Arc::new(FakeDialogs::default());
     let displays = Arc::new(FakeDisplays::default());
     let capture = Arc::new(FakeCapture::default());
     let hotkeys = Arc::new(FakeHotkeys::default());
@@ -556,7 +567,7 @@ fn rig_installed(name: &str, ghost: bool, test_mode: bool, installed: bool) -> R
         ocr: Arc::new(FakeOcr("распознанный текст")),
         http: http.clone(),
         shell: shell.clone(),
-        dialogs: Arc::new(NoDialogs),
+        dialogs: dialogs.clone(),
         hotkeys: hotkeys.clone(),
         tray: tray.clone(),
         theme: Arc::new(FakeTheme),
@@ -564,6 +575,7 @@ fn rig_installed(name: &str, ghost: bool, test_mode: bool, installed: bool) -> R
         selection: selection.clone(),
         audio_devices: Arc::new(NoAudio),
         recorder: recorder.clone(),
+        recording_copy: recording_copy.clone(),
         ui: ui.clone(),
         export_gif: Arc::new(|video| Ok(video.with_extension("gif"))),
         quit: Arc::new(move || {
@@ -582,6 +594,7 @@ fn rig_installed(name: &str, ghost: bool, test_mode: bool, installed: bool) -> R
         version: "2.0.0".into(),
         platform: "win32",
         locale: "ru-RU".into(),
+        data_dir: dir.clone(),
         temp_dir: dir.clone(),
         update: UpdateConfig {
             source: shotik_core::update::UpdateSource::at(UPDATES, &update_public_key()),
@@ -590,8 +603,8 @@ fn rig_installed(name: &str, ghost: bool, test_mode: bool, installed: bool) -> R
             install_dir: installed.then(|| dir.join("Programs")),
         },
     };
-    let app = App::new(ports, env, rt.handle().clone());
-    Rig { app, ui, clipboard, recorder, displays, capture, hotkeys, tray, autostart, selection, http, shell, quits, dir, _rt: rt }
+    let app = App::new(ports, env, rt.handle().clone()).unwrap();
+    Rig { app, ui, clipboard, recorder, recording_copy, dialogs, displays, capture, hotkeys, tray, autostart, selection, http, shell, quits, dir, _rt: rt }
 }
 
 fn rig(name: &str) -> Rig {
@@ -812,6 +825,135 @@ fn audio_recording_uses_its_own_toggles_and_the_shared_microphone_device() {
     assert!(starts[0].system_audio);
     assert!(!starts[0].microphone);
     assert_eq!(starts[0].microphone_device_id, "mic-7");
+}
+
+#[test]
+fn choosing_a_copy_folder_preserves_the_save_folder_and_cancel_preserves_the_choice() {
+    let r = rig("copy-folder");
+    let save = r.app.settings().save_dir;
+    let folder = PathBuf::from(r"\\server\calls");
+    *r.dialogs.chosen.lock().unwrap() = Some(folder.clone());
+    assert_eq!(r.app.settings_choose_audio_copy_dir().unwrap(), Some(folder.clone()));
+    assert_eq!(r.app.settings_choose_audio_copy_dir().unwrap(), None);
+    assert_eq!(r.app.settings().save_dir, save);
+    assert_eq!(r.app.settings().audio_recording.copy_dir, folder);
+    assert_eq!(*r.dialogs.opened_at.lock().unwrap(), [save, folder]);
+}
+
+fn finish_recording(r: &Rig, name: &str, audio: bool) -> PathBuf {
+    let file = r.dir.join(name);
+    std::fs::write(&file, b"synthetic").unwrap();
+    r.recording_copy.files.lock().unwrap().insert(file.clone(), b"synthetic".to_vec());
+    r.app.on_recorder_event(RecorderEvent::Done(RecordingDone {
+        audio_content: None,
+        file: file.clone(), audio_only: audio, first_frame_jpeg: None, width: 0, height: 0, duration_sec: 12.0,
+    }));
+    file
+}
+
+#[test]
+fn only_enabled_audio_is_delivered_even_with_toasts_off_or_a_history_error() {
+    let r = rig("audio-copy");
+    let folder = r.dir.join("calls");
+    finish_recording(&r, "off.m4a", true);
+    r.app.ports.settings.set(json!({"audioRecording":{"copyDir":folder},"showToast":false})).unwrap();
+    r.app.handle_overlay_result(action(OverlayActionKind::Copy));
+    finish_recording(&r, "screen.mp4", false);
+    let local = finish_recording(&r, "call.m4a", true);
+    assert!(eventually(|| r.recording_copy.file_size(&folder.join("call.m4a")).is_ok()));
+    assert_eq!(std::fs::read(local).unwrap(), b"synthetic");
+    assert_eq!(*r.recording_copy.attempts.lock().unwrap(), [folder.join("call.m4a")]);
+    assert_eq!(r.ui.toasts.lock().unwrap().len(), 1, "only the unmirrored audio had toasts enabled");
+
+    // Simulate a failed history write after the recording file was finalized.
+    std::fs::remove_file(r.dir.join("history.json")).unwrap();
+    std::fs::create_dir(r.dir.join("history.json")).unwrap();
+    finish_recording(&r, "still-saved.m4a", true);
+    assert!(eventually(|| r.ui.last_toast().is_some_and(|t| t.body.contains(&format!("Отправлено в {}", folder.display())))));
+    assert_eq!(r.recording_copy.file_size(&folder.join("still-saved.m4a")).unwrap(), 9);
+}
+
+#[test]
+fn a_new_recording_retries_waiting_audio_and_reports_recovery_once() {
+    let r = rig("audio-retry");
+    let folder = r.dir.join("calls");
+    r.app.ports.settings.set(json!({"audioRecording":{"copyDir":folder},"language":"en"})).unwrap();
+    *r.recording_copy.failure.lock().unwrap() = Some(std::io::ErrorKind::StorageFull);
+    let file = finish_recording(&r, "first.m4a", true);
+    assert!(eventually(|| r.ui.last_toast().is_some_and(|t| t.body.contains("Not sent: disk full. Will retry."))));
+    assert!(std::fs::metadata(&file).is_ok());
+    let queue = r.dir.join("recording-copies.json");
+    let stored = shotik_core::recording_copy::CopyQueue::load(&queue).unwrap();
+    assert_eq!(stored.pending().len(), 1);
+    assert_eq!(stored.pending()[0].recording.source, file);
+    *r.recording_copy.failure.lock().unwrap() = None;
+    finish_recording(&r, "video.mp4", false);
+    assert!(eventually(|| r.ui.last_toast().is_some_and(|t| t.title == "Sent after retry: 1" && t.body.contains("first.m4a"))));
+    assert!(shotik_core::recording_copy::CopyQueue::load(&queue).unwrap().pending().is_empty());
+    let last = finish_recording(&r, "second.m4a", true);
+    assert!(eventually(|| r.ui.last_toast().is_some_and(|t| t.file.as_ref() == Some(&last) && t.body.contains("Sent to "))));
+    assert_eq!(*r.recording_copy.attempts.lock().unwrap(), [folder.join("first.m4a"), folder.join("first.m4a"), folder.join("second.m4a")]);
+    assert_eq!(r.ui.toasts.lock().unwrap().iter().filter(|t| t.title.contains("after retry")).count(), 1);
+}
+
+#[test]
+#[ignore = "observes the real five-minute retry interval"]
+fn an_idle_app_retries_after_five_minutes_without_another_recording() {
+    use std::time::Instant;
+    let r = rig("audio-timer");
+    let folder = r.dir.join("calls");
+    r.app.ports.settings.set(json!({"audioRecording":{"copyDir":folder},"language":"en"})).unwrap();
+    *r.recording_copy.failure.lock().unwrap() = Some(std::io::ErrorKind::NotConnected);
+    let start = Instant::now();
+    finish_recording(&r, "timer.m4a", true);
+    assert!(eventually(|| r.ui.last_toast().is_some_and(|t| t.body.contains("Will retry."))));
+    *r.recording_copy.failure.lock().unwrap() = None;
+    while !r.ui.last_toast().is_some_and(|t| t.title == "Sent after retry: 1") {
+        assert!(start.elapsed() < Duration::from_secs(320), "the timer did not deliver the recording");
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    assert!(start.elapsed() >= Duration::from_secs(300));
+    assert_eq!(r.recording_copy.file_size(&folder.join("timer.m4a")).unwrap(), 9);
+    assert_eq!(r.recording_copy.attempts.lock().unwrap().len(), 2);
+}
+
+#[test]
+fn startup_delivers_the_saved_queue_and_logs_a_missing_local_recording() {
+    let mut r = rig("audio-restart");
+    let folder = r.dir.join("calls");
+    r.app.ports.settings.set(json!({"audioRecording":{"copyDir":folder},"mcp":{"enabled":false}})).unwrap();
+    *r.recording_copy.failure.lock().unwrap() = Some(std::io::ErrorKind::NotConnected);
+    finish_recording(&r, "kept.m4a", true);
+    let missing = finish_recording(&r, "gone.m4a", true);
+    assert!(eventually(|| r.ui.toasts.lock().unwrap().iter().filter(|t| t.body.contains("папка недоступна")).count() == 2));
+    let previous = Arc::downgrade(&r.app);
+    r.app = App::new(r.app.ports.clone(), r.app.env.clone(), r.app.rt.clone()).unwrap();
+    assert!(eventually(|| previous.upgrade().is_none()));
+    r.recording_copy.files.lock().unwrap().remove(&missing);
+    std::fs::remove_file(&missing).unwrap();
+    *r.recording_copy.failure.lock().unwrap() = None;
+    r.app.start(&["--hidden".into()]);
+    assert!(eventually(|| r.ui.last_toast().is_some_and(|t| t.title == "Доставлено при повторе: 1")));
+    assert_eq!(r.recording_copy.file_size(&folder.join("kept.m4a")).unwrap(), 9);
+    assert!(shotik_core::recording_copy::CopyQueue::load(&r.dir.join("recording-copies.json")).unwrap().pending().is_empty());
+    let log = std::fs::read_to_string(r.dir.join("shotik-bubble.log")).unwrap();
+    assert!(log.lines().any(|line| line.contains("local file missing") && line.contains("gone.m4a")));
+}
+
+#[test]
+fn disabling_copy_pauses_waiting_calls_and_resuming_uses_the_selected_folder() {
+    let r = rig("audio-resume");
+    let (old, new) = (r.dir.join("old"), r.dir.join("new"));
+    r.app.ports.settings.set(json!({"audioRecording":{"copyDir":old},"language":"en"})).unwrap();
+    *r.recording_copy.failure.lock().unwrap() = Some(std::io::ErrorKind::NotConnected);
+    finish_recording(&r, "waiting.m4a", true);
+    assert!(eventually(|| r.ui.last_toast().is_some_and(|t| t.body.contains("Will retry."))));
+    r.app.settings_set(json!({"audioRecording":{"copyDir":""}})).unwrap();
+    *r.recording_copy.failure.lock().unwrap() = None;
+    finish_recording(&r, "while-off.m4a", true);
+    r.app.settings_set(json!({"audioRecording":{"copyDir":new}})).unwrap();
+    assert!(eventually(|| r.ui.last_toast().is_some_and(|t| t.title == "Sent after retry: 1")));
+    assert_eq!(*r.recording_copy.attempts.lock().unwrap(), [old.join("waiting.m4a"), new.join("waiting.m4a")]);
 }
 
 #[test]
